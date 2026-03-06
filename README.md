@@ -6,12 +6,12 @@
 
 <h1 align="center">Orange Launcher Win10</h1>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+  <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
 </p>
 
 <h1 align="center">Orange Launcher Win11</h1>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+  <img src="https://github.com/user-attachments/assets/6eac6ddc-77c4-457b-916b-33adc0b505cd" alt="orange">
 </p>
 
 # Installation 
