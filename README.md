@@ -1,17 +1,46 @@
 
-<h1 align="center">Orange Launcher</h1>
+<h1 align="center">Orange Launcher Linux</h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
 </p>
 
-# Installation (Arch Linux)
-Install with [**yay**](https://github.com/Jguer/yay):
-```yay -S oranglauncher-bin```
+<h1 align="center">Orange Launcher Win10</h1>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+</p>
 
-> [!NOTE]
-> Currently, there is no available version for Windows because of the bad python performance on it.
-> The Windows version will be completely rewritten later on.
-> Linux version will still be updated regularly.
+<h1 align="center">Orange Launcher Win11</h1>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+</p>
+
+# Installation 
+
+## Arch Linux x64
+Install with [**yay**](https://github.com/Jguer/yay):
+```yay -Syu oranglauncher-bin```
+
+## Linux Other x64 
+Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+## Windows 10 x86-x64
+Download installer: [OrangLauncher_Windows10.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+### arm32-arm64
+Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+> [!CAUTION]
+> I'v never tried running arm64 version, because I don't have that processor <br>
+> so if you find the bugs on that architecture, please say in issues. arm32 version works even on x64, please don't use it like that.
+
+## Windows 11 x86
+
+> [!TIP]
+> If you want better bugfixes and better features and greater performace with privacy included, then switch to linux or windows 10 ltsc.
+
+Download installer: [OrangLauncher_Windows11.msi](https://github.com/Orang-Studio/OrangLaunch/releases)
+
 
 
 # About This Minecraft Launcher
@@ -69,16 +98,6 @@ And more!
 ## Language Support
 
 The entire application supports changeable languages, including community‑driven translations. Switching languages reloads the whole app.
-
-## Built‑In Python Engine
-
-The core logic of the launcher runs on Python, providing:
-
-- Fast scripting integration
-- Easy feature expansion
-- High reliability and cross‑platform compatibility
-- Modding of the launcher
-- Fixing bugs faster
 
 ## For the developers section:
 
