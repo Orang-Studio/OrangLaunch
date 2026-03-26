@@ -1,0 +1,37 @@
+{
+  "name": "Dark Prism",
+  "description": "Pure black OLED-friendly theme",
+  "colors": {
+    "bg_primary": "#000000",
+    "bg_secondary": "#0a0a0a",
+    "bg_tertiary": "#1a1a1a",
+    "bg_section": "#1e1e1e",
+    "bg_hover": "#2a2a2a",
+    "bg_pressed": "#151515",
+    "bg_input": "#1a1a1a",
+    "fg_primary": "#ffffff",
+    "fg_secondary": "#e8e8e8",
+    "fg_tertiary": "#a0a0a0",
+    "fg_disabled": "#555555",
+    "accent_primary": "#ff8c00",
+    "accent_hover": "#ffa533",
+    "accent_pressed": "#cc6f00",
+    "border": "#2a2a2a",
+    "scrollbar_thumb": "#555555",
+    "scrollbar_track": "#000000",
+    "progress_bar": "#ff8c00",
+    "progress_track": "#1e1e1e",
+    "tab_selected": "#1e1e1e",
+    "tab_unselected": "#000000",
+    "button_bg": "#1e1e1e",
+    "button_fg": "#ffffff",
+    "play_button_bg": "#e0e0e0",
+    "play_button_fg": "#000000",
+    "play_button_hover": "#ffffff",
+    "play_button_pressed": "#c0c0c0"
+  },
+  "fonts": {
+    "primary": "Segoe UI",
+    "monospace": "Consolas"
+  }
+}
