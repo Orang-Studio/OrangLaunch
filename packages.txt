@@ -1,0 +1,11 @@
+minecraft_launcher_lib
+tkinterweb
+pypresence
+pygame-ce
+pillow
+requests
+cryptography
+pywebview
+PyGObject
+nuitka
+
