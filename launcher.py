@@ -168,8 +168,8 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.1"
-REPO_OWNER = "Orang-Studio"
+CURRENT_VERSION = "5.3"
+REPO_OWNER = "adasjusk"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
@@ -840,7 +840,8 @@ def _build_advanced_page(parent, launcher):
                            font=("Consolas", 8),
                            wrap=tk.WORD,
                            state=tk.DISABLED,
-                           bd=0, highlightthickness=0)        debug_info.pack(fill="x", pady=(0, 8))
+                           bd=0, highlightthickness=0)
+        debug_info.pack(fill="x", pady=(0, 8))
         launcher._debug_text_widget = debug_info
         
         refresh_btn = ttk.Button(debug_info_frame, 
@@ -4641,7 +4642,8 @@ class GameProfilesTab:
             cursor="hand2",
             relief="flat"
         )
-        new_btn._icon = new_icon        new_btn.pack(side="left", padx=(0, 6))
+        new_btn._icon = new_icon
+        new_btn.pack(side="left", padx=(0, 6))
         
         dup_icon = get_btn_icon("dublicate")
         dup_btn = tk.Button(
@@ -5097,7 +5099,8 @@ class GameProfilesTab:
                                    fg=self.theme_manager.get_color('fg_primary'),
                                    font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
                                    command=self._browse_java)
-        browse_java_btn.image = folder_icon        browse_java_btn.pack(side="left", padx=(6, 0))
+        browse_java_btn.image = folder_icon
+        browse_java_btn.pack(side="left", padx=(6, 0))
 
         tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_PATH"), width=18, anchor="e",
                  fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=5, column=1, padx=(0, 12), pady=6, sticky="e")
@@ -9262,7 +9265,8 @@ class MinecraftLauncher(tk.Tk):
                     icon = self._load_themed_icon(icon_name, size=(20, 20))
                     if icon:
                         btn.config(image=icon, compound="left", text=f"  {self._t(text_key)}")
-                        btn._icon_ref = icon                except Exception:
+                        btn._icon_ref = icon
+                except Exception:
                     pass
 
         if hasattr(self, 'music_btn'):
@@ -9656,7 +9660,8 @@ class MinecraftLauncher(tk.Tk):
                                         pady=6,
                                         cursor="hand2",
                                         command=self._new_profile)
-        self.new_profile_btn.image = plus_icon_main        self.new_profile_btn.pack(side="left", padx=(0, 5))
+        self.new_profile_btn.image = plus_icon_main
+        self.new_profile_btn.pack(side="left", padx=(0, 5))
         center_frame = ttk.Frame(bottom_frame)
         center_frame.grid(row=0, column=1, sticky="n", padx=20)
         content_frame = ttk.Frame(center_frame)
