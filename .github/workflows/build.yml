@@ -13,6 +13,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       aur_version: ${{ steps.check.outputs.aur_version }}
       should_publish: ${{ steps.check.outputs.should_publish }}
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
