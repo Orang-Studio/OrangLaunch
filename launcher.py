@@ -169,9 +169,7 @@ class MinecraftInstance:
     
 
 CURRENT_VERSION = "5.3.1"
-REPO_OWNER = "adasjusk"
-REPO_NAME = "OrangLaunch"
-GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+GITHUB_API_URL = "https://api.github.com/repos/Orang-Studio/OrangLaunch/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
 ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
 ORANGLIB_TEMP_DIR = Path(tempfile.gettempdir()) / "oranglauncher" / "oranglib_downloads"
