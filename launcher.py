@@ -168,7 +168,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3"
+CURRENT_VERSION = "5.3.1"
 REPO_OWNER = "adasjusk"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
