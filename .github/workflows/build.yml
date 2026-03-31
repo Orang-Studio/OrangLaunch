@@ -93,7 +93,7 @@ jobs:
           gh release create "${VERSION}-Linux" \
             --repo "${{ github.repository }}" \
             --title "OrangLauncher ${VERSION} Linux" \
-            --notes-file update_notes.md \
+            --generate-notes \
             "launcher_x64_linux_${VERSION}.tar.gz"
 
       - name: Upload build artifact
