@@ -168,7 +168,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.2"
+CURRENT_VERSION = "5.3"
 REPO_OWNER = "adasjusk"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
@@ -491,7 +491,8 @@ def build_settings_tab(launcher, notebook):
                  icon_img = launcher._load_themed_icon(icon_name)
                  if icon_img:
                      btn.config(image=icon_img, compound="left")
-                     btn._icon_ref = icon_img             except Exception as e:
+                     btn._icon_ref = icon_img
+             except Exception as e:
                  print(f"Error loading icon {icon_name}: {e}")
 
         def on_click():
@@ -4344,6 +4345,8 @@ def _mc_version_tuple(version_str: str):
 
 def get_required_java_version(mc_version: str) -> int:
     v = _mc_version_tuple(mc_version)
+    if v >= (26, 0):
+        return 25
     if v >= (1, 20, 5):
         return 21
     if v >= (1, 17, 0):
@@ -5079,7 +5082,7 @@ class GameProfilesTab:
         java_frame = tk.Frame(settings_container, bg=self._get_card_bg())
         java_frame.grid(row=4, column=2, sticky="w", pady=6)
         _java_options = ["Auto"]
-        for _jv in (8, 11, 17, 21):
+        for _jv in (8, 11, 17, 21, 25):
             _jp = find_java_executable(_jv)
             if _jp and _jp not in _java_options:
                 _java_options.append(_jp)
