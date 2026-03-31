@@ -1,0 +1,167 @@
+name: Build
+
+on:
+  push:
+    paths:
+      - 'launcher.py'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      aur_version: ${{ steps.check.outputs.aur_version }}
+      should_publish: ${{ steps.check.outputs.should_publish }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^CURRENT_VERSION' launcher.py | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check AUR version
+        id: check
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          AUR_PKGBUILD=$(curl -s "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=oranglauncher-bin")
+          AUR_VERSION=$(echo "$AUR_PKGBUILD" | grep '^pkgver=' | sed 's/pkgver=//')
+          echo "aur_version=$AUR_VERSION" >> $GITHUB_OUTPUT
+          if [ "$VERSION" != "$AUR_VERSION" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "New version $VERSION (AUR is on $AUR_VERSION) — will publish"
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already on AUR — skipping publish"
+          fi
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            python3-tk \
+            libgirepository1.0-dev \
+            libcairo2-dev \
+            gir1.2-gtk-3.0 \
+            patchelf \
+            ccache
+
+      - name: Install Python dependencies
+        run: pip install $(cat packages.txt | tr '\n' ' ')
+
+      - name: Build with Nuitka
+        run: |
+          TKHTML_BASE=$(python -c "import pathlib, tkinterweb_tkhtml; print(pathlib.Path(tkinterweb_tkhtml.__file__).parent / 'tkhtml')")
+          MLIB_VERSION_TXT=$(python -c "import pathlib, minecraft_launcher_lib; print(pathlib.Path(minecraft_launcher_lib.__file__).parent / 'version.txt')")
+          python -m nuitka --standalone \
+            --include-data-dir=oranglauncher=oranglauncher \
+            --include-package=tkinterweb \
+            --include-package=tkinterweb_tkhtml \
+            --include-package=minecraft_launcher_lib \
+            --include-data-files="$TKHTML_BASE/libTkhtml3.0.so=tkinterweb_tkhtml/tkhtml/libTkhtml3.0.so" \
+            --include-data-files="$TKHTML_BASE/COPYRIGHT=tkinterweb_tkhtml/tkhtml/COPYRIGHT" \
+            --include-data-files="$MLIB_VERSION_TXT=minecraft_launcher_lib/version.txt" \
+            --enable-plugin=tk-inter \
+            --remove-output \
+            --lto=yes \
+            --output-dir=build \
+            launcher.py
+
+      - name: Package tarball
+        if: steps.check.outputs.should_publish == 'true'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          tar -czf "launcher_x64_linux_${VERSION}.tar.gz" -C build/launcher.dist .
+          echo "TARBALL=launcher_x64_linux_${VERSION}.tar.gz" >> $GITHUB_ENV
+
+      - name: Create GitHub release
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          gh release create "${VERSION}-Linux" \
+            --repo "${{ github.repository }}" \
+            --title "OrangLauncher ${VERSION} Linux" \
+            --notes-file update_notes.md \
+            "launcher_x64_linux_${VERSION}.tar.gz"
+
+      - name: Upload build artifact
+        if: steps.check.outputs.should_publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oranglauncher-${{ steps.version.outputs.version }}
+          path: ${{ env.TARBALL }}
+          retention-days: 7
+
+  publish-aur:
+    needs: build
+    if: needs.build.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install AUR tools
+        run: pacman -Sy --noconfirm git openssh sudo base-devel
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: oranglauncher-${{ needs.build.outputs.version }}
+
+      - name: Compute sha256
+        run: |
+          VERSION=${{ needs.build.outputs.version }}
+          echo "SHA256=$(sha256sum launcher_x64_linux_${VERSION}.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Set up AUR SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
+
+      - name: Clone AUR repo
+        run: git clone ssh://aur@aur.archlinux.org/oranglauncher-bin.git /tmp/aur-oranglauncher
+
+      - name: Update PKGBUILD
+        run: |
+          VERSION=${{ needs.build.outputs.version }}
+          GH_TAG="${VERSION}-Linux"
+          PKGBUILD=/tmp/aur-oranglauncher/PKGBUILD
+
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$PKGBUILD"
+          sed -i "s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
+          CURRENT_SHA=$(grep -m1 "sha256sums=" "$PKGBUILD" | grep -oP "'[a-f0-9]{64}'" | tr -d "'")
+          sed -i "s/${CURRENT_SHA}/${SHA256}/" "$PKGBUILD"
+          sed -i "s|/download/[^/]*/launcher_x64_linux_[^\"']*\.tar\.gz|/download/${GH_TAG}/launcher_x64_linux_${VERSION}.tar.gz|" "$PKGBUILD"
+
+      - name: Regenerate .SRCINFO
+        run: |
+          cd /tmp/aur-oranglauncher
+          useradd -m builder
+          chown -R builder:builder .
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+      - name: Push to AUR
+        run: |
+          VERSION=${{ needs.build.outputs.version }}
+          cd /tmp/aur-oranglauncher
+          git config user.name "vakarux"
+          git config user.email "vakaris@oranges.lt"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${VERSION}"
+          git push
