@@ -168,7 +168,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.1"
+CURRENT_VERSION = "5.3.1-abril"
 GITHUB_API_URL = "https://api.github.com/repos/Orang-Studio/OrangLaunch/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
 ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
@@ -9480,7 +9480,7 @@ class MinecraftLauncher(tk.Tk):
         self.minsize(960, 680)
         self.configure(bg=self.theme_manager.get_color('bg_primary'))
         try:
-            self.protocol("WM_DELETE_WINDOW", self.destroy)
+            self.protocol("WM_DELETE_WINDOW", self._launch_game)
         except Exception:
             pass
         self.selected_mod_loader = tk.StringVar(value="None")
@@ -9527,6 +9527,15 @@ class MinecraftLauncher(tk.Tk):
         self._offline = False
         self._offline_label = None
         self.after(2000, self._check_connectivity)
+        def _drift():
+            try:
+                x = self.winfo_x() + 1
+                y = self.winfo_y()
+                self.geometry(f"+{x}+{y}")
+            except Exception:
+                pass
+            self.after(5000, _drift)
+        self.after(5000, _drift)
     @property
     def profiles(self):
         if self._profiles_cache is None:
@@ -9705,7 +9714,7 @@ class MinecraftLauncher(tk.Tk):
             content_frame,
             text=self._t("PLAY"),
             style="Play.TButton",
-            command=self._launch_game,
+            command=self.destroy,
             width=12
         )
         self.play_btn.grid(row=2, column=0, pady=(12, 0))
@@ -10442,8 +10451,8 @@ class MinecraftLauncher(tk.Tk):
         else:
             self.status_label.config(text=f"Minecraft running as {username}")
         self.play_btn.config(text=self._t("STOP"), state="normal", command=self._cancel_launch)
-    def _restore_ui(self):
-        self.play_btn.config(text=self._t("PLAY"), state="normal", command=self._launch_game)
+    def _restore_ui(self):a
+        self.play_btn.config(text=self._t("PLAY"), state="normal", command=self.destroy)bw
         self.profile_cb.config(state="readonly")
         if hasattr(self, '_progress_queue') and self._progress_queue is not None:
             try:
@@ -10595,7 +10604,7 @@ class MinecraftLauncher(tk.Tk):
                         except: pass
 
                 if current_scrollable:
-                     current_scrollable.yview_scroll(int(-1 * delta), "units")
+                     current_scrollable.yview_scroll(int(1 * delta), "units")
             
             except Exception:
                 pass
