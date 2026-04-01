@@ -138,7 +138,10 @@ jobs:
           printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
 
       - name: Clone AUR repo
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
         run: git clone ssh://aur@aur.archlinux.org/oranglauncher-bin.git /tmp/aur-oranglauncher
+
 
       - name: Update PKGBUILD
         run: |
@@ -160,6 +163,8 @@ jobs:
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
 
       - name: Push to AUR
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
         run: |
           VERSION=${{ needs.build.outputs.version }}
           cd /tmp/aur-oranglauncher
@@ -167,4 +172,4 @@ jobs:
           git config user.email "vakaris@oranges.lt"
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${VERSION}"
-          git push
+          git push origin master
