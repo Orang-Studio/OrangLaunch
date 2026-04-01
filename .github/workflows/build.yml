@@ -160,6 +160,7 @@ jobs:
           cd /tmp/aur-oranglauncher
           useradd -m builder
           chown -R builder:builder .
+          git config --global --add safe.directory /tmp/aur-oranglauncher
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
 
       - name: Push to AUR
