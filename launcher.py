@@ -168,7 +168,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.1-abril"
+CURRENT_VERSION = "5.3.1"
 GITHUB_API_URL = "https://api.github.com/repos/Orang-Studio/OrangLaunch/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
 ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
@@ -967,7 +967,7 @@ def _build_about_page(parent, launcher):
                          font=("Segoe UI", 16, "bold"))
     name_label.pack(anchor="w", pady=(0, 8))
     
-    version_label = tk.Label(info_frame, text=f"Version: {CURRENT_VERSION}", 
+    version_label = tk.Label(info_frame, text=f"Version: {CURRENT_VERSION}.abril",
                            bg=bg_primary, 
                            fg=launcher._get_theme_color('fg_secondary'),
                            font=("Segoe UI", 11))
