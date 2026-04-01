@@ -10451,8 +10451,8 @@ class MinecraftLauncher(tk.Tk):
         else:
             self.status_label.config(text=f"Minecraft running as {username}")
         self.play_btn.config(text=self._t("STOP"), state="normal", command=self._cancel_launch)
-    def _restore_ui(self):a
-        self.play_btn.config(text=self._t("PLAY"), state="normal", command=self.destroy)bw
+    def _restore_ui(self):
+        self.play_btn.config(text=self._t("PLAY"), state="normal", command=self.destroy)
         self.profile_cb.config(state="readonly")
         if hasattr(self, '_progress_queue') and self._progress_queue is not None:
             try:
