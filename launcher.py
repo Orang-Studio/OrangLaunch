@@ -168,10 +168,8 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.2"
-REPO_OWNER = "adasjusk"
-REPO_NAME = "OrangLaunch"
-GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+CURRENT_VERSION = "5.3.3"
+GITHUB_API_URL = "https://api.github.com/repos/Orang-Studio/OrangLaunch/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
 ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
 ORANGLIB_TEMP_DIR = Path(tempfile.gettempdir()) / "oranglauncher" / "oranglib_downloads"
@@ -3725,6 +3723,8 @@ class InstanceManager:
                 except Exception:
                     pass
             if not latest_release:
+                latest_release = MojangVersionManager.get_cached_latest_release()
+            if not latest_release:
                 latest_release = "26.1"
             default_instance = MinecraftInstance(
                 name="Latest Release",
@@ -3736,9 +3736,10 @@ class InstanceManager:
             self.selected_instance_id = default_instance.instance_id
         except Exception as e:
             print(f"Error creating default instance: {e}")
+            fallback_version = MojangVersionManager.get_cached_latest_release() or "26.1"
             default_instance = MinecraftInstance(
                 name="Latest Release",
-                version="26.1",
+                version=fallback_version,
                 mod_loader="vanilla",
                 ram="4G"
             )
@@ -3884,6 +3885,19 @@ class MojangVersionManager:
         if not self.last_updated:
             return False
         return datetime.now() - self.last_updated < self.cache_duration
+    @staticmethod
+    def get_cached_latest_release() -> str | None:
+        try:
+            cache_path = Path.home() / ".minecraft_versions_cache.json"
+            if cache_path.exists():
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                for v in data.get('versions', []):
+                    if v.get('type') == 'release':
+                        return v['id']
+        except Exception:
+            pass
+        return None
     def fetch_versions_async(self, callback=None):
         if self.is_fetching:
             if callback:
@@ -3960,14 +3974,14 @@ class MojangVersionManager:
         return snapshots[0] if snapshots else None
 
 class GameProfile:
-    def __init__(self, profile_id=None, name="New Profile", version="26.1", 
-                 mod_loader="None", game_dir=None, java_args=None, 
-                 resolution_width=None, resolution_height=None, 
+    def __init__(self, profile_id=None, name="New Profile", version=None,
+                 mod_loader="None", game_dir=None, java_args=None,
+                 resolution_width=None, resolution_height=None,
                  ram="2G", icon="default", created=None, last_used=None,
                  mods_list=None):
         self.id = profile_id or str(uuid_module.uuid4())
         self.name = name
-        self.version = version
+        self.version = version or MojangVersionManager.get_cached_latest_release() or "26.1"
         self.mod_loader = mod_loader
         self.game_dir = game_dir
         self.java_args = java_args or []
@@ -3999,7 +4013,7 @@ class GameProfile:
         return cls(
             profile_id=data.get('id'),
             name=data.get('name', 'New Profile'),
-            version=data.get('version', '26.1'),
+            version=data.get('version'),
             mod_loader=data.get('mod_loader', 'None'),
             game_dir=data.get('game_dir'),
             java_args=data.get('java_args', []),
@@ -4052,13 +4066,15 @@ class GameProfileManager:
         except Exception as e:
             print(f"Error saving game profiles: {e}")
     def create_default_profile(self):
-        latest_version = "26.1"
+        latest_version = None
         try:
             latest = self.version_manager.get_latest_release()
             if latest:
                 latest_version = latest.id
         except Exception as e:
             print(f"Could not get latest version: {e}")
+        if not latest_version:
+            latest_version = MojangVersionManager.get_cached_latest_release() or "26.1"
         default_profile = GameProfile(
             name="Default",
             version=latest_version,
@@ -4068,7 +4084,7 @@ class GameProfileManager:
         self.profiles[default_profile.id] = default_profile
         self.selected_profile_id = default_profile.id
         self.save_profiles()
-    def create_profile(self, name=None, version="26.1", mod_loader="None"):
+    def create_profile(self, name=None, version=None, mod_loader="None"):
         if name is None:
             counter = 1
             while f"Profile {counter}" in [p.name for p in self.profiles.values()]:
@@ -4284,7 +4300,7 @@ def set_selected_profile(profile_name):
     if profile:
         return manager.set_selected_profile(profile.id)
     return False
-def create_profile(name=None, version="26.1", mod_loader="None"):
+def create_profile(name=None, version=None, mod_loader="None"):
     return get_game_profile_manager().create_profile(name, version, mod_loader)
 def delete_profile_by_name(name):
     manager = get_game_profile_manager()
@@ -10010,7 +10026,7 @@ class MinecraftLauncher(tk.Tk):
         else:
             try:
                 default_instance = self.instance_manager.create_instance(
-                    "Default Instance", "26.1", "vanilla", "4G"
+                    "Default Instance", MojangVersionManager.get_cached_latest_release() or "26.1", "vanilla", "4G"
                 )
                 if default_instance:
                     self.instance_manager.set_selected_instance(default_instance.instance_id)
