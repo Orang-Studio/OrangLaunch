@@ -168,7 +168,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.3"
+CURRENT_VERSION = "5.3.3.1"
 GITHUB_API_URL = "https://api.github.com/repos/Orang-Studio/OrangLaunch/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
 ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
