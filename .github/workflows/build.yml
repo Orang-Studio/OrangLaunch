@@ -59,8 +59,9 @@ jobs:
             ccache
 
       - name: Install Python dependencies
-        run: pip install --no-cache-dir -r requirements.txt
-        run: pip install --no-cache-dir nuitka
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir nuitka
 
       - name: Build with Nuitka
         run: |
