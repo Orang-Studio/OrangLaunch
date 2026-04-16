@@ -59,7 +59,8 @@ jobs:
             ccache
 
       - name: Install Python dependencies
-        run: pip install minecraft_launcher_lib tkinterweb pypresence pygame-ce pillow requests cryptography pywebview PyGObject nuitka
+        run: pip install --no-cache-dir -r requirements.txt
+        run: pip install --no-cache-dir nuitka
 
       - name: Build with Nuitka
         run: |

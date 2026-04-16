@@ -7,5 +7,5 @@ requests
 cryptography
 pywebview
 PyGObject
-nuitka
+
 
