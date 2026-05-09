@@ -41,7 +41,47 @@ Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/Oran
 
 Download installer: [OrangLauncher_Windows11.msi](https://github.com/Orang-Studio/OrangLaunch/releases)
 
+# Terminal Mode
 
+The launcher includes a terminal/CLI mode for headless servers or users who prefer command-line interfaces.
+
+## Usage
+
+Run the launcher with the `--terminal` flag:
+
+```bash
+python launcher.py --terminal
+```
+
+This will:
+1. Display a list of your configured Minecraft instances
+2. Let you select an instance by number
+3. Show available game profiles (accounts)
+4. Let you select a profile/account
+5. Prompt for RAM allocation (default: 4G)
+6. Launch the game directly
+
+### Example:
+```
+==================================================
+OrangLauncher - Terminal Mode
+==================================================
+
+Available Instances:
+  1. Fabulously Optimized (MC 26.1.2, fabric)
+  2. gh (MC 1.20.1, forge)
+  3. New Profile (MC 1.21.1, vanilla)
+
+Select instance (1-3): 1
+Available Profiles:
+  1. MyAccount (Microsoft)
+  2. OfflinePlayer (Offline)
+
+Select profile (1-2): 1
+Enter RAM amount (default: 4G): 6G
+
+[Launcher] Launching Minecraft 26.1.2 (fabric) as MyAccount...
+```
 
 # About This Minecraft Launcher
 This launcher is designed to be a modular, modern, and highly customizable Minecraft launcher experience. It uses Python for backend that keeps everything lightweight, fast, and fully scriptable.
@@ -52,7 +92,7 @@ This is achieved by using localhost and microsoft official page. If that fails, 
 
 ## Offline (cracked)
 Simply enter username and boom you have that account, and you can use it only on cracked servers (`offline-mode=false`) and singleplayer. Though, you can't have a custom skin bc you cracked it! 
-I'm not resposible for any legal damage, nor im Mojang or Xbox studios.
+I'm not resposible for any legal damage, nor im Mojang or Xbox studios, I use methods that mojang provides to give offline mode.
 
 ## News Hub
 
@@ -97,7 +137,7 @@ And more!
 
 ## Language Support
 
-The entire application supports changeable languages, including community‑driven translations. Switching languages reloads the whole app.
+The entire application supports changeable languages, including community‑driven translations. 
 
 ## For the developers section:
 

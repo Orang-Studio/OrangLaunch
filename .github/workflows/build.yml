@@ -59,7 +59,9 @@ jobs:
             ccache
 
       - name: Install Python dependencies
-        run: pip install minecraft_launcher_lib tkinterweb pypresence pygame-ce pillow requests cryptography pywebview PyGObject nuitka
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir nuitka
 
       - name: Build with Nuitka
         run: |
@@ -110,6 +112,8 @@ jobs:
     needs: build
     if: needs.build.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     container:
       image: archlinux:latest
 
@@ -142,7 +146,6 @@ jobs:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
         run: git clone ssh://aur@aur.archlinux.org/oranglauncher-bin.git /tmp/aur-oranglauncher
 
-
       - name: Update PKGBUILD
         run: |
           VERSION=${{ needs.build.outputs.version }}
@@ -154,7 +157,7 @@ jobs:
           CURRENT_SHA=$(grep -m1 "sha256sums=" "$PKGBUILD" | grep -oP "'[a-f0-9]{64}'" | tr -d "'")
           sed -i "s/${CURRENT_SHA}/${SHA256}/" "$PKGBUILD"
           sed -i "s|/download/[^/]*/launcher_x64_linux_[^\"']*\.tar\.gz|/download/${GH_TAG}/launcher_x64_linux_${VERSION}.tar.gz|" "$PKGBUILD"
-
+     
       - name: Regenerate .SRCINFO
         run: |
           cd /tmp/aur-oranglauncher
@@ -162,7 +165,7 @@ jobs:
           chown -R builder:builder .
           git config --global --add safe.directory /tmp/aur-oranglauncher
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
-
+     
       - name: Push to AUR
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
