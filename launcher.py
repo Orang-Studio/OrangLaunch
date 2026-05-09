@@ -25,7 +25,6 @@ import zipfile
 import tarfile
 import tempfile
 import traceback
-import tkinter.scrolledtext
 import copy
 import tkinterweb
 import webbrowser
@@ -35,8 +34,11 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog, simpledialog
 from datetime import datetime, timedelta
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import io
-from typing import List, Dict, Any, Optional
-from pypresence import Presence
+from typing import List, Dict, Any, Optional, Union
+try:
+    from pypresence.presence import Presence
+except ImportError:
+    Presence = None
 from collections import deque
 from pathlib import Path
 
@@ -45,13 +47,10 @@ import pygame as _pygame
 import pygame as _pg
 pygame = None
 pygame_available = False
+pygame_mixer_initialized = False
 pygame = _pygame
-pygame.init()
-try:
-    pygame.mixer.init()
-except Exception as e:
-    print("Warning: pygame mixer module not available, audio disabled")
-    print(f"Audio init error: {e}")
+# DO NOT CALL pygame.init() HERE - it will initialize audio and other modules
+# Only initialize mixer on first music play via _toggle_music()
 pygame_available = True
 _http_session = requests.Session()
 _http_session.headers.update({"User-Agent": "OrangLauncher"})
@@ -75,7 +74,7 @@ def _cached_image_get(url: str, timeout: int = 8) -> bytes:
 
 def get_resource_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        return Path(sys._MEIPASS)
+        return Path(sys._MEIPASS)  # type: ignore
     else:
         return Path(__file__).parent
 def find_resource(relative_path):
@@ -89,7 +88,7 @@ def find_resource(relative_path):
     return None
 class MinecraftInstance:
     def __init__(self, name: str, version: str, mod_loader: str = "vanilla", 
-                 instance_id: str = None, java_args: str = None, ram: str = "4G",
+                 instance_id: Optional[str] = None, java_args: Optional[str] = None, ram: str = "4G",
                  installed_version_id: Optional[str] = None):
         self.name = name
         self.version = version
@@ -134,7 +133,7 @@ class MinecraftInstance:
             mod_loader=data.get("mod_loader", "vanilla"),
             instance_id=data["instance_id"],
             java_args=data.get("java_args"),
-            ram=data.get("ram", "4G"),
+            ram=data.get("ram", "4G"), # I WILL FUCKING EAT YOUR RAM, IM HUNGRY FOR IT
             installed_version_id=data.get("installed_version_id")
         )
         instance.created_date = data.get("created_date", instance.created_date)
@@ -168,8 +167,8 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "5.3.2"
-REPO_OWNER = "adasjusk"
+CURRENT_VERSION = "6.0.0"
+REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
@@ -490,8 +489,8 @@ def build_settings_tab(launcher, notebook):
              try:
                  icon_img = launcher._load_themed_icon(icon_name)
                  if icon_img:
-                     btn.config(image=icon_img, compound="left")
-                     btn._icon_ref = icon_img
+                     btn.config(image=icon_img, compound="left")  # type: ignore
+                     btn._icon_ref = icon_img  # type: ignore
              except Exception as e:
                  print(f"Error loading icon {icon_name}: {e}")
 
@@ -567,17 +566,14 @@ def _build_general_page(parent, launcher):
         selected_display = lang_cb.get()
         selected_code = launcher._lang_code_map.get(selected_display)
         if selected_code and selected_code != launcher.current_locale:
-            _save_language_preference(selected_code)
-            result = messagebox.askyesno(
-                launcher._t("LANGUAGE_CHANGED_TITLE"),
-                launcher._t("LANGUAGE_CHANGED_MSG").format(language=selected_display),
-                icon="question"
-            )
-            if result:
-                _restart_application()
-            else:
-                current_display = lang_names.get(launcher.current_locale, launcher.current_locale)
-                lang_cb.set(current_display)
+            try:
+                _save_language_preference(selected_code)
+                messagebox.showinfo(
+                    launcher._t("LANGUAGE_CHANGED_TITLE"),
+                    "Language preference saved. Restart the launcher to apply the change."
+                )
+            except Exception as e:
+                messagebox.showerror(launcher._t("ERROR"), str(e))
     lang_cb.bind("<<ComboboxSelected>>", on_lang_change)
     warning = tk.Label(lang_card,
                       text=launcher._t("SETTINGS_LANG_WARNING"),
@@ -585,44 +581,6 @@ def _build_general_page(parent, launcher):
                       fg=launcher._get_theme_color('accent_primary'),
                       font=("Segoe UI", 9, "italic"))
     warning.pack(anchor="w", pady=(0, 16))
-    # i SO wanna remove this
-    # damn adas not letting me :/
-    music_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_MUSIC"), launcher)
-    music_desc = tk.Label(music_card, text=launcher._t("SETTINGS_MUSIC_DESC"),
-                         bg=bg_primary, 
-                         fg=launcher._get_theme_color('fg_secondary'), 
-                         font=("Segoe UI", 10))
-    music_desc.pack(anchor="w", pady=(0, 12))
-    music_btn_frame = tk.Frame(music_card, bg=bg_primary)
-    music_btn_frame.pack(fill="x", pady=(0, 16))
-    
-    music_icon = launcher._load_themed_icon("music", size=(16, 16))
-    launcher.music_btn = tk.Button(
-        music_btn_frame,
-        text=f"  {launcher._t('PLAY_MUSIC')}",
-        image=music_icon,
-        compound="left",
-        bg=launcher._get_theme_color('accent_primary'),
-        fg=launcher._get_theme_color('fg_primary'),
-        font=("Segoe UI", 10, "bold"),
-        bd=0,
-        padx=20,
-        pady=10,
-        cursor="hand2",
-        relief="flat",
-        command=launcher._toggle_music
-    )
-    launcher.music_btn.image = music_icon
-    launcher.music_btn.pack(side="left", padx=(0, 10))
-    music_info = tk.Label(
-        music_btn_frame,
-        text=launcher._t("SETTINGS_MUSIC_INFO"),
-        bg=bg_primary,
-        fg=launcher._get_theme_color('fg_tertiary'),
-        font=("Segoe UI", 9),
-        anchor="w"
-    )
-    music_info.pack(side="left", fill="x", expand=True)
     theme_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_THEME"), launcher)
     theme_desc = tk.Label(theme_card, text=launcher._t("SETTINGS_THEME_DESC"),
                          bg=bg_primary, 
@@ -641,15 +599,15 @@ def _build_general_page(parent, launcher):
     for i, (theme_name, description, bg_color) in enumerate(themes):
         _create_modern_theme_button(themes_grid, launcher, theme_name, description, bg_color)
 
-    gpu_card = _create_modern_card(parent, "GPU", launcher)
+    gpu_card = _create_modern_card(parent, launcher._t("SETTINGS_GPU_SECTION"), launcher)
     gpu_row = tk.Frame(gpu_card, bg=bg_primary)
     gpu_row.pack(fill="x", pady=(0, 16))
     gpu_info = tk.Frame(gpu_row, bg=bg_primary)
     gpu_info.pack(side="left", fill="both", expand=True, padx=(0, 16))
-    tk.Label(gpu_info, text="Use DRI PRIME 1", bg=bg_primary,
+    tk.Label(gpu_info, text=launcher._t("SETTINGS_GPU_DRI_PRIME"), bg=bg_primary,
              fg=launcher._get_theme_color('fg_primary'),
              font=("Segoe UI", 11, "bold"), anchor="w").pack(anchor="w")
-    tk.Label(gpu_info, text="Launch Minecraft on the secondary GPU (sets DRI_PRIME=1). Useful for hybrid AMD/Intel graphics.",
+    tk.Label(gpu_info, text=launcher._t("SETTINGS_GPU_DRI_PRIME_DESC"),
              bg=bg_primary, fg=launcher._get_theme_color('fg_secondary'),
              font=("Segoe UI", 9), anchor="w", wraplength=450, justify="left").pack(anchor="w", pady=(2, 0))
     if not hasattr(launcher, 'use_dri_prime'):
@@ -657,18 +615,17 @@ def _build_general_page(parent, launcher):
     ToggleSwitch(gpu_row, variable=launcher.use_dri_prime,
                  command=lambda: _save_settings(launcher), bg=bg_primary).pack(side="right", anchor="center")
 
-    sharing_card = _create_modern_card(parent, "Shared Files", launcher)
+    sharing_card = _create_modern_card(parent, launcher._t("SETTINGS_SHARED_FILES"), launcher)
     tk.Label(sharing_card,
-             text="Symlink selected paths across all instances to a single shared folder (~/.config/oranglauncher/shared/).\nClick 'Apply to all instances' after changing these toggles.",
+             text=launcher._t("SETTINGS_SHARED_FILES_DESC"),
              bg=bg_primary, fg=launcher._get_theme_color('fg_secondary'),
              font=("Segoe UI", 9), justify="left", wraplength=500).pack(anchor="w", pady=(0, 12))
 
     _share_rows = [
-        ("share_options",       "Share options.txt",       "Key bindings, video settings, mouse sensitivity"),
-        ("share_resourcepacks", "Share resourcepacks/",    "Texture packs visible in all instances"),
-        ("share_shaderpacks",   "Share shaderpacks/",      "Shader packs visible in all instances"),
-        ("share_servers",       "Share servers.dat",       "Saved multiplayer server list"),
-        ("share_screenshots",   "Share screenshots/",      "All screenshots go to one folder"),
+        ("share_options",       launcher._t("SETTINGS_SHARED_OPTIONS_TXT"),       launcher._t("SETTINGS_SHARED_OPTIONS_DESC")),
+        ("share_resourcepacks", launcher._t("SETTINGS_SHARED_RESOURCEPACKS"),    launcher._t("SETTINGS_SHARED_RESOURCEPACKS_DESC")),
+        ("share_shaderpacks",   launcher._t("SETTINGS_SHARED_SHADERPACKS"),      launcher._t("SETTINGS_SHARED_SHADERPACKS_DESC")),
+        ("share_servers",       launcher._t("SETTINGS_SHARED_SERVERS"),          launcher._t("SETTINGS_SHARED_SERVERS_DESC")),
     ]
     for attr, title, desc in _share_rows:
         if not hasattr(launcher, attr):
@@ -687,13 +644,13 @@ def _build_general_page(parent, launcher):
                      command=lambda: _save_settings(launcher),
                      bg=bg_primary).pack(side="right", anchor="center")
 
-    apply_btn = tk.Button(sharing_card, text="Apply to all instances",
+    apply_btn = tk.Button(sharing_card, text=launcher._t("SETTINGS_SHARED_APPLY_ALL"),
                           bg=launcher._get_theme_color('bg_tertiary'),
                           fg=launcher._get_theme_color('fg_primary'),
                           font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat",
                           command=lambda: threading.Thread(
                               target=lambda: (launcher._apply_sharing_all(),
-                                              launcher.after(0, lambda: messagebox.showinfo("Shared Files", "Symlinks updated for all instances."))),
+                                              launcher.after(0, lambda: messagebox.showinfo(launcher._t("SETTINGS_SHARED_FILES"), launcher._t("SETTINGS_SHARED_UPDATED")))),
                               daemon=True).start())
     apply_btn.pack(anchor="w", pady=(8, 0))
 
@@ -784,7 +741,7 @@ def _build_advanced_page(parent, launcher):
                                activeforeground=launcher._get_theme_color('fg_primary'),
                                font=("Segoe UI", 10), relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
                                command=lambda: _add_plugin_file(launcher))
-    add_plugin_btn.image = add_plugin_icon
+    add_plugin_btn.image = add_plugin_icon  # type: ignore
     add_plugin_btn.pack(side="left", padx=(0, 8))
     
     refresh_plugin_icon = launcher._load_themed_icon("refresh", size=(16, 16))
@@ -798,24 +755,25 @@ def _build_advanced_page(parent, launcher):
                                     activeforeground=launcher._get_theme_color('fg_primary'),
                                     font=("Segoe UI", 9), relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
                                     command=lambda: _refresh_plugins_runtime(launcher))
-    refresh_plugins_btn.image = refresh_plugin_icon
+    refresh_plugins_btn.image = refresh_plugin_icon  # type: ignore
     refresh_plugins_btn.pack(side="left")
     _refresh_plugins_list(launcher)
 
-    progress_card = _create_modern_card(parent, "Progress Bar", launcher)
+    progress_card = _create_modern_card(parent, launcher._t("SETTINGS_PROGRESS_BAR"), launcher)
     if not hasattr(launcher, 'show_progress_bar'):
         launcher.show_progress_bar = tk.BooleanVar(value=False)
     
     def toggle_progress_bar():
         _save_settings(launcher)
-        if launcher.show_progress_bar.get():
-            launcher.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
-        else:
-            launcher.status_bar_frame.pack_forget()
+        if hasattr(launcher, 'status_bar_frame') and launcher.status_bar_frame is not None:
+            if launcher.show_progress_bar.get():
+                launcher.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
+            else:
+                launcher.status_bar_frame.pack_forget()
             
     create_setting_row(progress_card,
-                      "Enable progress bar",
-                      "Show progress bar at the bottom of the launcher during downloads and installations",
+                      launcher._t("SETTINGS_SHOW_PROGRESS_BAR"),
+                      launcher._t("SETTINGS_SHOW_PROGRESS_BAR_DESC"),
                       launcher.show_progress_bar,
                       toggle_progress_bar)
 
@@ -860,14 +818,35 @@ def _build_advanced_page(parent, launcher):
     
     def _show_spawn_log(launcher):
         try:
-            path = Path(tempfile.gettempdir()) / "OrangLauncher_spawn.log"
-            if not path.exists():
-                messagebox.showinfo(launcher._t("INFO"), launcher._t("SETTINGS_DEBUG_SPAWN_LOG_NONE"))
-                return
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.read().splitlines()
-            last_lines = lines[-200:]
-            messagebox.showinfo(launcher._t("SETTINGS_DEBUG_SPAWN_LOG_TITLE"), "\n".join(last_lines))
+            if not hasattr(launcher, "debug_mode_enabled"):
+                launcher.debug_mode_enabled = tk.BooleanVar(value=False)
+
+            debug_capture_active = isinstance(sys.stdout, StreamCapture) and hasattr(launcher, "_current_log_file")
+            if not debug_capture_active:
+                launcher.debug_mode_enabled.set(True)
+                _toggle_debug_mode(launcher)
+
+            log_path = Path(getattr(launcher, "_current_log_file", "") or "")
+            if not log_path:
+                log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_path = log_dir / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+                launcher._current_log_file = str(log_path)
+
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n=== DEBUG SNAPSHOT {datetime.now().isoformat()} ===\n")
+                if getattr(launcher, "_log_buffer", None):
+                    for msg, _ in launcher._log_buffer:
+                        f.write(msg.rstrip("\n") + "\n")
+                else:
+                    f.write("No buffered log entries available.\n")
+
+            if not _open_terminal_tailing_file(log_path):
+                messagebox.showerror(
+                    launcher._t("ERROR"),
+                    f"Could not open a terminal to show debug logs.\n{log_path}"
+                )
         except Exception as e:
             
             messagebox.showerror(launcher._t("ERROR"), f"Failed to read spawn log: {e}")
@@ -919,7 +898,7 @@ def _build_accounts_page(parent, launcher):
                            pady=8,
                            cursor="hand2",
                            command=lambda: _add_microsoft_account(launcher))
-    add_ms_btn.image = ms_icon
+    add_ms_btn.image = ms_icon  # type: ignore
     add_ms_btn.pack(side="left", padx=(0, 8))
     
     offline_icon = launcher._load_themed_icon("offline", size=(16, 16))
@@ -938,7 +917,7 @@ def _build_accounts_page(parent, launcher):
                                pady=8,
                                cursor="hand2",
                                command=lambda: _add_offline_account(launcher))
-    add_offline_btn.image = offline_icon
+    add_offline_btn.image = offline_icon  # type: ignore
     add_offline_btn.pack(side="left")
 def _build_about_page(parent, launcher):
     bg_primary = launcher._get_theme_color('bg_primary')
@@ -955,8 +934,15 @@ def _build_about_page(parent, launcher):
             logo_frame = tk.Frame(about_inner, bg=bg_primary)
             logo_frame.pack(side="left", anchor="n", padx=(0, 24))
             
-            logo_lbl = tk.Label(logo_frame, image=launcher._about_logo_img, bg=bg_primary)
+            logo_lbl = tk.Label(logo_frame, image=launcher._about_logo_img, bg=bg_primary, cursor="hand2")
             logo_lbl.pack()
+            
+            def on_logo_click(event):
+                launcher._toggle_music()
+            
+            logo_lbl.bind("<Button-1>", on_logo_click)
+            logo_lbl.bind("<Enter>", lambda e: logo_lbl.config(bg=launcher._get_theme_color('bg_hover')))
+            logo_lbl.bind("<Leave>", lambda e: logo_lbl.config(bg=bg_primary))
     except Exception:
         pass
 
@@ -1009,7 +995,7 @@ def _build_about_page(parent, launcher):
                           pady=8,
                           cursor="hand2",
                           command=lambda: show_update_dialog(parent, launcher))
-    update_btn.image = update_icon
+    update_btn.image = update_icon  # type: ignore
     update_btn.pack(side="left", padx=(0, 8))
     
     github_icon = launcher._load_themed_icon("github", size=(16, 16))
@@ -1028,7 +1014,7 @@ def _build_about_page(parent, launcher):
                           pady=6,
                           cursor="hand2",
                           command=lambda: webbrowser.open("https://github.com/adasjusk/OrangLaunch"))
-    github_btn.image = github_icon
+    github_btn.image = github_icon  # type: ignore
     github_btn.pack(side="left")
 def _build_experimental_page(parent, launcher):
     title = tk.Label(parent, text=launcher._t("SETTINGS_EXP_PAGE_TITLE"), bg=launcher._get_theme_color('bg_primary'), fg=launcher._get_theme_color('fg_primary'),
@@ -1115,7 +1101,7 @@ def _create_theme_button(parent, launcher, theme_name, image_path, bg_color):
                 img = img.resize((100, 80), Image.Resampling.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 img_label = tk.Label(btn_frame, image=photo, bg=bg_color, cursor="hand2")
-                img_label.image = photo
+                img_label.image = photo  # type: ignore
                 img_label.pack()
                 img_label.bind("<Button-1>", lambda e: _apply_theme(launcher, theme_name))
             except ImportError:
@@ -1139,16 +1125,16 @@ def _create_theme_button(parent, launcher, theme_name, image_path, bg_color):
 def _apply_theme(launcher, theme_name):
     launcher.selected_theme.set(theme_name)
     if save_theme_preference(theme_name):
-        result = messagebox.askyesno(
-            launcher._t("THEME_CHANGED_TITLE"), 
-            launcher._t("THEME_CHANGED_MSG").format(theme_name=theme_name),
-            icon="question"
-        )
-        if result:
-            _restart_application()
+        try:
+            messagebox.showinfo(
+                launcher._t("THEME_CHANGED_TITLE"),
+                "Theme preference saved. Restart the launcher to apply the change."
+            )
+        except Exception as e:
+            print(f"Error notifying theme change: {e}")
     else:
         messagebox.showerror(launcher._t("ERROR"), launcher._t("THEME_SAVE_ERROR"))
-def _load_theme_preference():
+def _load_theme_preference_legacy():
     return load_saved_theme()
 def _add_microsoft_account(launcher):
     try:
@@ -1181,36 +1167,28 @@ def _get_plugins_config_path():
     config_dir = Path.home() / ".config" / "oranglauncher"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "launcher_plugins.json"
+
 def _load_plugins():
-    path = _get_plugins_config_path()
-    if path.exists():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
     return []
+
 def _save_plugins(plugins):
-    path = _get_plugins_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(plugins, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+    pass
 def _refresh_plugins_runtime(launcher):
+    """Refresh native plugins by reinitializing the plugin system."""
     try:
-        if hasattr(launcher, '_load_plugins'):
-            launcher._load_plugins()
+        launcher._initialize_plugins()
         _refresh_plugins_list(launcher)
-        messagebox.showinfo(launcher._t("PLUGINS_REFRESHED_TITLE"), launcher._t("PLUGINS_REFRESHED_MSG"))
+        messagebox.showinfo("Plugins Refreshed", "Native plugins have been reloaded successfully!")
     except Exception as e:
-        messagebox.showerror(launcher._t("PLUGIN_ERROR_TITLE"), launcher._t("PLUGIN_REFRESH_FAIL").format(e=e))
+        messagebox.showerror("Plugin Error", f"Error refreshing plugins: {e}")
         print(f"[PLUGIN ERROR] Full traceback:\n{traceback.format_exc()}")
 def _refresh_plugins_list(launcher):
     for widget in launcher._plugins_list_frame.winfo_children():
         widget.destroy()
-    plugins = _load_plugins()
+    plugins = []
+    if hasattr(launcher, 'loaded_plugins') and launcher.loaded_plugins:
+        plugins = launcher.loaded_plugins
+    
     if not plugins:
         no_plugin_label = tk.Label(launcher._plugins_list_frame,
                                    text=launcher._t("PLUGINS_NONE"),
@@ -1219,7 +1197,16 @@ def _refresh_plugins_list(launcher):
                                    font=("Segoe UI", 9, "italic"))
         no_plugin_label.pack(anchor="w", pady=8, padx=8)
     else:
-        for i, plugin in enumerate(plugins):
+        for i, plugin_info in enumerate(plugins):
+            if isinstance(plugin_info, dict):
+                plugin_name = plugin_info.get('name', 'Unknown')
+                plugin_type = plugin_info.get('type', 'unknown')
+                plugin_path = plugin_info.get('path', 'N/A')
+            else:
+                plugin_name = str(plugin_info[0]) if isinstance(plugin_info, (tuple, list)) else str(plugin_info)
+                plugin_type = "native"
+                plugin_path = "built-in"
+            
             plugin_container = tk.Frame(launcher._plugins_list_frame, 
                                        bg=launcher._get_theme_color('bg_tertiary'), 
                                        relief="flat",
@@ -1232,65 +1219,45 @@ def _refresh_plugins_list(launcher):
             plugin_frame.pack(fill="x", padx=8, pady=6)
             info_frame = tk.Frame(plugin_frame, bg=launcher._get_theme_color('bg_tertiary'))
             info_frame.pack(side="left", fill="x", expand=True)
-            plugin_name = os.path.basename(plugin['path'])
-            status = launcher._t("PLUGIN_ENABLED_STATUS") if plugin.get('enabled', True) else launcher._t("PLUGIN_DISABLED_STATUS")
+            
             name_label = tk.Label(info_frame,
-                                 text=f"{plugin_name}",
+                                 text=f"{plugin_name} ({plugin_type})",
                                  bg=launcher._get_theme_color('bg_tertiary'),
                                  fg=launcher._get_theme_color('fg_primary'),
                                  font=("Segoe UI", 10, "bold"))
             name_label.pack(anchor="w")
+            
             status_label = tk.Label(info_frame,
-                                   text=status,
+                                   text=f"Type: {plugin_type} | Active",
                                    bg=launcher._get_theme_color('bg_tertiary'),
                                    fg=launcher._get_theme_color('fg_secondary'),
                                    font=("Segoe UI", 8))
             status_label.pack(anchor="w")
-            btn_frame = tk.Frame(plugin_frame, bg=launcher._get_theme_color('bg_tertiary'))
-            btn_frame.pack(side="right")
-            toggle_text = launcher._t("ENABLE") if not plugin.get('enabled', True) else launcher._t("DISABLE")
-            toggle_btn = ttk.Button(btn_frame,
-                                   text=toggle_text,
-                                   style="Secondary.TButton",
-                                   width=8,
-                                   command=lambda idx=i: _toggle_plugin_enabled(launcher, idx))
-            toggle_btn.pack(side="right", padx=(0, 4))
-            remove_btn = ttk.Button(btn_frame,
-                                   text=launcher._t("REMOVE"),
-                                   style="Secondary.TButton",
-                                   width=8,
-                                   command=lambda idx=i: _remove_plugin(launcher, idx))
-            remove_btn.pack(side="right", padx=(0, 4))
 def _add_plugin_file(launcher):
-    file_path = filedialog.askopenfilename(
-        title=launcher._t("PLUGIN_SELECT_FILE"),
-        filetypes=[(launcher._t("PLUGIN_FILES"), "*.py")]
+    plugin_dir = Path.home() / ".local" / "share" / "oranglauncher" / "plugins"
+    info_text = (
+        "Native Plugin Installation:\n\n"
+        "1. Create the plugins directory (if it doesn't exist):\n"
+        f"   {plugin_dir}\n\n"
+        "2. Place your .py plugin files in that directory\n\n"
+        "3. Restart the launcher to load new plugins\n\n"
+        "Plugins are automatically discovered and loaded on startup."
     )
-    if file_path:
-        plugins = _load_plugins()
-        if any(p['path'] == file_path for p in plugins):
-            messagebox.showinfo(launcher._t("PLUGIN_EXISTS_TITLE"), launcher._t("PLUGIN_EXISTS_MSG"))
-            return
-        plugins.append({'path': file_path, 'enabled': True})
-        _save_plugins(plugins)
-        _refresh_plugins_list(launcher)
+    messagebox.showinfo("Add Plugin", info_text)
+
 def _remove_plugin(launcher, idx):
-    plugins = _load_plugins()
-    if 0 <= idx < len(plugins):
-        result = messagebox.askyesno(
-            launcher._t("PLUGIN_REMOVE_TITLE"),
-            launcher._t("PLUGIN_REMOVE_CONFIRM").format(name=os.path.basename(plugins[idx]['path']))
-        )
-        if result:
-            del plugins[idx]
-            _save_plugins(plugins)
-            _refresh_plugins_list(launcher)
+    info_text = (
+        "To remove a native plugin:\n\n"
+        "1. Go to your plugins directory:\n"
+        f"   {Path.home() / '.local' / 'share' / 'oranglauncher' / 'plugins'}\n\n"
+        "2. Delete the plugin's .py file\n\n"
+        "3. Restart the launcher\n\n"
+        "Built-in plugins cannot be removed."
+    )
+    messagebox.showinfo("Remove Plugin", info_text)
+
 def _toggle_plugin_enabled(launcher, idx):
-    plugins = _load_plugins()
-    if 0 <= idx < len(plugins):
-        plugins[idx]['enabled'] = not plugins[idx].get('enabled', True)
-        _save_plugins(plugins)
-        _refresh_plugins_list(launcher)
+    messagebox.showinfo("Plugin Status", "Native plugins are managed by file system.\n\nPlace/remove .py files in the plugins directory to enable/disable.")
 def _configure_modern_styles(style, tm=None):
     if tm is None:
         tm = get_theme_manager()
@@ -1353,7 +1320,7 @@ def _configure_modern_styles(style, tm=None):
              arrowcolor=[('disabled', tm.get_color('fg_disabled'))])
     try:
         if not hasattr(style, '_rounded_scrollbar_assets_loaded'):
-            sb_width = 8  # Narrower, cleaner width
+            sb_width = 8
             sb_radius = sb_width // 2
             def create_pill_image(width, height, color, alpha=255):
                 scale = 2
@@ -1364,7 +1331,7 @@ def _configure_modern_styles(style, tm=None):
                      color_rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5)) 
                      fill_color = color_rgb + (alpha,)
                 else:
-                     fill_color = color  # Assume it's a valid pil color
+                     fill_color = color
                 
                 image = Image.new('RGBA', (w, h), (0, 0, 0, 0))
                 draw = ImageDraw.Draw(image)
@@ -1375,7 +1342,7 @@ def _configure_modern_styles(style, tm=None):
             trough_color = tm.get_color('bg_secondary') 
             if trough_color.startswith('#'):
                 pass
-            thumb_color = "#606060" # Dark Grey / pill color
+            thumb_color = "#606060" 
             active_thumb_color = "#909090"
             base_h = 32 
             
@@ -1409,7 +1376,7 @@ def _configure_modern_styles(style, tm=None):
                    troughcolor=tm.get_color('bg_tertiary'),
                    borderwidth=0,
                    relief="flat",
-                   width=8) # Match image width
+                   width=8)
     
     style.layout("Modern.Horizontal.TScrollbar", [
         ('Horizontal.Scrollbar.trough', {'children': [
@@ -1504,6 +1471,7 @@ def _toggle_discord_rpc(launcher):
         launcher._start_discord_rpc()
     else:
         launcher._stop_discord_rpc()
+        # Vakarux, I removed the section and made it as easteregg
 def _create_audio_section(launcher, parent):
     content = _create_section_frame(parent, launcher._t("MUSIC"))
     launcher.music_btn = ttk.Button(content,
@@ -1555,17 +1523,14 @@ def _create_language_section(parent, launcher):
         selected_display = lang_cb.get()
         selected_code = launcher._lang_code_map.get(selected_display)
         if selected_code and selected_code != launcher.current_locale:
-            _save_language_preference(selected_code)
-            result = messagebox.askyesno(
-                launcher._t("LANGUAGE_CHANGED_TITLE"),
-                launcher._t("LANGUAGE_CHANGED_MSG").format(language=selected_display),
-                icon="question"
-            )
-            if result:
-                _restart_application()
-            else:
-                current_display = lang_names.get(launcher.current_locale, launcher.current_locale)
-                lang_cb.set(current_display)
+            try:
+                _save_language_preference(selected_code)
+                messagebox.showinfo(
+                    launcher._t("LANGUAGE_CHANGED_TITLE"),
+                    "Language preference saved. Restart the launcher to apply the change."
+                )
+            except Exception as e:
+                messagebox.showerror(launcher._t("ERROR"), str(e))
     lang_cb.bind("<<ComboboxSelected>>", on_lang_change)
     warning = tk.Label(content,
                       text=launcher._t("LANGUAGE_RESTART_WARNING"),
@@ -1840,12 +1805,17 @@ def _create_modern_theme_button(parent, launcher, theme_name, description, bg_co
     switch_icon = launcher._load_themed_icon("switch", size=(24, 24))
     
     def _update_selection_indicator(*args):
+        if not indicator_btn.winfo_exists():
+            return
         is_selected = (launcher.selected_theme.get() == theme_name)
         color = launcher._get_theme_color('accent_primary') if is_selected else launcher._get_theme_color('fg_disabled')
         
         icon = launcher._load_themed_icon("switch", size=(24, 24), force_color=color)
-        indicator_btn.config(image=icon)
-        indicator_btn.image = icon    
+        try:
+            indicator_btn.config(image=icon)
+            indicator_btn.image = icon  # type: ignore
+        except Exception:
+            return
     indicator_btn = tk.Button(theme_frame,
                              bg=launcher._get_theme_color('bg_secondary'),
                              bd=0,
@@ -1863,13 +1833,14 @@ def _create_modern_theme_button(parent, launcher, theme_name, description, bg_co
 def _on_theme_select(launcher, theme_name):
     try:
         if save_theme_preference(theme_name):
-            result = messagebox.askyesno(
-                launcher._t("THEME_CHANGED_TITLE"),
-                launcher._t("THEME_CHANGED_MSG").format(theme_name=theme_name),
-                icon="question"
-            )
-            if result:
-                _restart_application()
+            try:
+                launcher.selected_theme.set(theme_name)
+                messagebox.showinfo(
+                    launcher._t("THEME_CHANGED_TITLE"),
+                    "Theme preference saved. Restart the launcher to apply the change."
+                )
+            except Exception as e:
+                print(f"Error notifying theme change: {e}")
         else:
             messagebox.showerror(launcher._t("ERROR"), launcher._t("THEME_SAVE_ERROR"))
     except Exception as e:
@@ -1889,6 +1860,69 @@ def _save_theme_preference(theme_name):
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving theme preference: {e}")
+
+class StreamCapture:
+    def __init__(self, log_file_path, original_stream):
+        self.log_file_path = log_file_path
+        self.original_stream = original_stream
+        self.buffer = deque(maxlen=500)  # Keep last 500 lines
+        self.log_file = None
+        self.try_open_log_file()
+    
+    def try_open_log_file(self):
+        try:
+            Path(self.log_file_path).parent.mkdir(parents=True, exist_ok=True)
+            self.log_file = open(self.log_file_path, 'a', encoding='utf-8')
+        except Exception as e:
+            self.original_stream.write(f"[DEBUG] Failed to open log file: {e}\n")
+    
+    def write(self, message):
+        if not message:
+            return
+        self.buffer.append(message)
+        self.original_stream.write(message)
+        if self.log_file:
+            try:
+                self.log_file.write(message)
+                self.log_file.flush()
+            except Exception:
+                pass
+    
+    def flush(self):
+        self.original_stream.flush()
+        if self.log_file:
+            self.log_file.flush()
+    
+    def close(self):
+        if self.log_file:
+            self.log_file.close()
+    
+    def get_buffer_content(self) -> str:
+        return ''.join(self.buffer)
+        
+def _open_terminal_tailing_file(log_path: Path) -> bool:
+    tail_args = ["tail", "-n", "200", "-f", str(log_path)]
+    terminal_commands = [
+        ("gnome-terminal", ["gnome-terminal", "--"] + tail_args),
+        ("mate-terminal", ["mate-terminal", "--"] + tail_args),
+        ("xfce4-terminal", ["xfce4-terminal", "--"] + tail_args),
+        ("konsole", ["konsole", "-e"] + tail_args),
+        ("xterm", ["xterm", "-e"] + tail_args),
+        ("kitty", ["kitty", "-e"] + tail_args),
+        ("alacritty", ["alacritty", "-e"] + tail_args),
+        ("x-terminal-emulator", ["x-terminal-emulator", "-e"] + tail_args),
+    ]
+
+    for terminal_name, command in terminal_commands:
+        if shutil.which(terminal_name):
+            try:
+                subprocess.Popen(command)
+                return True
+            except Exception as e:
+                print(f"[DEBUG] Failed to launch {terminal_name}: {e}")
+
+    return False
+
 def _load_theme_preference():
     try:
         config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
@@ -1899,14 +1933,36 @@ def _load_theme_preference():
     except Exception as e:
         print(f"Error loading theme preference: {e}")
     return 'Arc'
+
 def _toggle_debug_mode(launcher):
     _save_settings(launcher)
     if launcher.debug_mode_enabled.get():
         print("[DEBUG] Debug mode enabled")
+        # Set up stream capture
+        log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        
+        # Create StreamCapture wrappers
+        if not hasattr(launcher, '_original_stdout'):
+            launcher._original_stdout = sys.stdout
+            launcher._original_stderr = sys.stderr
+        
+        sys.stdout = StreamCapture(str(log_file), launcher._original_stdout)
+        sys.stderr = StreamCapture(str(log_file), launcher._original_stderr)
+        launcher._current_log_file = str(log_file)
+        
+        print(f"[DEBUG] Logging to: {log_file}")
+        
         if hasattr(launcher, '_debug_text_widget'):
             _update_debug_info(launcher)
     else:
         print("[DEBUG] Debug mode disabled")
+        # Restore original streams
+        if hasattr(launcher, '_original_stdout'):
+            sys.stdout = launcher._original_stdout
+            sys.stderr = launcher._original_stderr
+        
     if hasattr(launcher, '_settings_current_content'):
         try:
             for btn in launcher._settings_nav_buttons:
@@ -1916,7 +1972,14 @@ def _toggle_debug_mode(launcher):
         except Exception as e:
             print(f"[DEBUG] Error refreshing debug UI: {e}")
 def _update_debug_info(launcher):
-    if not hasattr(launcher, '_debug_text_widget') or not launcher._debug_text_widget.winfo_exists():
+    if not hasattr(launcher, '_debug_text_widget'):
+        return
+    if launcher._debug_text_widget is None:
+        return
+    try:
+        if not launcher._debug_text_widget.winfo_exists():
+            return
+    except Exception:
         return
     try:
         debug_info = []
@@ -1924,10 +1987,24 @@ def _update_debug_info(launcher):
         debug_info.append(f"Platform: {platform.platform()}")
         debug_info.append(f"Python: {sys.version}")
         debug_info.append(f"Current locale: {launcher.current_locale}")
+        debug_info.append(f"Debug mode: {'ON' if launcher.debug_mode_enabled.get() else 'OFF'}")
+        
+        if launcher.debug_mode_enabled.get() and hasattr(launcher, '_current_log_file'):
+            debug_info.append(f"Log file: {launcher._current_log_file}")
+            debug_info.append("=== CAPTURED OUTPUT (last 30 lines) ===")
+            
+            # Get captured output from StreamCapture
+            if isinstance(sys.stdout, StreamCapture):
+                output = sys.stdout.get_buffer_content()
+                lines = output.split('\n')
+                last_lines = lines[-30:] if len(lines) > 30 else lines
+                debug_info.extend(last_lines)
+        
         launcher._debug_text_widget.config(state='normal')
         launcher._debug_text_widget.delete('1.0', tk.END)
         launcher._debug_text_widget.insert('1.0', '\n'.join(debug_info))
         launcher._debug_text_widget.config(state='disabled')
+        launcher._debug_text_widget.yview(tk.END)  # Scroll to bottom
     except Exception as e:
         print(f"Error updating debug info: {e}")
 
@@ -2035,7 +2112,7 @@ class ModrinthPackImporter:
         mods_dir.mkdir(parents=True, exist_ok=True)
         total_mods = len([f for f in files if f.get("path", "").startswith("mods/")])
         if self.launcher and hasattr(self.launcher, 'status_label'):
-            self.launcher.after(0, lambda: self.launcher.status_label.config(text=f"Importing modpack: 0/{total_mods} mods"))
+            self.launcher.after(0, lambda: self.launcher.status_label.config(text=f"Importing modpack: 0/{total_mods} mods"))  # type: ignore
         downloaded_count = 0
         for i, file_info in enumerate(files, 1):
             file_path = file_info.get("path", "")
@@ -2054,7 +2131,7 @@ class ModrinthPackImporter:
                     continue
                 if self.launcher and hasattr(self.launcher, 'status_label'):
                     n = downloaded_count + 1
-                    self.launcher.after(0, lambda n=n: self.launcher.status_label.config(text=f"Importing modpack: {n}/{total_mods} mods"))
+                    self.launcher.after(0, lambda n=n: self.launcher.status_label.config(text=f"Importing modpack: {n}/{total_mods} mods"))  # type: ignore
                 print(f"[MRPACK] Downloading {filename}...")
                 response = _http_session.get(download_url, stream=True, timeout=30)
                 response.raise_for_status()
@@ -2129,6 +2206,15 @@ class ModrinthPackImporter:
                 loader_compatible = mod_loader in [l.lower() for l in loaders]
                 if mc_compatible and loader_compatible:
                     compatible_versions.append(version)
+            
+            if not compatible_versions:
+                print(f"[MRPACK] No exact match for {mod_name}, trying to find compatible version with any recent version for {mod_loader}...")
+                for version in all_versions:
+                    loaders = version.get("loaders", [])
+                    loader_compatible = mod_loader in [l.lower() for l in loaders]
+                    if loader_compatible:
+                        compatible_versions.append(version)
+            
             if not compatible_versions:
                 print(f"[MRPACK] No compatible version found for {mod_name}")
                 return False
@@ -2231,7 +2317,7 @@ class CurseForgePackImporter:
             loader_version = None
             for ml in mc_info.get("modLoaders", []):
                 if ml.get("primary"):
-                    loader_id = ml.get("id", "")  # e.g. "forge-47.2.0"
+                    loader_id = ml.get("id", "") 
                     break
             if loader_id.startswith("forge-"):
                 loader_name = "forge"
@@ -3162,7 +3248,7 @@ class ModdingTab:
                 if hasattr(self.parent, 'progress'):
                     self.parent.progress.set(0)
             if hasattr(self.parent, 'status_label'):
-                self.parent.status_label.config(text=old_status or "Ready")
+                self.parent.status_label.config(text=old_status or "Ready")  # type: ignore
         def import_thread():
             try:
                 launcher_obj = self.parent if hasattr(self.parent, 'status_label') else None
@@ -3235,7 +3321,7 @@ class ModdingTab:
             if hasattr(self.parent, '_submit_progress_update'):
                 self.parent._submit_progress_update(percent, message)
             elif hasattr(self.parent, 'status_label'):
-                self.parent.status_label.config(text=message)
+                self.parent.status_label.config(text=message)  # type: ignore
         except Exception:
             pass
 
@@ -3309,9 +3395,9 @@ class ModdingTab:
             try:
                 jars = [p for p in mods_dir.iterdir() if p.suffix.lower() == '.jar' and p.is_file()]
                 candidates = {}
-                downgrade_candidates = {}  # candidates skipped due to downgrade protection
-                results = {}  # accumulate per-jar status (skips/errors) during scan
-                incompatible_installed = []  # mods that appear incompatible with instance MC version
+                downgrade_candidates = {}  
+                results = {} 
+                incompatible_installed = [] 
                 total = len(jars)
                 for idx, jar in enumerate(sorted(jars), start=1):
                     if cancel_event.is_set():
@@ -3474,7 +3560,7 @@ class ModdingTab:
                                             try:
                                                 icon_bytes = _cached_image_get(icon_url)
                                                 img = Image.open(io.BytesIO(icon_bytes)).convert('RGBA')
-                                                img = img.resize((32,32), Image.LANCZOS)
+                                                img = img.resize((32,32), Image.Resampling.LANCZOS)
                                                 photo = ImageTk.PhotoImage(img)
                                                 images[name] = photo
                                                 img_label.config(image=photo)
@@ -3656,7 +3742,6 @@ def build_modding_tab(launcher, notebook, selected_mod_loader):
                  style="Header.TLabel").pack(pady=20)
         ttk.Label(content_frame, text=launcher._t("MODS_MODULE_MISSING"),
                  style="News.TLabel").pack(pady=10)
-# instance management
 class InstanceManager:
     def __init__(self):
         self.instances: Dict[str, MinecraftInstance] = {}
@@ -3725,7 +3810,7 @@ class InstanceManager:
                 except Exception:
                     pass
             if not latest_release:
-                latest_release = "26.1"
+                latest_release = "26.1.2"
             default_instance = MinecraftInstance(
                 name="Latest Release",
                 version=latest_release,
@@ -3738,7 +3823,7 @@ class InstanceManager:
             print(f"Error creating default instance: {e}")
             default_instance = MinecraftInstance(
                 name="Latest Release",
-                version="26.1",
+                version="26.1.2",
                 mod_loader="vanilla",
                 ram="4G"
             )
@@ -3825,7 +3910,7 @@ def get_instance_manager() -> InstanceManager:
     return _instance_manager
 
 class MinecraftVersion:
-    def __init__(self, version_id: str, version_type: str, release_time: str, url: str = None):
+    def __init__(self, version_id: str, version_type: str, release_time: str, url: Optional[str] = None):
         self.id = version_id
         self.type = version_type
         self.release_time = datetime.fromisoformat(release_time.replace('Z', '+00:00'))
@@ -3933,11 +4018,11 @@ class MojangVersionManager:
                 self.fetch_versions_async()
         return self.versions
     def filter_versions(self, 
-                       version_types: List[str] = None,
-                       search_query: str = None,
-                       limit: int = None,
-                       after_date: datetime = None,
-                       before_date: datetime = None) -> List[MinecraftVersion]:
+                       version_types: Optional[List[str]] = None,
+                       search_query: Optional[str] = None,
+                       limit: Optional[int] = None,
+                       after_date: Optional[datetime] = None,
+                       before_date: Optional[datetime] = None) -> List[MinecraftVersion]:
         versions = self.get_versions()
         filtered = versions
         if version_types:
@@ -3960,7 +4045,7 @@ class MojangVersionManager:
         return snapshots[0] if snapshots else None
 
 class GameProfile:
-    def __init__(self, profile_id=None, name="New Profile", version="26.1", 
+    def __init__(self, profile_id=None, name="New Profile", version="26.1.2", 
                  mod_loader="None", game_dir=None, java_args=None, 
                  resolution_width=None, resolution_height=None, 
                  ram="2G", icon="default", created=None, last_used=None,
@@ -4052,7 +4137,7 @@ class GameProfileManager:
         except Exception as e:
             print(f"Error saving game profiles: {e}")
     def create_default_profile(self):
-        latest_version = "26.1"
+        latest_version = "26.1.2"
         try:
             latest = self.version_manager.get_latest_release()
             if latest:
@@ -4068,7 +4153,7 @@ class GameProfileManager:
         self.profiles[default_profile.id] = default_profile
         self.selected_profile_id = default_profile.id
         self.save_profiles()
-    def create_profile(self, name=None, version="26.1", mod_loader="None"):
+    def create_profile(self, name=None, version="26.1.2", mod_loader="None"):
         if name is None:
             counter = 1
             while f"Profile {counter}" in [p.name for p in self.profiles.values()]:
@@ -4284,7 +4369,7 @@ def set_selected_profile(profile_name):
     if profile:
         return manager.set_selected_profile(profile.id)
     return False
-def create_profile(name=None, version="26.1", mod_loader="None"):
+def create_profile(name=None, version="26.1.2", mod_loader="None"):
     return get_game_profile_manager().create_profile(name, version, mod_loader)
 def delete_profile_by_name(name):
     manager = get_game_profile_manager()
@@ -4332,10 +4417,7 @@ def register_mod_change_callback(callback):
     get_game_profile_manager().register_mod_change_callback(callback)
 def unregister_mod_change_callback(callback):
     get_game_profile_manager().unregister_mod_change_callback(callback)
-
-# java runtime detection and auto-download
 JAVA_RUNTIMES_DIR = Path.home() / ".config" / "oranglauncher" / "java_runtimes"
-
 def _mc_version_tuple(version_str: str):
     try:
         clean = version_str.strip().lstrip("v").split("-")[0]
@@ -4544,7 +4626,7 @@ class GameProfilesTab:
         self.editing_instance_id = None
         self.icons = {}
         self.profile_cards = {}
-        self._card_icon_cache = {}  # instance_id -> PhotoImage (keep-alive + fast reuse)
+        self._card_icon_cache = {}  
         self.current_mode = "list"
         self.version_values = []
         self.custom_icon_path = None
@@ -4723,8 +4805,11 @@ class GameProfilesTab:
 
     def _create_profile_card(self, instance):
         frame = tk.Frame(self.cards_inner, bg=self._get_card_bg(), padx=16, pady=12)
-        frame.pack(fill='x', expand=True, padx=8, pady=6)
+        frame.pack(fill='x', expand=False, padx=8, pady=6)
+        frame.grid_columnconfigure(0, weight=0, minsize=64)
         frame.grid_columnconfigure(1, weight=1)
+        frame.grid_columnconfigure(2, weight=0, minsize=60)
+        frame.grid_rowconfigure(0, weight=0)
         def enter(_):
             pass
         def leave(_):
@@ -4760,7 +4845,7 @@ class GameProfilesTab:
         icon_label = tk.Label(frame, bg=self._get_card_bg())
         if icon:
             icon_label.configure(image=icon)
-            icon_label.image = icon
+            icon_label.image = icon  # type: ignore
         icon_label.grid(row=0, column=0, sticky='nw', padx=(0, 12))
         info_frame = tk.Frame(frame, bg=self._get_card_bg())
         info_frame.grid(row=0, column=1, sticky='nsew')
@@ -4799,7 +4884,7 @@ class GameProfilesTab:
             cursor="hand2",
             relief="flat"
         )
-        menu_btn.image = buttons_icon
+        menu_btn.image = buttons_icon  # type: ignore
         menu_btn.grid(row=0, column=0, sticky='ew', pady=2)
 
         for widget in (frame, icon_label, info_frame, name_lbl, subtitle, actions):
@@ -4854,7 +4939,7 @@ class GameProfilesTab:
                 cursor="hand2",
                 command=lambda: [command(), close_popup()]
             )
-            btn.image = icon
+            btn.image = icon  # type: ignore
             btn.pack(fill="x")
             return btn
 
@@ -4917,32 +5002,37 @@ class GameProfilesTab:
                 getattr(inst, 'play_time', 0) or 0, icon_mtime)
 
     def _refresh_profiles_list(self):
-        instances = sorted(self.instance_manager.instances.values(), key=lambda inst: inst.name.lower())
-        current_ids = {inst.instance_id for inst in instances}
+        try:
+            instances = sorted(self.instance_manager.instances.values(), key=lambda inst: inst.name.lower())
+            current_ids = {inst.instance_id for inst in instances}
 
-        new_fingerprints = {inst.instance_id: self._instance_fingerprint(inst) for inst in instances}
-        old_fingerprints = getattr(self, '_profile_fingerprints', {})
+            new_fingerprints = {inst.instance_id: self._instance_fingerprint(inst) for inst in instances}
+            old_fingerprints = getattr(self, '_profile_fingerprints', {})
 
-        if (new_fingerprints == old_fingerprints
-                and list(new_fingerprints.keys()) == list(old_fingerprints.keys())):
-            return
-        self._profile_fingerprints = new_fingerprints
+            if (new_fingerprints == old_fingerprints
+                    and list(new_fingerprints.keys()) == list(old_fingerprints.keys())
+                    and self.profile_cards):
+                return
+            self._profile_fingerprints = new_fingerprints
 
-        for frame in self.cards_inner.winfo_children():
-            frame.destroy()
-        self.profile_cards.clear()
-        stale = [k for k in self._card_icon_cache if k[0] not in current_ids]
-        for k in stale:
-            del self._card_icon_cache[k]
-        if not instances:
-            tk.Label(self.cards_inner, text=self.parent._t("GAME_PROFILES_NO_PROFILES"), fg=self.theme_manager.get_color('fg_tertiary'), bg=self._get_card_bg(), font=("Segoe UI", 10)).pack(anchor="center", pady=40)
-            self.selected_instance_id = None
-            return
-        for inst in instances:
-            self._create_profile_card(inst)
-        if self.selected_instance_id not in self.profile_cards and instances:
-            self.selected_instance_id = instances[0].instance_id
-        self._highlight_selection()
+            for frame in self.cards_inner.winfo_children():
+                frame.destroy()
+            self.profile_cards.clear()
+            stale = [k for k in self._card_icon_cache if k[0] not in current_ids]
+            for k in stale:
+                del self._card_icon_cache[k]
+            if not instances:
+                tk.Label(self.cards_inner, text=self.parent._t("GAME_PROFILES_NO_PROFILES"), fg=self.theme_manager.get_color('fg_tertiary'), bg=self._get_card_bg(), font=("Segoe UI", 10)).pack(anchor="center", pady=40)
+                self.selected_instance_id = None
+                return
+            for inst in instances:
+                self._create_profile_card(inst)
+            if self.selected_instance_id not in self.profile_cards and instances:
+                self.selected_instance_id = instances[0].instance_id
+            self._highlight_selection()
+        except Exception as e:
+            print(f"Error refreshing profiles list: {e}")
+            traceback.print_exc()
     def _select_and_close(self, instance_id):
         self._select_card(instance_id)
         try:
@@ -4957,6 +5047,11 @@ class GameProfilesTab:
     def _select_card(self, instance_id):
         self.selected_instance_id = instance_id
         self._highlight_selection()
+        try:
+            if hasattr(self.parent, '_update_profile_display'):
+                self.parent._update_profile_display()
+        except Exception as e:
+            pass
     def _update_child_backgrounds(self, widget, color):
         for child in widget.winfo_children():
             try:
@@ -5020,7 +5115,7 @@ class GameProfilesTab:
                                          bg=self.theme_manager.get_color('bg_tertiary'),
                                          fg=self.theme_manager.get_color('fg_primary'),
                                          font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        self.form_submit_btn.image = create_icon
+        self.form_submit_btn.image = create_icon  # type: ignore
         self.form_submit_btn.pack(side="left", padx=6)
         
         discard_icon = self.parent._load_themed_icon("trash", size=(16, 16))
@@ -5032,7 +5127,7 @@ class GameProfilesTab:
                   bg=self.theme_manager.get_color('bg_tertiary'),
                   fg=self.theme_manager.get_color('fg_primary'),
                   font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        discard_btn.image = discard_icon
+        discard_btn.image = discard_icon  # type: ignore
         discard_btn.pack(side="left", padx=6)
     def _build_settings_view(self):
         self.settings_view = tk.Frame(self.container, bg=self._get_card_bg())
@@ -5099,7 +5194,7 @@ class GameProfilesTab:
                                    fg=self.theme_manager.get_color('fg_primary'),
                                    font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
                                    command=self._browse_java)
-        browse_java_btn.image = folder_icon
+        browse_java_btn.image = folder_icon  # type: ignore
         browse_java_btn.pack(side="left", padx=(6, 0))
 
         tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_PATH"), width=18, anchor="e",
@@ -5114,7 +5209,7 @@ class GameProfilesTab:
                              fg=self.theme_manager.get_color('fg_primary'),
                              font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
                              command=self._open_instance_folder)
-        open_btn.image = folder_icon
+        open_btn.image = folder_icon  # type: ignore
         open_btn.pack(side="left", padx=(6, 0))
 
         tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_ICON"), width=18, anchor="e",
@@ -5129,7 +5224,7 @@ class GameProfilesTab:
                                     fg=self.theme_manager.get_color('fg_primary'),
                                     font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
                                     command=self._browse_icon)
-        browse_icon_btn.image = folder_icon
+        browse_icon_btn.image = folder_icon  # type: ignore
         browse_icon_btn.pack(side="left", padx=(6, 0))
         
         tk.Label(settings_container, text="Env Vars", width=18, anchor="e",
@@ -5165,7 +5260,7 @@ class GameProfilesTab:
                   bg=self.theme_manager.get_color('bg_tertiary'),
                   fg=self.theme_manager.get_color('fg_primary'),
                   font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        save_btn.image = save_icon
+        save_btn.image = save_icon  # type: ignore
         save_btn.pack(side="left", padx=6)
         
         discard_icon = self.parent._load_themed_icon("trash", size=(16, 16))
@@ -5175,14 +5270,14 @@ class GameProfilesTab:
                   bg=self.theme_manager.get_color('bg_tertiary'),
                   fg=self.theme_manager.get_color('fg_primary'),
                   font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        discard_btn.image = discard_icon
+        discard_btn.image = discard_icon  # type: ignore
         discard_btn.pack(side="left", padx=6)
     def _on_loader_change(self):
         loader = self.loader_var.get().lower()
         icon_key = "vanilla" if loader == "vanilla" else "modded"
         icon = self.icons.get(icon_key)
         self.form_icon_label.configure(image=icon)
-        self.form_icon_label.image = icon
+        self.form_icon_label.image = icon  # type: ignore
         self.loader_version_combo.configure(state="disabled" if loader == "vanilla" else "readonly")
         if loader == "vanilla":
             self.loader_version_var.set("N/A")
@@ -5299,7 +5394,7 @@ class GameProfilesTab:
             icon = self.icons.get(icon_key)
         if icon:
             self.settings_icon_label.configure(image=icon)
-            self.settings_icon_label.image = icon
+            self.settings_icon_label.image = icon  # type: ignore
         self.list_view.pack_forget()
         self.form_view.pack_forget()
         self.settings_view.pack(fill="both", expand=True)
@@ -5912,7 +6007,7 @@ def save_theme_preference(theme_name):
         print(f"[ThemeManager] Error saving theme: {e}")
         return False
 
-# plugin system
+# plugin system (i hate it kinda with hooking - adasjusk)
 class PluginSecurityError(Exception):
     pass
 
@@ -6092,16 +6187,10 @@ class PluginSandbox:
             (r'\bos\.exec', "calls os.exec*() (process execution)"),
             (r'\bos\.spawn', "calls os.spawn*() (process execution)"),
             (r'\bos\.startfile\s*\(', "calls os.startfile() (file execution)"),
-            (r'["\']cmd\s*/[ckCK]', "contains cmd /c or cmd /k (Windows shell)"),
             (r'["\']powershell', "contains powershell command"),
             (r'["\']pwsh', "contains pwsh command"),
             (r'["\']bash\s+-c', "contains bash -c command"),
             (r'["\']sh\s+-c', "contains sh -c command"),
-            (r'\.hta["\'\s]', "references .hta file (HTML Application)"),
-            (r'\.bat["\'\s]', "references .bat file (batch script)"),
-            (r'\.cmd["\'\s]', "references .cmd file (command script)"),
-            (r'\.ps1["\'\s]', "references .ps1 file (PowerShell script)"),
-            (r'\.vbs["\'\s]', "references .vbs file (VBScript)"),
             (r'\bexec\s*\(', "calls exec() (code execution)"),
             (r'\beval\s*\(', "calls eval() (code execution)"),
             (r'\bcompile\s*\(', "calls compile() (code compilation)"),
@@ -7049,7 +7138,7 @@ class OrangLibTab:
 
         title = tk.Label(
             header,
-            text="OrangLib Modpacks",
+            text=self.parent._t("ORANGLIB_MODPACKS_TITLE"),
             bg=self.theme_manager.get_color('bg_primary'),
             fg=self.theme_manager.get_color('fg_primary'),
             font=("Segoe UI", 14, "bold")
@@ -7058,7 +7147,7 @@ class OrangLibTab:
 
         refresh_btn = tk.Button(
             header,
-            text="Refresh",
+            text=self.parent._t("ORANGLIB_REFRESH"),
             command=self.refresh_modpacks,
             bg=self.theme_manager.get_color('bg_tertiary'),
             fg=self.theme_manager.get_color('fg_primary'),
@@ -7071,7 +7160,7 @@ class OrangLibTab:
         )
         refresh_btn.pack(side="right")
 
-        body = tk.Frame(container, bg=self.theme_manager.get_color('bg_secondary'))
+        body = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
         body.pack(fill="both", expand=True)
 
         left_panel = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
@@ -7082,7 +7171,7 @@ class OrangLibTab:
 
         tk.Label(
             left_header,
-            text="Available Modpacks",
+            text=self.parent._t("ORANGLIB_AVAILABLE_MODPACKS"),
             bg=self.theme_manager.get_color('bg_primary'),
             fg=self.theme_manager.get_color('fg_primary'),
             font=("Segoe UI", 10, "bold")
@@ -7098,6 +7187,18 @@ class OrangLibTab:
             font=("Segoe UI", 10)
         )
         search_entry.pack(fill="x", padx=10, pady=(0, 8), ipady=6)
+        search_entry.insert(0, self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"))
+        search_entry.config(fg=self.theme_manager.get_color('fg_secondary'))
+        def _on_search_focus_in(e):
+            if search_entry.get() == self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"):
+                search_entry.delete(0, tk.END)
+                search_entry.config(fg=self.theme_manager.get_color('fg_primary'))
+        def _on_search_focus_out(e):
+            if not search_entry.get():
+                search_entry.insert(0, self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"))
+                search_entry.config(fg=self.theme_manager.get_color('fg_secondary'))
+        search_entry.bind("<FocusIn>", _on_search_focus_in)
+        search_entry.bind("<FocusOut>", _on_search_focus_out)
         self.search_var.trace_add('write', lambda *_: self._render_modpacks())
 
         modpacks_list_wrap = tk.Frame(left_panel, bg=self.theme_manager.get_color('bg_primary'))
@@ -7125,7 +7226,7 @@ class OrangLibTab:
 
         tk.Label(
             right_panel,
-            text="Versions",
+            text=self.parent._t("ORANGLIB_VERSIONS"),
             bg=self.theme_manager.get_color('bg_primary'),
             fg=self.theme_manager.get_color('fg_primary'),
             font=("Segoe UI", 10, "bold")
@@ -7155,7 +7256,7 @@ class OrangLibTab:
 
         self.download_btn = tk.Button(
             action_bar,
-            text="Download / Install",
+            text=self.parent._t("ORANGLIB_DOWNLOAD_INSTALL"),
             command=self.download_selected,
             bg=self.theme_manager.get_color('accent_primary'),
             fg="#ffffff",
@@ -7171,7 +7272,7 @@ class OrangLibTab:
 
         open_desktop_btn = tk.Button(
             action_bar,
-            text="Open Desktop",
+            text=self.parent._t("ORANGLIB_OPEN_DESKTOP"),
             command=self.open_desktop,
             bg=self.theme_manager.get_color('bg_tertiary'),
             fg=self.theme_manager.get_color('fg_primary'),
@@ -7186,7 +7287,7 @@ class OrangLibTab:
 
         self.info_label = tk.Label(
             right_panel,
-            text="Select a modpack and version.",
+            text=self.parent._t("ORANGLIB_READY_MODPACK"),
             bg=self.theme_manager.get_color('bg_primary'),
             fg=self.theme_manager.get_color('fg_secondary'),
             font=("Segoe UI", 9),
@@ -7197,7 +7298,7 @@ class OrangLibTab:
 
         self.status_label = tk.Label(
             container,
-            text="Ready",
+            text=self.parent._t("ORANGLIB_READY_MODPACK"),
             bg=self.theme_manager.get_color('bg_primary'),
             fg=self.theme_manager.get_color('fg_secondary'),
             font=("Segoe UI", 9),
@@ -7242,8 +7343,8 @@ class OrangLibTab:
         self._render_modpacks()
         self._render_versions()
         self.download_btn.config(state="disabled")
-        self.info_label.config(text=f"Loaded {len(self.modpacks)} modpacks from OrangLib.")
-        self._set_status("Ready")
+        self.info_label.config(text=self.parent._t("ORANGLIB_LOADED_COUNT").format(count=len(self.modpacks)))
+        self._set_status(self.parent._t("ORANGLIB_READY_MODPACK"))
 
     def _render_modpacks(self):
         query = self.search_var.get().strip().lower()
@@ -7456,7 +7557,7 @@ def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
         host_bytes = host.encode('utf-8')
         handshake_data = (
             b'\x00'                          # packet id = 0
-            + _write_varint(0x2F)            # protocol version (47, any works for status)
+            + _write_varint(0x2F)            # protocol version 47, any works for status
             + _write_varint(len(host_bytes)) # string length prefix
             + host_bytes                     # server address
             + struct.pack('>H', port)        # port (big-endian unsigned short)
@@ -7466,8 +7567,8 @@ def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
 
         sock.sendall(b'\x01\x00')
 
-        read_varint_from_file(f)          # packet length (ignored)
-        read_varint_from_file(f)          # packet id (0x00)
+        read_varint_from_file(f)          # packet length ignored
+        read_varint_from_file(f)          # packet id is 0x00
         str_len = read_varint_from_file(f)
 
         data = f.read(str_len)
@@ -7664,7 +7765,7 @@ class ServersTab:
         self._server_icon_labels: list = []
         self._server_motd_labels: list = []
         self._server_rows: list = []
-        self._server_favicon_refs: dict = {}  # idx -> PhotoImage (replaces on update)           
+        self._server_favicon_refs: dict = {}  # idx -> PhotoImage replaces on update           
 
     def build_tab(self, notebook):
         tab_frame = ttk.Frame(notebook)
@@ -7752,8 +7853,7 @@ class ServersTab:
         self.servers_inner = tk.Frame(self.servers_canvas, bg=self.theme_manager.get_color('bg_input'))
         self.servers_canvas.create_window((0, 0), window=self.servers_inner, anchor="nw")
         self.servers_inner.bind("<Configure>", lambda e: self.servers_canvas.configure(scrollregion=self.servers_canvas.bbox("all")))
-        self.server_icon_images = []  # Keep references
-
+        self.server_icon_images = [] 
         action_bar = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
         action_bar.pack(fill="x", padx=10, pady=(0, 10))
 
@@ -7941,7 +8041,7 @@ class ServersTab:
     @staticmethod
     def _format_latency(ms):
         if ms < 100:
-            n, color = 5, "#51cf66"
+            n, color = 5, "#249737"
         elif ms < 200:
             n, color = 4, "#94d82d"
         elif ms < 400:
@@ -7949,7 +8049,7 @@ class ServersTab:
         elif ms < 800:
             n, color = 2, "#ff922b"
         else:
-            n, color = 1, "#ff6b6b"
+            n, color = 1, "#d51414" # next time use better colors.. previous were blanked like whitish
         return f"{ms}ms", color, n
 
     @staticmethod
@@ -8145,7 +8245,7 @@ class ServersTab:
                         icon_bytes = base64.b64decode(favicon.split(',')[-1])
                         img = Image.open(io.BytesIO(icon_bytes)).resize((64, 64), Image.Resampling.LANCZOS)
                         photo = ImageTk.PhotoImage(img)
-                        self._server_favicon_refs[idx] = photo  # replace old ref
+                        self._server_favicon_refs[idx] = photo
                         icon_lbl.config(image=photo)
                     except Exception:
                         pass
@@ -8214,15 +8314,15 @@ def build_launcher_log_tab(launcher, notebook):
                             relief="flat", font=("Consolas", 9), bd=0,
                             highlightthickness=0)
     search_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
-    search_entry.insert(0, "Type to filter logs...")
+    search_entry.insert(0, launcher._t("LOGS_SEARCH_PLACEHOLDER"))
     search_entry.config(fg=fg_sec)
     def _on_search_focus_in(e):
-        if search_entry.get() == "Type to filter logs...":
+        if search_entry.get() == launcher._t("LOGS_SEARCH_PLACEHOLDER"):
             search_entry.delete(0, tk.END)
             search_entry.config(fg=fg)
     def _on_search_focus_out(e):
         if not search_entry.get():
-            search_entry.insert(0, "Type to filter logs...")
+            search_entry.insert(0, launcher._t("LOGS_SEARCH_PLACEHOLDER"))
             search_entry.config(fg=fg_sec)
     search_entry.bind("<FocusIn>",  _on_search_focus_in)
     search_entry.bind("<FocusOut>", _on_search_focus_out)
@@ -8237,23 +8337,23 @@ def build_launcher_log_tab(launcher, notebook):
     launcher._log_search_var.trace_add("write", _debounced_filter)
 
     FILTERS = [
-        ("Error",   "error",   "#ff6b6b"),
-        ("Warn",    "warning", "#ffc107"),
-        ("Info",    "info",    "#74c0fc"),
-        ("Success", "success", "#51cf66"),
-        ("Other",   None,      fg_sec),
+        (launcher._t("LOGS_FILTER_ERROR"),   "error",   "#f20000"),
+        (launcher._t("LOGS_FILTER_WARN"),    "warning", "#ffc107"),
+        (launcher._t("LOGS_FILTER_INFO"),    "info",    "#74c0fc"),
+        (launcher._t("LOGS_FILTER_SUCCESS"), "success", "#3bc652"),
+        (launcher._t("LOGS_FILTER_OTHER"),   None,      fg_sec),
     ]
     launcher._log_filter_vars = {}
 
     def _export_log():
         if not getattr(launcher, '_log_buffer', None):
-            messagebox.showinfo("Export Log", "No log entries to export.")
+            messagebox.showinfo(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_NO_ENTRIES"))
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
             initialfile="launcher_log.txt",
-            title="Save Log"
+            title=launcher._t("LOGS_EXPORT_TITLE")
         )
         if not path:
             return
@@ -8261,11 +8361,11 @@ def build_launcher_log_tab(launcher, notebook):
             with open(path, "w", encoding="utf-8") as f:
                 for msg, _ in launcher._log_buffer:
                     f.write(msg + "\n")
-            messagebox.showinfo("Export Log", f"Log saved to:\n{path}")
+            messagebox.showinfo(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_EXPORT_SUCCESS") + f"\n{path}")
         except Exception as e:
-            messagebox.showerror("Export Log", f"Failed to save log:\n{e}")
+            messagebox.showerror(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_EXPORT_FAIL") + f"\n{e}")
 
-    save_btn = tk.Button(toolbar, text="Save Log", command=_export_log,
+    save_btn = tk.Button(toolbar, text=launcher._t("LOGS_SAVE_BTN"), command=_export_log,
                          bg=bg_input, fg=fg, font=("Segoe UI", 9),
                          relief="flat", bd=0, padx=10, pady=4,
                          cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
@@ -8314,12 +8414,12 @@ def build_launcher_log_tab(launcher, notebook):
     launcher.log_text.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
 
-    launcher.log_text.tag_configure("error",   foreground="#ff6b6b")
+    launcher.log_text.tag_configure("error",   foreground="#ff0000")
     launcher.log_text.tag_configure("warning", foreground="#ffc107")
     launcher.log_text.tag_configure("success", foreground="#51cf66")
     launcher.log_text.tag_configure("info",    foreground="#74c0fc")
 
-    launcher._log_buffer = deque(maxlen=2000)  # (message, filter_tag) — bounded to avoid memory growth
+    launcher._log_buffer = deque(maxlen=2000)
     launcher._ansi_tags_configured = set()
 
     _ANSI_COLORS = {
@@ -8429,7 +8529,7 @@ class DiscordRPCManager:
         self.thread.start()
     async def _runner(self):
         try:
-            from pypresence import AioPresence
+            from pypresence.presence import AioPresence
         except Exception:
             return
         try:
@@ -8527,7 +8627,11 @@ def build_tab(launcher, notebook):
         launcher.log_text.insert("1.0", launcher._t("NO_LOGS"))
     launcher.log_text.config(state="disabled")
 def _has_logs():
-    return False
+    log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
+    if log_dir.exists() and any(log_dir.glob("launcher_*.log")):
+        return True
+    spawn_log = Path(tempfile.gettempdir()) / "OrangLauncher_spawn.log"
+    return spawn_log.exists()
 try:
     from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import hashes
@@ -8549,17 +8653,18 @@ def _get_machine_key():
         except:
             machine_id = str(Path.home())
     salt = f"oranglauncher-{_TOKEN_ENCRYPTION_VERSION}-{platform.system()}-{machine_id}".encode()
-    
-    if ENCRYPTION_AVAILABLE:
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=150000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
-        return key
-    return None
+
+    if not ENCRYPTION_AVAILABLE:
+        return None
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=150000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
+
 def _get_cipher():
     if not ENCRYPTION_AVAILABLE:
         return None
@@ -9269,18 +9374,33 @@ class MinecraftLauncher(tk.Tk):
                 except Exception:
                     pass
 
-        if hasattr(self, 'music_btn'):
-            self.music_btn.config(text=self._t('PLAY_MUSIC'))
-        if hasattr(self, 'profile_cb'):
+        if hasattr(self, 'music_btn') and self.music_btn is not None:
+            try:
+                self.music_btn.config(text=self._t('PLAY_MUSIC'))
+            except Exception:
+                pass
+        if hasattr(self, 'profile_cb') and self.profile_cb is not None:
             pass
-        if hasattr(self, 'status_label'):
-            self.status_label.config(text=self._t('WELCOME'))
-        if hasattr(self, 'profile_label'):
-            self.profile_label.config(text=self._t('PROFILE'))
-        if hasattr(self, 'new_profile_btn'):
-            self.new_profile_btn.config(text=self._t('NEW_PROFILE'))
-        if hasattr(self, 'version_title_label'):
-            self.version_title_label.config(text=self._t('GAME_PROFILES'))
+        if hasattr(self, 'status_label') and self.status_label is not None:
+            try:
+                self.status_label.config(text=self._t('WELCOME'))
+            except Exception:
+                pass
+        if hasattr(self, 'profile_label') and self.profile_label is not None:
+            try:
+                self.profile_label.config(text=self._t('PROFILE'))
+            except Exception:
+                pass
+        if hasattr(self, 'new_profile_btn') and self.new_profile_btn is not None:
+            try:
+                self.new_profile_btn.config(text=self._t('NEW_PROFILE'))
+            except Exception:
+                pass
+        if hasattr(self, 'version_title_label') and self.version_title_label is not None:
+            try:
+                self.version_title_label.config(text=self._t('GAME_PROFILES'))
+            except Exception:
+                pass
         if hasattr(self, 'notebook'):
             for i in range(self.notebook.index('end')):
                 tab_id = self.notebook.tabs()[i]
@@ -9350,6 +9470,71 @@ class MinecraftLauncher(tk.Tk):
                 self._icon_photo = photo   
         except Exception as e:
             print(f"Could not set window icon: {e}")
+    
+    def _initialize_plugins(self):
+        try:
+            from pathlib import Path
+            import importlib.util
+            #
+            # Time wasted here: 5 h now
+            # add more if you encounter issues with loading of plugins
+            #
+            #
+            builtin_plugin_dir = Path(__file__).parent / "oranglauncher" / "plugin"
+            launcher_root = Path.home() / ".local" / "share" / "oranglauncher"
+            user_plugin_dir = launcher_root / "plugins"
+            self.loaded_plugins = []
+            if builtin_plugin_dir.exists():
+                for plugin_path in builtin_plugin_dir.glob("*.py"):
+                    if plugin_path.name.startswith("_"):
+                        continue
+                    try:
+                        spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
+                        if spec and spec.loader:
+                            module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(module)
+                            if hasattr(module, 'init_plugin'):
+                                module.init_plugin(self)
+                                plugin_info = {
+                                    'name': plugin_path.stem,
+                                    'type': 'builtin',
+                                    'module': module,
+                                    'path': str(plugin_path)
+                                }
+                                self.loaded_plugins.append(plugin_info)
+                                print(f"[Plugins] Loaded built-in plugin: {plugin_path.stem}")
+                    except Exception as e:
+                        print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
+                        traceback.print_exc()
+            user_plugin_dir.mkdir(parents=True, exist_ok=True)
+            
+            for plugin_path in user_plugin_dir.glob("*.py"):
+                if plugin_path.name.startswith("_"):
+                    continue
+                try:
+                    spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+                        if hasattr(module, 'init_plugin'):
+                            module.init_plugin(self)
+                            plugin_info = {
+                                'name': plugin_path.stem,
+                                'type': 'user',
+                                'module': module,
+                                'path': str(plugin_path)
+                            }
+                            self.loaded_plugins.append(plugin_info)
+                            print(f"[Plugins] Loaded user plugin: {plugin_path.stem}")
+                except Exception as e:
+                    print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
+                    traceback.print_exc()
+            print(f"[Plugins] Loaded {len(self.loaded_plugins)} plugin(s) total")
+            for plugin in self.loaded_plugins:
+                print(f"  - {plugin['name']} ({plugin['type']})")
+        except Exception as e:
+            print(f"[Plugins] Error initializing plugin system: {e}")
+            traceback.print_exc()
     def _start_discord_rpc(self):
         if not Presence:
             print("[DEBUG] pypresence not installed, Discord RPC disabled")
@@ -9425,9 +9610,8 @@ class MinecraftLauncher(tk.Tk):
             pass
         self.game_profile_manager = get_game_profile_manager()
         self.instance_manager = get_instance_manager()
-        self.icon_cache = {} # (name, size, color_theme) -> ImageTk.PhotoImage
-        self.icons = {} # Store keep-alive references
-
+        self.icon_cache = {}
+        self.icons = {}
         self.selected_game_profile = tk.StringVar()
         register_mod_change_callback(self._on_game_profile_changed)
         self.theme_manager = get_theme_manager()
@@ -9476,7 +9660,7 @@ class MinecraftLauncher(tk.Tk):
             self.bind("<Configure>", self._on_root_configure, add="+")
         except Exception:
             pass
-        initial_width, initial_height = 1200, 720
+        initial_width, initial_height = 1200, 820
         self._apply_geometry(initial_width, initial_height)
         self._capture_initial_geometry = True
         self.minsize(960, 680)
@@ -9516,18 +9700,21 @@ class MinecraftLauncher(tk.Tk):
             self._update_ui_language() # Force refresh styling
             if self.discord_rpc_enabled.get():
                 self._start_discord_rpc()
-            if hasattr(self, 'status_bar_frame'):
+            if hasattr(self, 'status_bar_frame') and self.status_bar_frame is not None:
                 if self.show_progress_bar.get():
                     self.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
                 else:
                     self.status_bar_frame.pack_forget()
-
         except Exception as e:
+            import traceback
             print(f"Settings initialization failed: {e}")
+            traceback.print_exc()
         self.after(1000, self._on_tab_changed)
         self._progress_polling_active = False
         self._offline = False
         self._offline_label = None
+        self.after(100, self._initialize_plugins)
+        self.after(500, self._periodic_debug_update)
         self.after(2000, self._check_connectivity)
     @property
     def profiles(self):
@@ -9541,9 +9728,23 @@ class MinecraftLauncher(tk.Tk):
         if current_profile:
             self.selected_mod_loader.set(current_profile.mod_loader)
     def _toggle_music(self):
+        global pygame_mixer_initialized
         if not pygame or not pygame_available:
             messagebox.showerror(self._t("MUSIC_ERROR"), self._t("PYGAME_NOT_INSTALLED"))
             return
+        if not pygame_mixer_initialized:
+            try:
+                if not pygame.display.get_init():
+                    pygame.init()
+                pygame.mixer.init()
+                pygame_mixer_initialized = True
+                print("[Music] Pygame mixer initialized on first music play")
+            except Exception as e:
+                print(f"Warning: pygame mixer module not available, audio disabled")
+                print(f"Audio init error: {e}")
+                messagebox.showerror(self._t("MUSIC_ERROR"), self._t("PYGAME_NOT_INSTALLED"))
+                return
+        
         if self.music_playing:
             try:
                 pygame.mixer.music.stop()
@@ -9571,7 +9772,7 @@ class MinecraftLauncher(tk.Tk):
                 )
                 return
             music_files = []
-            for ext in ['*.mp3', '*.ogg', '*.wav', '*.flac']:
+            for ext in ['*.mp3', '*.ogg', '*.wav']:
                 music_files.extend(list(music_dir.glob(ext)))
             if not music_files:
                 messagebox.showwarning(
@@ -9643,7 +9844,6 @@ class MinecraftLauncher(tk.Tk):
         self.profile_cb.bind("<<ComboboxSelected>>", self._on_profile_selected)
         btn_frame = ttk.Frame(left_frame)
         btn_frame.grid(row=2, column=0, pady=(5, 0), sticky="w")
-        
         plus_icon_main = self._load_themed_icon("plus", size=(16, 16))
         self.new_profile_btn = tk.Button(btn_frame, 
                                         text=f"  {self._t('NEW_PROFILE')}",
@@ -9660,7 +9860,7 @@ class MinecraftLauncher(tk.Tk):
                                         pady=6,
                                         cursor="hand2",
                                         command=self._new_profile)
-        self.new_profile_btn.image = plus_icon_main
+        self.new_profile_btn.image = plus_icon_main  # type: ignore
         self.new_profile_btn.pack(side="left", padx=(0, 5))
         center_frame = ttk.Frame(bottom_frame)
         center_frame.grid(row=0, column=1, sticky="n", padx=20)
@@ -9766,7 +9966,6 @@ class MinecraftLauncher(tk.Tk):
             mode="determinate"
         )
         self.status_bar_progress.pack(anchor="w", padx=10, pady=(0, 4), fill="x")
-        
         if hasattr(self, 'show_progress_bar') and self.show_progress_bar.get():
             self.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
         else:
@@ -9786,13 +9985,17 @@ class MinecraftLauncher(tk.Tk):
                 self.game_profile_cb['values'] = all_profiles
                 selected_instance = self.instance_manager.get_selected_instance()
                 if selected_instance:
-                    self.selected_game_profile.set(selected_instance.name)
+                    current_selection = self.selected_game_profile.get()
+                    if current_selection not in all_profiles:
+                        self.selected_game_profile.set(selected_instance.name)
                     if hasattr(self, 'version_label'):
                         self.version_label.config(text=f"{selected_instance.version} ({selected_instance.mod_loader})")
                 else:
                     selected_profile = self.game_profile_manager.get_selected_profile()
                     if selected_profile:
-                        self.selected_game_profile.set(selected_profile.name)
+                        current_selection = self.selected_game_profile.get()
+                        if current_selection not in all_profiles:
+                            self.selected_game_profile.set(selected_profile.name)
                         if hasattr(self, 'version_label'):
                             self.version_label.config(text=f"{selected_profile.version} ({selected_profile.mod_loader})")
                     elif all_profiles:
@@ -10010,7 +10213,7 @@ class MinecraftLauncher(tk.Tk):
         else:
             try:
                 default_instance = self.instance_manager.create_instance(
-                    "Default Instance", "26.1", "vanilla", "4G"
+                    "Default Instance", "26.1.2", "vanilla", "4G"
                 )
                 if default_instance:
                     self.instance_manager.set_selected_instance(default_instance.instance_id)
@@ -10094,7 +10297,6 @@ class MinecraftLauncher(tk.Tk):
                 'jvmArguments': [f"-Xmx{ram}", f"-Xms{ram}"]
             }
             self._safe_append_log(f"[Launcher] Installing Minecraft {version}...")
-            
             needs_loader_install = False
             loader_installed = False
             if mod_loader and mod_loader.lower() != "vanilla" and mod_loader.lower() != "none":
@@ -10109,7 +10311,6 @@ class MinecraftLauncher(tk.Tk):
                         self._safe_append_log(f"[Launcher] Version {current_instance.installed_version_id} not found locally, will install...")
                 else:
                     needs_loader_install = True
-                
                 if needs_loader_install:
                     if mod_loader.lower() == "forge":
                         forge_version = minecraft_launcher_lib.forge.find_forge_version(version)
@@ -10194,7 +10395,6 @@ class MinecraftLauncher(tk.Tk):
                                 self._safe_append_log(f"[Launcher] No NeoForge versions found for {version}")
                         except Exception as e:
                             self._safe_append_log(f"[Launcher] NeoForge install failed: {e}")
-            
             if not loader_installed:
                 self._safe_append_log(f"[Launcher] Preparing {version}...")
                 _install_max = [1]
@@ -10239,8 +10439,6 @@ class MinecraftLauncher(tk.Tk):
                     self.mc_process.terminate()
                     break
                 self._safe_append_log(line.rstrip())
-
-    
             self.mc_process.wait()
             exit_code = self.mc_process.returncode
             elapsed = int(time.time() - _launch_start)
@@ -10277,7 +10475,6 @@ class MinecraftLauncher(tk.Tk):
             self.after(0, self._append_log, line)
         except Exception:
             pass
-
     _SHARE_TARGETS = [
         ('share_options',       'options.txt',    'options.txt',         True),
         ('share_resourcepacks', 'resourcepacks',  'resourcepacks',       False),
@@ -10285,7 +10482,6 @@ class MinecraftLauncher(tk.Tk):
         ('share_servers',       'servers.dat',    'servers.dat',         True),
         ('share_screenshots',   'screenshots',    'screenshots',         False),
     ]
-
     def _check_connectivity(self):
         def _ping():
             try:
@@ -10301,7 +10497,6 @@ class MinecraftLauncher(tk.Tk):
                 self.after(60000, self._check_connectivity)
         except Exception:
             pass
-
     def _set_connectivity(self, online):
         self._offline = not online
         if not hasattr(self, 'status_label') or self.status_label is None:
@@ -10322,6 +10517,22 @@ class MinecraftLauncher(tk.Tk):
                     relief="flat", padx=4, pady=2
                 )
                 self._offline_label.pack(side="right", padx=(0, 8))
+    def _periodic_debug_update(self):
+        try:
+            if hasattr(self, 'debug_mode_enabled') and self.debug_mode_enabled.get():
+                if hasattr(self, '_debug_text_widget') and self._debug_text_widget is not None:
+                    try:
+                        if self._debug_text_widget.winfo_exists():
+                            _update_debug_info(self)
+                    except tk.TclError:
+                        pass
+        except Exception:
+            pass
+        try:
+            if self.winfo_exists():
+                self.after(500, self._periodic_debug_update)
+        except Exception:
+            pass
 
     def _apply_sharing_for_instance(self, instance):
         shared_dir = Path.home() / ".config" / "oranglauncher" / "shared"
@@ -10347,7 +10558,7 @@ class MinecraftLauncher(tk.Tk):
                     if inst_path.is_symlink():
                         try:
                             if inst_path.resolve() == shared_target.resolve():
-                                continue  # already correct
+                                continue
                         except Exception:
                             pass
                         inst_path.unlink()
@@ -10546,24 +10757,21 @@ class MinecraftLauncher(tk.Tk):
         def _on_mousewheel(event):
             try:
                 delta = 0
-                if event.num == 5:  # Linux scroll wheel / touchpad down
+                if event.num == 5:
                     delta = -1
-                elif event.num == 4:  # Linux scroll wheel / touchpad up
+                elif event.num == 4: 
                     delta = 1
                 elif event.delta:
-                    if abs(event.delta) >= 120:  # Windows/Mac (multiples of 120)
+                    if abs(event.delta) >= 120:
                         delta = int(event.delta / 120)
-                    else:  # Linux touchpad smooth scroll (small delta like 1/-1)
+                    else: 
                         delta = 1 if event.delta > 0 else -1
                 
                 if delta == 0:
                     return
-
                 x, y = self.winfo_pointerxy()
                 widget_under_mouse = self.winfo_containing(x, y)
-                
                 current_scrollable = None
-                
                 if widget_under_mouse:
                     if hasattr(widget_under_mouse, 'yview_scroll'):
                         current_scrollable = widget_under_mouse
@@ -10580,7 +10788,6 @@ class MinecraftLauncher(tk.Tk):
                                 break
                             parent = parent.master
                             count += 1
-                
                 if not current_scrollable:
                     current_tab = self.notebook.select()
                     if current_tab:
@@ -10595,17 +10802,14 @@ class MinecraftLauncher(tk.Tk):
                                 return None
                             current_scrollable = find_primary_scrollable(tab_frame)
                         except: pass
-
                 if current_scrollable:
                      current_scrollable.yview_scroll(int(-1 * delta), "units")
-            
             except Exception:
                 pass
 
         self.bind_all("<MouseWheel>", _on_mousewheel)
         self.bind_all("<Button-4>", _on_mousewheel)
         self.bind_all("<Button-5>", _on_mousewheel)
-
         build_news_tab(self, self.notebook)
         build_launcher_log_tab(self, self.notebook)
         build_game_profiles_tab(self, self.notebook)
@@ -10626,31 +10830,15 @@ class MinecraftLauncher(tk.Tk):
         except Exception as e:
             print(f"Error building resource & shader packs tab: {e}")
         build_settings_tab(self, self.notebook)
-        self._load_plugins()
     def _load_plugins(self):
         if hasattr(self, 'loaded_plugins'):
-            for mod in self.loaded_plugins:
+            for plugin_info in self.loaded_plugins:
                 try:
-                    if hasattr(mod, 'deinit_plugin'):
+                    mod = plugin_info.get('module') if isinstance(plugin_info, dict) else plugin_info
+                    if mod and hasattr(mod, 'deinit_plugin'):
                         mod.deinit_plugin(self)
                 except Exception as e:
-                    print(f"[PluginLoader] Error during deinit_plugin: {e}")
-        plugins = _load_plugins()
-        self.loaded_plugins = []
-        for plugin in plugins:
-            if not plugin.get('enabled', True):
-                continue
-            path = plugin['path']
-            try:
-                spec = importlib.util.spec_from_file_location(f"plugin_{os.path.basename(path)}", path)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                if hasattr(mod, 'init_plugin'):
-                    mod.init_plugin(self)
-                self.loaded_plugins.append(mod)
-                print(f"[PluginLoader] Loaded plugin: {path}")
-            except Exception as e:
-                print(f"[PluginLoader] Error loading plugin {path}: {e}\n{traceback.format_exc()}")
+                    print(f"[Plugins] Error during deinit_plugin: {e}")
 
     def install_loader_for_instance(self, instance, loader, loader_version=None):
         def worker():
@@ -10746,7 +10934,6 @@ class MinecraftLauncher(tk.Tk):
                     except Exception:
                         pass
                 self.after(0, lambda: self._apply_progress_update(0, ""))
-
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
     def destroy(self):
@@ -10770,6 +10957,7 @@ class MinecraftLauncher(tk.Tk):
             pass
         super().destroy()
         # gd betrayed me :(
+        # then you better update ts
     def geometry(self, new_geometry=None):
         if new_geometry is None:
             return super().geometry()
@@ -11104,8 +11292,139 @@ class MinecraftLauncher(tk.Tk):
             pass
         self._update_profile_display()
 
+def terminal_launch_game(instance, profile, ram="4G"):
+    try:
+        version = instance.version
+        mod_loader = instance.mod_loader
+        username = profile.get("username", "Steve")
+        uuid = profile.get("uuid", str(uuid_module.uuid4()))
+        access_token = profile.get("minecraft_token", "0")
+        minecraft_directory = str(instance.minecraft_dir)
+        Path(minecraft_directory).mkdir(parents=True, exist_ok=True)
+        print(f"\n[Launcher] Launching Minecraft {version} ({mod_loader}) as {username}...")
+        java_exe = resolve_java_for_instance(instance, version, log_fn=print)
+        print(f"[Java] Using: {java_exe}")
+        if not ram.endswith('G') and not ram.endswith('M'):
+            ram = f"{ram}G"
+        options = {
+            'username': username,
+            'uuid': uuid,
+            'token': access_token,
+            'executablePath': java_exe,
+            'jvmArguments': [f"-Xmx{ram}", f"-Xms{ram}"]
+        }
+        print(f"[Launcher] Preparing {version}...")
+
+        # Handle mod loaders
+        if mod_loader and mod_loader.lower() != "vanilla" and mod_loader.lower() != "none":
+            if instance.installed_version_id and instance.installed_version_id not in ['Latest', 'N/A', '']:
+                local_versions_dir = Path(minecraft_directory) / "versions" / instance.installed_version_id
+                version_exists = local_versions_dir.exists() and (local_versions_dir / f"{instance.installed_version_id}.json").exists()
+                if version_exists:
+                    version = instance.installed_version_id
+                    print(f"[Launcher] Using installed version: {version}")
+        print(f"[Launcher] Installing Minecraft {version}...")
+        minecraft_launcher_lib.install.install_minecraft_version(version, minecraft_directory)
+        print(f"[Launcher] Starting Minecraft...")
+        command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
+        command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
+        launch_env = os.environ.copy()
+        if getattr(instance, 'env_vars', None):
+            for line in instance.env_vars.splitlines():
+                if '=' in line and not line.strip().startswith('#'):
+                    k, _, v = line.partition('=')
+                    launch_env[k.strip()] = v.strip()
+        _launch_start = time.time()
+        mc_process = subprocess.Popen(
+            command,
+            cwd=minecraft_directory,
+            env=launch_env
+        )
+        
+        print(f"\n[Launcher] Game is running. Press Ctrl+C to detach...")
+        try:
+            exit_code = mc_process.wait()
+        except KeyboardInterrupt:
+            print("\n[Launcher] Detaching from game process...")
+            exit_code = 0
+        elapsed = int(time.time() - _launch_start)
+        if elapsed > 5:
+            instance.play_time = (instance.play_time or 0) + elapsed
+            instance.last_played = datetime.now().isoformat()
+        print(f"[Launcher] Minecraft exited with code {exit_code}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Launch failed: {e}")
+        traceback.print_exc()
+        return False
+def terminal_main():
+    try:
+        print("\n" + "="*50)
+        print("OrangLauncher - Joke Mode, Less ram :>")
+        print("="*50 + "\n")
+        instance_manager = get_instance_manager()
+        if not instance_manager.instances:
+            print("[ERROR] No instances found!")
+            return
+        instances_list = sorted(instance_manager.instances.values(), key=lambda inst: inst.name.lower())
+        print("Available Instances:")
+        for i, inst in enumerate(instances_list, 1):
+            print(f"  {i}. {inst.name} (MC {inst.version}, {inst.mod_loader})")
+        while True:
+            try:
+                choice = input(f"\nSelect instance (1-{len(instances_list)}): ").strip()
+                idx = int(choice) - 1
+                if 0 <= idx < len(instances_list):
+                    selected_instance = instances_list[idx]
+                    break
+                else:
+                    print(f"Invalid choice. Please select 1-{len(instances_list)}")
+            except ValueError:
+                print(f"Invalid input. Please enter a number 1-{len(instances_list)}")
+        profiles = load_profiles()
+        if not profiles:
+            print("\n[ERROR] No game profiles found yk! Please add a profile in GUI mode first you linuxer. Sorry no actual creation of profiles yet.")
+            return
+        print(f"\nAvailable Profiles for your idk what:")
+        for i, profile in enumerate(profiles, 1):
+            profile_type = profile.get("type", "unknown")
+            username = profile.get("username", "Unknown")
+            if profile_type == "offline":
+                print(f"  {i}. {username} (Offline)")
+            elif profile_type == "microsoft":
+                print(f"  {i}. {username} (Microsoft)")
+            else:
+                print(f"  {i}. {username}")
+        while True:
+            try:
+                choice = input(f"\nSelect profile (1-{len(profiles)}): ").strip()
+                idx = int(choice) - 1
+                if 0 <= idx < len(profiles):
+                    selected_profile = profiles[idx]
+                    break
+                else:
+                    print(f"Invalid choice. Please select 1-{len(profiles)}")
+            except ValueError:
+                print(f"Invalid input. Please enter a number 1-{len(profiles)}")
+        # Get RAM for me I want 64gb plz, I only have 16 GB now :>
+        ram_input = input("\nEnter RAM amount (default: 4G): ").strip()
+        ram = ram_input if ram_input else "4G"
+        print(f"\nLaunching {selected_instance.name} as {selected_profile.get('username')}...")
+        terminal_launch_game(selected_instance, selected_profile, ram)
+    except KeyboardInterrupt:
+        print("\n[Launcher] Cancelled by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"[ERROR] Terminal mode error: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     try:
+        if "--terminal" in sys.argv:
+            terminal_main()
+            return
         if platform.system() == "Linux":
             if 'GDK_BACKEND' not in os.environ:
                 os.environ['GDK_BACKEND'] = 'x11'
@@ -11118,7 +11437,7 @@ def main():
         app = MinecraftLauncher()
         app.mainloop()
     except KeyboardInterrupt:
-        print("\\nbaii :3")
+        print("\\cya :>")
         sys.exit(0)
 if __name__ == "__main__":
     main()

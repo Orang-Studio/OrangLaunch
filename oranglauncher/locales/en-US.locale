@@ -398,3 +398,52 @@ SETTINGS_DEBUG_SHOW_SPAWN_LOG=Give Logs
 SETTINGS_ACCOUNTS_DESC=Add, Remove and manage your accounts. Offline just means to pick username.
 SETTINGS_ACCOUNTS_ADD_MS=Add Microsoft Account
 SETTINGS_ACCOUNTS_ADD_OFFLINE=Add Offline Account
+
+# OrangLib Tab Translations
+ORANGLIB_MODPACKS_TITLE=OrangLib Modpacks
+ORANGLIB_AVAILABLE_MODPACKS=Available Modpacks
+ORANGLIB_VERSIONS=Versions
+ORANGLIB_DOWNLOAD_INSTALL=Download / Install
+ORANGLIB_OPEN_DESKTOP=Open Desktop
+ORANGLIB_LOADED_COUNT=Loaded {count} modpacks from OrangLib.
+ORANGLIB_READY_MODPACK=Ready
+ORANGLIB_SEARCH_PLACEHOLDER=Search modpacks...
+ORANGLIB_REFRESH=Refresh
+
+# Logs Tab Translations
+LOGS_SEARCH_PLACEHOLDER=Type to filter logs...
+LOGS_FILTER_ERROR=Error
+LOGS_FILTER_WARN=Warn
+LOGS_FILTER_INFO=Info
+LOGS_FILTER_SUCCESS=Success
+LOGS_FILTER_OTHER=Other
+LOGS_SAVE_BTN=Save Log
+LOGS_EXPORT_TITLE=Export Log
+LOGS_EXPORT_SUCCESS=Log saved to:
+LOGS_EXPORT_FAIL=Failed to save log:
+LOGS_NO_ENTRIES=No log entries to export.
+
+# Settings GPU Tab Translations
+SETTINGS_GPU_SECTION=GPU
+SETTINGS_GPU_DRI_PRIME=Use DRI PRIME 1
+SETTINGS_GPU_DRI_PRIME_DESC=Launch Minecraft on the secondary GPU (sets DRI_PRIME=1). Useful for hybrid AMD/Intel graphics.
+
+# Settings Shared Files Translations
+SETTINGS_SHARED_FILES=Shared Files
+SETTINGS_SHARED_FILES_DESC=Symlink selected paths across all instances to a single shared folder (~/.config/oranglauncher/shared/).
+Click 'Apply to all instances' after changing these toggles.
+SETTINGS_SHARED_APPLY_ALL=Apply to all instances
+SETTINGS_SHARED_UPDATED=Symlinks updated for all instances.
+SETTINGS_SHARED_OPTIONS_TXT=Share options.txt
+SETTINGS_SHARED_OPTIONS_DESC=Key bindings, video settings, mouse sensitivity
+SETTINGS_SHARED_RESOURCEPACKS=Share resourcepacks/
+SETTINGS_SHARED_RESOURCEPACKS_DESC=Texture packs visible in all instances
+SETTINGS_SHARED_SHADERPACKS=Share shaderpacks/
+SETTINGS_SHARED_SHADERPACKS_DESC=Shader packs visible in all instances
+SETTINGS_SHARED_SERVERS=Share servers.dat
+SETTINGS_SHARED_SERVERS_DESC=Saved multiplayer server list
+
+# Settings Advanced - Progress Bar Translations
+SETTINGS_PROGRESS_BAR=Progress Bar
+SETTINGS_SHOW_PROGRESS_BAR=Show download progress bar
+SETTINGS_SHOW_PROGRESS_BAR_DESC=Display a progress bar during file downloads and installations

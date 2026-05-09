@@ -8,6 +8,7 @@ PLAY_MUSIC=Odtwórz muzykę
 STOP_MUSIC=Zatrzymaj muzykę
 PROFILE=Profil
 NEW_PROFILE=Nowy profil
+ORANGLIB_REFRESH=Odśwież
 WELCOME=Witaj!
 WELCOME_USER=Witaj, {username}!\nGotowy do gry
 SETTINGS=Ustawienia
@@ -403,3 +404,54 @@ SETTINGS_ACCOUNT_ADD_MS=Dodaj konto Microsoft
 SETTINGS_ACCOUNT_ADD_OFFLINE=Dodaj konto offline
 SETTINGS_ACCOUNT_DESC=Na tej stronie możesz dodać lub usunąć konto
 SETTINGS_ACCOUNTS_TITLE=Konta
+SETTINGS_DEBUG_SPAWN_LOG_NONE=Brak włączonego debugowania!
+SETTINGS_DEBUG_SHOW_SPAWN_LOG=Pokaż dzienniki
+SETTINGS_ACCOUNTS_DESC=Zarządzaj wszystkimi swoimi kontami. Offline oznacza wybranie nazwy użytkownika.
+
+# OrangLib Tab Translations
+ORANGLIB_MODPACKS_TITLE=Modpacki OrangLib
+ORANGLIB_AVAILABLE_MODPACKS=Dostępne Modpacki
+ORANGLIB_VERSIONS=Wersje
+ORANGLIB_DOWNLOAD_INSTALL=Pobierz / Zainstaluj
+ORANGLIB_OPEN_DESKTOP=Otwórz Pulpit
+ORANGLIB_LOADED_COUNT=Załadowano {count} modpacków z OrangLib.
+ORANGLIB_READY_MODPACK=Gotowe
+ORANGLIB_SEARCH_PLACEHOLDER=Szukaj modpacków...
+
+# Logs Tab Translations
+LOGS_SEARCH_PLACEHOLDER=Wpisz, aby filtrować dzienniki...
+LOGS_FILTER_ERROR=Błąd
+LOGS_FILTER_WARN=Ostrzeżenie
+LOGS_FILTER_INFO=Informacja
+LOGS_FILTER_SUCCESS=Sukces
+LOGS_FILTER_OTHER=Inne
+LOGS_SAVE_BTN=Zapisz dziennik
+LOGS_EXPORT_TITLE=Eksportuj dziennik
+LOGS_EXPORT_SUCCESS=Dziennik zapisany w:
+LOGS_EXPORT_FAIL=Błąd zapisywania dziennika:
+LOGS_NO_ENTRIES=Brak wpisów dziennika do eksportu.
+
+# Settings GPU Tab Translations
+SETTINGS_GPU_SECTION=Karta graficzna
+SETTINGS_GPU_DRI_PRIME=Użyj DRI PRIME 1
+SETTINGS_GPU_DRI_PRIME_DESC=Uruchom Minecrafta na drugorzędnej karcie graficznej (ustawia DRI_PRIME=1). Przydatne dla hybrydowej grafiki AMD/Intel.
+
+# Settings Shared Files Translations
+SETTINGS_SHARED_FILES=Pliki udostępniane
+SETTINGS_SHARED_FILES_DESC=Dowiąż wybrane ścieżki na wszystkich instancjach do pojedynczego folderu udostępnianego (~/.config/oranglauncher/shared/).
+Kliknij 'Zastosuj do wszystkich instancji' po zmianie tych przełączników.
+SETTINGS_SHARED_APPLY_ALL=Zastosuj do wszystkich instancji
+SETTINGS_SHARED_UPDATED=Dowiązania symboliczne zostały zaktualizowane dla wszystkich instancji.
+SETTINGS_SHARED_OPTIONS_TXT=Udostępnij options.txt
+SETTINGS_SHARED_OPTIONS_DESC=Przypisania klawiszy, ustawienia wideo, czułość myszy
+SETTINGS_SHARED_RESOURCEPACKS=Udostępnij resourcepacks/
+SETTINGS_SHARED_RESOURCEPACKS_DESC=Pakiety zasobów widoczne na wszystkich instancjach
+SETTINGS_SHARED_SHADERPACKS=Udostępnij shaderpacks/
+SETTINGS_SHARED_SHADERPACKS_DESC=Pakiety shaderów widoczne na wszystkich instancjach
+SETTINGS_SHARED_SERVERS=Udostępnij servers.dat
+SETTINGS_SHARED_SERVERS_DESC=Zapisana lista serwerów multiplayer
+
+# Settings Advanced - Progress Bar Translations
+SETTINGS_PROGRESS_BAR=Pasek postępu
+SETTINGS_SHOW_PROGRESS_BAR=Pokaż pasek postępu podczas pobierania i instalacji
+SETTINGS_SHOW_PROGRESS_BAR_DESC=Wyświetla pasek postępu podczas pobierania plików i instalacji

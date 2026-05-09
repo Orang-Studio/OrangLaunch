@@ -9,6 +9,7 @@ STOP_MUSIC=Остановить музыку
 PROFILE=Профиль
 NEW_PROFILE=Новый профиль
 WELCOME=Добро пожаловать!
+ORANGLIB_REFRESH=Обновить
 WELCOME_USER=Добро пожаловать, {username}!\nГотовы играть
 SETTINGS=Настройки
 LANGUAGE=Язык:
@@ -403,3 +404,54 @@ SETTINGS_ACCOUNT_ADD_MS=Добавить аккаунт Microsoft
 SETTINGS_ACCOUNT_ADD_OFFLINE=Добавить офлайн-аккаунт
 SETTINGS_ACCOUNT_DESC=На этой странице вы можете добавить или удалить аккаунт
 SETTINGS_ACCOUNTS_TITLE=Аккаунты
+SETTINGS_DEBUG_SPAWN_LOG_NONE=Отладка не включена!
+SETTINGS_DEBUG_SHOW_SPAWN_LOG=Показать журналы
+SETTINGS_ACCOUNTS_DESC=Управляйте всеми своими аккаунтами. Офлайн означает выбор имени пользователя.
+
+# OrangLib Tab Translations
+ORANGLIB_MODPACKS_TITLE=МодПаки OrangLib
+ORANGLIB_AVAILABLE_MODPACKS=Доступные МодПаки
+ORANGLIB_VERSIONS=Версии
+ORANGLIB_DOWNLOAD_INSTALL=Загрузить / Установить
+ORANGLIB_OPEN_DESKTOP=Открыть рабочий стол
+ORANGLIB_LOADED_COUNT=Загружено {count} модпаков из OrangLib.
+ORANGLIB_READY_MODPACK=Готов
+ORANGLIB_SEARCH_PLACEHOLDER=Поиск модпаков...
+
+# Logs Tab Translations
+LOGS_SEARCH_PLACEHOLDER=Введите для фильтрации журналов...
+LOGS_FILTER_ERROR=Ошибка
+LOGS_FILTER_WARN=Предупреждение
+LOGS_FILTER_INFO=Информация
+LOGS_FILTER_SUCCESS=Успешно
+LOGS_FILTER_OTHER=Другое
+LOGS_SAVE_BTN=Сохранить журнал
+LOGS_EXPORT_TITLE=Экспортировать журнал
+LOGS_EXPORT_SUCCESS=Журнал сохранён в:
+LOGS_EXPORT_FAIL=Ошибка сохранения журнала:
+LOGS_NO_ENTRIES=Нет записей журнала для экспорта.
+
+# Settings GPU Tab Translations
+SETTINGS_GPU_SECTION=Видеокарта
+SETTINGS_GPU_DRI_PRIME=Использовать DRI PRIME 1
+SETTINGS_GPU_DRI_PRIME_DESC=Запустить Minecraft на вторичной видеокарте (устанавливает DRI_PRIME=1). Полезно для гибридной графики AMD/Intel.
+
+# Settings Shared Files Translations
+SETTINGS_SHARED_FILES=Общие файлы
+SETTINGS_SHARED_FILES_DESC=Создайте ссылки выбранных путей ко всем экземплярам в один общий папку (~/.config/oranglauncher/shared/).
+Нажмите 'Применить ко всем экземплярам' после изменения этих переключателей.
+SETTINGS_SHARED_APPLY_ALL=Применить ко всем экземплярам
+SETTINGS_SHARED_UPDATED=Ссылки обновлены для всех экземпляров.
+SETTINGS_SHARED_OPTIONS_TXT=Общий файл options.txt
+SETTINGS_SHARED_OPTIONS_DESC=Привязки клавиш, параметры видео, чувствительность мыши
+SETTINGS_SHARED_RESOURCEPACKS=Общая папка resourcepacks/
+SETTINGS_SHARED_RESOURCEPACKS_DESC=Пакеты ресурсов видны всем экземплярам
+SETTINGS_SHARED_SHADERPACKS=Общая папка shaderpacks/
+SETTINGS_SHARED_SHADERPACKS_DESC=Шейдеры видны всем экземплярам
+SETTINGS_SHARED_SERVERS=Общий файл servers.dat
+SETTINGS_SHARED_SERVERS_DESC=Сохранённый список серверов мультиплеера
+
+# Settings Advanced - Progress Bar Translations
+SETTINGS_PROGRESS_BAR=Полоса прогресса
+SETTINGS_SHOW_PROGRESS_BAR=Показывать полосу прогресса при загрузке и установке
+SETTINGS_SHOW_PROGRESS_BAR_DESC=Отображает полосу прогресса во время загрузки файлов и установки

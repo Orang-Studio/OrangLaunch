@@ -402,3 +402,55 @@ SETTINGS_ACCOUNT_ADD_MS=Microsoft-Konto hinzufügen
 SETTINGS_ACCOUNT_ADD_OFFLINE=Offline-Konto hinzufügen
 SETTINGS_ACCOUNT_DESC=Auf dieser Seite kannst du Konten hinzufügen oder entfernen
 SETTINGS_ACCOUNTS_TITLE=Konten
+SETTINGS_DEBUG_SPAWN_LOG_NONE=Kein Debug-Journal aktiviert!
+SETTINGS_DEBUG_SHOW_SPAWN_LOG=Protokolle anzeigen
+SETTINGS_ACCOUNTS_DESC=Verwalten Sie alle Ihre Konten hinzufügen/entfernen. Offline bedeutet, dass Sie einen Benutzernamen wählen.
+
+# OrangLib Tab Translations
+ORANGLIB_MODPACKS_TITLE=OrangLib Modpacks
+ORANGLIB_AVAILABLE_MODPACKS=Verfügbare Modpacks
+ORANGLIB_VERSIONS=Versionen
+ORANGLIB_DOWNLOAD_INSTALL=Herunterladen / Installieren
+ORANGLIB_OPEN_DESKTOP=Desktop öffnen
+ORANGLIB_LOADED_COUNT={count} Modpacks aus OrangLib geladen.
+ORANGLIB_READY_MODPACK=Bereit
+ORANGLIB_REFRESH=Aktualisieren
+ORANGLIB_SEARCH_PLACEHOLDER=Modpacks durchsuchen...
+
+# Logs Tab Translations
+LOGS_SEARCH_PLACEHOLDER=Zum Filtern eingeben...
+LOGS_FILTER_ERROR=Fehler
+LOGS_FILTER_WARN=Warnung
+LOGS_FILTER_INFO=Info
+LOGS_FILTER_SUCCESS=Erfolg
+LOGS_FILTER_OTHER=Sonstiges
+LOGS_SAVE_BTN=Protokoll speichern
+LOGS_EXPORT_TITLE=Protokoll exportieren
+LOGS_EXPORT_SUCCESS=Protokoll gespeichert unter:
+LOGS_EXPORT_FAIL=Speichern des Protokolls fehlgeschlagen:
+LOGS_NO_ENTRIES=Keine Protokolleinträge zum Exportieren.
+
+# Settings GPU Tab Translations
+SETTINGS_GPU_SECTION=GPU
+SETTINGS_GPU_DRI_PRIME=DRI PRIME 1 verwenden
+SETTINGS_GPU_DRI_PRIME_DESC=Minecraft auf der sekundären GPU starten (setzt DRI_PRIME=1). Nützlich für Hybrid-AMD/Intel-Grafiken.
+
+# Settings Shared Files Translations
+SETTINGS_SHARED_FILES=Freigegebene Dateien
+SETTINGS_SHARED_FILES_DESC=Wählen Sie Pfade aus, um sie über alle Instanzen hinweg mit einem gemeinsamen Ordner zu verknüpfen (~/.config/oranglauncher/shared/).
+Klicken Sie auf 'Auf alle Instanzen anwenden', nachdem Sie diese Schalter geändert haben.
+SETTINGS_SHARED_APPLY_ALL=Auf alle Instanzen anwenden
+SETTINGS_SHARED_UPDATED=Symlinks wurden für alle Instanzen aktualisiert.
+SETTINGS_SHARED_OPTIONS_TXT=options.txt freigeben
+SETTINGS_SHARED_OPTIONS_DESC=Tastaturbelegung, Videoeinstellungen, Mausempfindlichkeit
+SETTINGS_SHARED_RESOURCEPACKS=resourcepacks/ freigeben
+SETTINGS_SHARED_RESOURCEPACKS_DESC=Ressourcenpakete sind in allen Instanzen sichtbar
+SETTINGS_SHARED_SHADERPACKS=shaderpacks/ freigeben
+SETTINGS_SHARED_SHADERPACKS_DESC=Shader-Pakete sind in allen Instanzen sichtbar
+SETTINGS_SHARED_SERVERS=servers.dat freigeben
+SETTINGS_SHARED_SERVERS_DESC=Gespeicherte Mehrspieler-Serverliste
+
+# Settings Advanced - Progress Bar Translations
+SETTINGS_PROGRESS_BAR=Fortschrittsbalken
+SETTINGS_SHOW_PROGRESS_BAR=Fortschrittsbalken während Downloads und Installation anzeigen
+SETTINGS_SHOW_PROGRESS_BAR_DESC=Zeigt einen Fortschrittsbalken während Dateidownloads und Installationen an
