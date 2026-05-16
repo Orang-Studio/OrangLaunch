@@ -1,18 +1,87 @@
 
-<h1 align="center">Orange Launcher</h1>
+<h1 align="center">Orange Launcher Linux</h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
 </p>
 
-# Installation (Arch Linux)
+<h1 align="center">Orange Launcher Win10</h1>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
+</p>
+
+<h1 align="center">Orange Launcher Win11</h1>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6eac6ddc-77c4-457b-916b-33adc0b505cd" alt="orange">
+</p>
+
+# Installation 
+
+## Arch Linux x64
 Install with [**yay**](https://github.com/Jguer/yay):
-```yay -S oranglauncher-bin```
+```yay -Syu oranglauncher-bin```
 
-> [!NOTE]
-> Currently, there is no available version for Windows because of the bad python performance on it.
-> The Windows version will be completely rewritten later on.
-> Linux version will still be updated regularly.
+## Linux Other x64 
+Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
 
+## Windows 10 x86-x64
+Download installer: [OrangLauncher_Windows10.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+### arm32-arm64
+Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+> [!CAUTION]
+> I'v never tried running arm64 version, because I don't have that processor <br>
+> so if you find the bugs on that architecture, please say in issues. arm32 version works even on x64, please don't use it like that.
+
+## Windows 11 x86
+
+> [!TIP]
+> If you want better bugfixes and better features and greater performace with privacy included, then switch to linux or windows 10 ltsc.
+
+Download installer: [OrangLauncher_Windows11.msi](https://github.com/Orang-Studio/OrangLaunch/releases)
+
+# Terminal Mode
+
+The launcher includes a terminal/CLI mode for headless servers or users who prefer command-line interfaces.
+
+## Usage
+
+Run the launcher with the `--terminal` flag:
+
+```bash
+python launcher.py --terminal
+```
+
+This will:
+1. Display a list of your configured Minecraft instances
+2. Let you select an instance by number
+3. Show available game profiles (accounts)
+4. Let you select a profile/account
+5. Prompt for RAM allocation (default: 4G)
+6. Launch the game directly
+
+### Example:
+```
+==================================================
+OrangLauncher - Terminal Mode
+==================================================
+
+Available Instances:
+  1. Fabulously Optimized (MC 26.1.2, fabric)
+  2. gh (MC 1.20.1, forge)
+  3. New Profile (MC 1.21.1, vanilla)
+
+Select instance (1-3): 1
+Available Profiles:
+  1. MyAccount (Microsoft)
+  2. OfflinePlayer (Offline)
+
+Select profile (1-2): 1
+Enter RAM amount (default: 4G): 6G
+
+[Launcher] Launching Minecraft 26.1.2 (fabric) as MyAccount...
+```
 
 # About This Minecraft Launcher
 This launcher is designed to be a modular, modern, and highly customizable Minecraft launcher experience. It uses Python for backend that keeps everything lightweight, fast, and fully scriptable.
@@ -23,7 +92,7 @@ This is achieved by using localhost and microsoft official page. If that fails, 
 
 ## Offline (cracked)
 Simply enter username and boom you have that account, and you can use it only on cracked servers (`offline-mode=false`) and singleplayer. Though, you can't have a custom skin bc you cracked it! 
-I'm not resposible for any legal damage, nor im Mojang or Xbox studios.
+I'm not resposible for any legal damage, nor im Mojang or Xbox studios, I use methods that mojang provides to give offline mode.
 
 ## News Hub
 
@@ -68,17 +137,7 @@ And more!
 
 ## Language Support
 
-The entire application supports changeable languages, including community‑driven translations. Switching languages reloads the whole app.
-
-## Built‑In Python Engine
-
-The core logic of the launcher runs on Python, providing:
-
-- Fast scripting integration
-- Easy feature expansion
-- High reliability and cross‑platform compatibility
-- Modding of the launcher
-- Fixing bugs faster
+The entire application supports changeable languages, including community‑driven translations. 
 
 ## For the developers section:
 
