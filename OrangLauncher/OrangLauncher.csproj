@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Platforms>x86;ARM64;ARM32</Platforms>
+    <StartupObject>OrangLauncher.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="Other\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="launcher11\**\*.cs" />
+    <Page Remove="launcher11\**\*.xaml" />
+    <None Remove="launcher11\**" />
+    <Content Remove="launcher11\**" />
+    <Resource Remove="launcher11\**" />
+    <EmbeddedResource Remove="launcher11\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="fNbt" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3856.49" />
+    <PackageReference Include="MojangAPI" Version="1.2.1" />
+    <PackageReference Include="System.Management" Version="10.0.5" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+    Name="OrangLauncher"
+    Manufacturer="Orang Studio"
+    Version="6.0.0"
+    Language="1033"
+    UpgradeCode="2cf6f0f4-bdef-4b45-a3a9-a14d95b0d6b0"
+    Scope="perMachine"
+    InstallerVersion="500">
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="OrangLauncherIcon.ico" SourceFile="../build/Other/images/orange.ico" />
+    <Property Id="ARPPRODUCTICON" Value="OrangLauncherIcon.ico" />
+    <Property Id="ARPHELPLINK"    Value="https://docs.firegiant.com/quick-start/" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf"  Value="License.rtf" />
+    <WixVariable Id="WixUIBannerBmp"    Value="assets\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp"    Value="assets\dialog.bmp" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+              Value="Documentation is available at: https://docs.firegiant.com/quick-start/" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX"     Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OrangLauncher!" />
+    <Property Id="WixShellExecTarget" Value="[INSTALLFOLDER]OrangLauncher.exe" />
+    <CustomAction
+      Id="LaunchApplication"
+      BinaryRef="Wix4UtilCA_X86"
+      DllEntry="WixShellExec"
+      Impersonate="yes"
+      Return="ignore" />
+    <UI>
+      <Publish
+        Dialog="ExitDialog"
+        Control="Finish"
+        Event="DoAction"
+        Value="LaunchApplication"
+        Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+    <Property Id="WV2INSTALLED">
+      <RegistrySearch
+        Id="WV2RegistrySearch"
+        Root="HKLM"
+        Key="SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+        Name="pv"
+        Type="raw" />
+    </Property>
+    <CustomAction
+      Id="InstallWV2"
+      Directory="INSTALLFOLDER"
+      ExeCommand="[INSTALLFOLDER]MicrosoftEdgeWebview2Setup.exe /silent /install"
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="no" />
+    <InstallExecuteSequence>
+      <Custom Action="InstallWV2" After="InstallFiles" Condition="NOT WV2INSTALLED" />
+    </InstallExecuteSequence>
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="OrangLauncher">
+        <Directory Id="WEBVIEW2DIR" Name="OrangLauncher.exe.WebView2" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="OrangStartMenuFolder" Name="OrangLauncher" />
+    </StandardDirectory>
+    <Feature Id="ProductFeature" Title="OrangLauncher" Level="1">
+      <ComponentGroupRef Id="AppFiles"                 />
+      <ComponentRef      Id="CmpDesktopShortcut"        />
+      <ComponentRef      Id="CmpStartMenuShortcut"      />
+      <ComponentRef      Id="CmpWebView2DirPermissions" />
+    </Feature>
+  </Package>
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="../build/fNbt.dll" />
+      <Files Include="../build/LiteDB.dll" />
+      <Files Include="../build/Microsoft.Extensions.Caching.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.Binder.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.dll" />
+      <Files Include="../build/Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.DependencyInjection.dll" />
+      <Files Include="../build/Microsoft.Extensions.Diagnostics.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Diagnostics.dll" />
+      <Files Include="../build/Microsoft.Extensions.Http.dll" />
+      <Files Include="../build/Microsoft.Extensions.Http.Polly.dll" />
+      <Files Include="../build/Microsoft.Extensions.Logging.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Logging.dll" />
+      <Files Include="../build/Microsoft.Extensions.Options.ConfigurationExtensions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Options.dll" />
+      <Files Include="../build/Microsoft.Extensions.Primitives.dll" />
+      <Files Include="../build/Microsoft.Web.WebView2.Core.dll" />
+      <Files Include="../build/Microsoft.Web.WebView2.Core.xml" />
+      <Files Include="../build/Microsoft.Web.WebView2.WinForms.dll" />
+      <Files Include="../build/Microsoft.Web.WebView2.WinForms.xml" />
+      <Files Include="../build/Microsoft.Web.WebView2.Wpf.dll" />
+      <Files Include="../build/Microsoft.Web.WebView2.Wpf.xml" />
+      <Files Include="../build/Mojang.Api.Skins.dll" />
+      <Files Include="../build/MojangAPI.dll" />
+      <Files Include="../build/OrangLauncher.deps.json" />
+      <Files Include="../build/OrangLauncher.dll" />
+      <Files Include="../build/OrangLauncher.exe" />
+      <Files Include="../build/OrangLauncher.runtimeconfig.json" />
+      <Files Include="../build/Polly.dll" />
+      <Files Include="../build/Polly.Extensions.Http.dll" />
+      <Files Include="../build/SkiaSharp.dll" />
+      <Files Include="../build/System.CodeDom.dll" />
+      <Files Include="../build/System.Diagnostics.DiagnosticSource.dll" />
+      <Files Include="../build/System.IO.Pipelines.dll" />
+      <Files Include="../build/System.Management.dll" />
+      <Files Include="../build/System.Net.Http.Json.dll" />
+      <Files Include="../build/System.Text.Encodings.Web.dll" />
+      <Files Include="../build/System.Text.Json.dll" />
+      <Files Include="../build/Other/images/minecraft-blue.png"  Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/minecraft-green.png" Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/orange.ico"          Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/orange.png"          Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/icons/about.png"         Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/accounts.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/add.png"           Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/advanced.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/check.png"         Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/chlog.png"         Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/close.png"         Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/delete.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/details.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/download.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/dublicate.png"     Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/edit.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/folder.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/game.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/general.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/github.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/install.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/instances.png"     Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/logout.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/logs.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/microsoft.png"     Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/modrinth.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/mods.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/mrpack.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/newprofile.png"    Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/news.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/offline.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/play.png"          Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/plugin.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/refresh.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/remove.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/resourcepacks.png" Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/search.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/select.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/server.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/setting.png"       Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/settings.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/shaderpacks.png"   Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/trapic.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/update.png"        Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons/versions.png"      Subdirectory="Other\images\icons" />
+      <Files Include="../build/Other/images/icons_white/about.png"         Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/accounts.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/add.png"           Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/advanced.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/check.png"         Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/chlog.png"         Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/close.png"         Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/delete.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/details.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/download.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/dublicate.png"     Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/edit.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/folder.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/game.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/general.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/github.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/install.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/instances.png"     Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/logout.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/logs.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/microsoft.png"     Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/modrinth.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/mods.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/mrpack.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/newprofile.png"    Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/news.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/offline.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/play.png"          Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/plugin.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/refresh.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/remove.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/resourcepacks.png" Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/search.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/select.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/server.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/setting.png"       Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/settings.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/shaderpacks.png"   Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/trapic.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/update.png"        Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/icons_white/versions.png"      Subdirectory="Other\images\icons_white" />
+      <Files Include="../build/Other/images/ping/incompatible.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_1.png"   Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_2.png"   Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_3.png"   Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_4.png"   Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_5.png"   Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_1.png"      Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_2.png"      Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_3.png"      Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_4.png"      Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_5.png"      Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/locales/de-DE.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/en-US.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/lt-LT.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/lv-LV.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/pl-PL.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/ru-RU.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/runtimes/browser/lib/net8.0/System.Text.Encodings.Web.dll" Subdirectory="runtimes\browser\lib\net8.0" />
+      <Files Include="../build/runtimes/win/lib/net8.0/System.Management.dll"             Subdirectory="runtimes\win\lib\net8.0" />
+      <Files Include="../build/runtimes/win-arm64/native/libSkiaSharp.dll"                Subdirectory="runtimes\win-arm64\native" />
+      <Files Include="../build/runtimes/win-arm64/native/WebView2Loader.dll"              Subdirectory="runtimes\win-arm64\native" />
+      <Files Include="../build/runtimes/win-x64/native/libSkiaSharp.dll"                  Subdirectory="runtimes\win-x64\native" />
+      <Files Include="../build/runtimes/win-x64/native/WebView2Loader.dll"                Subdirectory="runtimes\win-x64\native" />
+      <Files Include="../build/runtimes/win-x86/native/libSkiaSharp.dll"                  Subdirectory="runtimes\win-x86\native" />
+      <Files Include="../build/runtimes/win-x86/native/WebView2Loader.dll"                Subdirectory="runtimes\win-x86\native" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Last Version"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Local State"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Variations"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/component_crx_cache/metadata.json" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\component_crx_cache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Crashpad/metadata"           Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Crashpad" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Crashpad/settings.dat"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Crashpad" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Crashpad/throttle_store.dat" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Crashpad" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/BookmarkMergedSurfaceOrdering"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Favicons"                        Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Favicons-journal"                Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/History"                         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/History-journal"                 Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/LOCK"                            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/LOG"                             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Login Data"                      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Login Data For Account"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Login Data For Account-journal"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Login Data-journal"              Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Preferences"                     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/README"                          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Secure Preferences"              Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/ServerCertificate"               Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/ServerCertificate-journal"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/SharedStorage"                   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Vpn Tokens"                      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Vpn Tokens-journal"              Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Web Data"                        Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Web Data-journal"                Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_0"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_1"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_2"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/data_3"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000002" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000003" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000004" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000005" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/f_000006" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/Cache_Data/index"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\Cache_Data" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/No_Vary_Search/journal.baj"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\No_Vary_Search" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Cache/No_Vary_Search/snapshot.baf" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Cache\No_Vary_Search" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/ClientCertificates/LOCK"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\ClientCertificates" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/ClientCertificates/LOG"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\ClientCertificates" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Code Cache/js/index"                   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Code Cache\js" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Code Cache/js/index-dir/the-real-index" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Code Cache\js\index-dir" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Code Cache/wasm/index"                   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Code Cache\wasm" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Code Cache/wasm/index-dir/the-real-index" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Code Cache\wasm\index-dir" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/commerce_subscription_db/LOCK"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\commerce_subscription_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/commerce_subscription_db/LOG"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\commerce_subscription_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_0" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnGraphiteCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_1" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnGraphiteCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_2" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnGraphiteCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnGraphiteCache/data_3" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnGraphiteCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnGraphiteCache/index"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnGraphiteCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_0"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnWebGPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_1"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnWebGPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_2"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnWebGPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnWebGPUCache/data_3"   Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnWebGPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/DawnWebGPUCache/index"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\DawnWebGPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/discount_infos_db/LOCK"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\discount_infos_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/discount_infos_db/LOG"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\discount_infos_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/discounts_db/LOCK"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\discounts_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/discounts_db/LOG"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\discounts_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/EdgeJourneys/EdgeJourneys.db" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\EdgeJourneys" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Rules/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Rules" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Rules/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Rules" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Rules/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Rules" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Rules/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Rules" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Rules/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Rules" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Scripts/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Scripts" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Scripts/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Scripts" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Scripts/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Scripts" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Scripts/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Scripts" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension Scripts/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension Scripts" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension State/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension State" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension State/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension State" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension State/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension State" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension State/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension State" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Extension State/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Extension State" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/GPUCache/data_0" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\GPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/GPUCache/data_1" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\GPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/GPUCache/data_2" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\GPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/GPUCache/data_3" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\GPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/GPUCache/index"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\GPUCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Local Storage/leveldb/000003.log"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Local Storage\leveldb" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Local Storage/leveldb/CURRENT"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Local Storage\leveldb" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Local Storage/leveldb/LOCK"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Local Storage\leveldb" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Local Storage/leveldb/LOG"           Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Local Storage\leveldb" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Local Storage/leveldb/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Local Storage\leveldb" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Cookies"                    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Cookies-journal"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Network Persistent State"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/NetworkDataMigrated"        Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Reporting and NEL"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Reporting and NEL-journal"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/SCT Auditing Pending Reports" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Sdch Dictionaries"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/TransportSecurity"          Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Trust Tokens"               Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Network/Trust Tokens-journal"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/parcel_tracking_db/LOCK"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\parcel_tracking_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/parcel_tracking_db/LOG"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\parcel_tracking_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/PersistentOriginTrials/LOCK"    Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\PersistentOriginTrials" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/PersistentOriginTrials/LOG"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\PersistentOriginTrials" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Safe Browsing Network/NetworkDataMigrated"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Safe Browsing Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Safe Browsing Network/Safe Browsing Cookies"        Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Safe Browsing Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Safe Browsing Network/Safe Browsing Cookies-journal" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Safe Browsing Network" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Session Storage/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Session Storage" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Session Storage/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Session Storage" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Session Storage/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Session Storage" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Session Storage/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Session Storage" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Session Storage/MANIFEST-000001"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Session Storage" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Shared Dictionary/cache/index"               Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Shared Dictionary\cache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Shared Dictionary/cache/index-dir/the-real-index" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Shared Dictionary\cache\index-dir" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Shared Dictionary/db"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Shared Dictionary" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Shared Dictionary/db-journal"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Shared Dictionary" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db\metadata" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db\metadata" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db\metadata" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db\metadata" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/shared_proto_db/metadata/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\shared_proto_db\metadata" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Site Characteristics Database/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Site Characteristics Database" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Site Characteristics Database/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Site Characteristics Database" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Site Characteristics Database/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Site Characteristics Database" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Site Characteristics Database/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Site Characteristics Database" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Site Characteristics Database/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Site Characteristics Database" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/000003.log"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Sync Data\LevelDB" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/CURRENT"         Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Sync Data\LevelDB" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/LOCK"            Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Sync Data\LevelDB" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/LOG"             Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Sync Data\LevelDB" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/Default/Sync Data/LevelDB/MANIFEST-000001" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\Default\Sync Data\LevelDB" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GraphiteDawnCache/data_0" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GraphiteDawnCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GraphiteDawnCache/data_1" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GraphiteDawnCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GraphiteDawnCache/data_2" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GraphiteDawnCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GraphiteDawnCache/data_3" Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GraphiteDawnCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GraphiteDawnCache/index"  Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GraphiteDawnCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GrShaderCache/data_0"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GrShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GrShaderCache/data_1"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GrShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GrShaderCache/data_2"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GrShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GrShaderCache/data_3"     Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GrShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/GrShaderCache/index"      Subdirectory="OrangLauncher.exe.WebView2\EBWebView\GrShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/ShaderCache/data_0"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\ShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/ShaderCache/data_1"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\ShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/ShaderCache/data_2"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\ShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/ShaderCache/data_3"       Subdirectory="OrangLauncher.exe.WebView2\EBWebView\ShaderCache" />
+      <Files Include="../build/OrangLauncher.exe.WebView2/EBWebView/ShaderCache/index"        Subdirectory="OrangLauncher.exe.WebView2\EBWebView\ShaderCache" />
+      <Files Include="assets/MicrosoftEdgeWebview2Setup.exe" />
+    </ComponentGroup>
+  </Fragment>
+  <Fragment>
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="CmpDesktopShortcut" Guid="*">
+        <Shortcut
+          Id="DesktopShortcut"
+          Name="OrangLauncher"
+          Description="OrangLauncher — Minecraft Launcher"
+          Target="[INSTALLFOLDER]OrangLauncher.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="OrangLauncherIcon.ico"
+          IconIndex="0" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\OrangLauncher"
+          Name="DesktopShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Fragment>
+  <Fragment>
+    <DirectoryRef Id="OrangStartMenuFolder">
+      <Component Id="CmpStartMenuShortcut" Guid="*">
+        <Shortcut
+          Id="StartMenuShortcut"
+          Name="OrangLauncher"
+          Description="OrangLauncher — Minecraft Launcher"
+          Target="[INSTALLFOLDER]OrangLauncher.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="OrangLauncherIcon.ico"
+          IconIndex="0" />
+        <RemoveFolder
+          Id="RemoveOrangStartMenuFolder"
+          Directory="OrangStartMenuFolder"
+          On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\OrangLauncher"
+          Name="StartMenuShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <Component Id="CmpWebView2DirPermissions" Directory="WEBVIEW2DIR" Guid="7B3E9F2A-4C1D-4A8E-B6F5-0D2E8A3C7F91">
+      <CreateFolder>
+        <util:PermissionEx User="Users" GenericAll="yes" />
+      </CreateFolder>
+    </Component>
+  </Fragment>
+</Wix>

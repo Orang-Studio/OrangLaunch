@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="WixToolset.Sdk/6.0.0">
+  <PropertyGroup>
+    <OutputName>OrangLauncher-Windows10</OutputName>
+    <Platform>x86</Platform>
+    <Configurations>Release</Configurations>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <SuppressWarnings>WIX1077</SuppressWarnings>
+    <NoWarn>WIX1077</NoWarn>
+    <SuppressValidation>true</SuppressValidation>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext"   Version="6.0.0" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="6.0.0" />
+  </ItemGroup>
+</Project>
