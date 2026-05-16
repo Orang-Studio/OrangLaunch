@@ -1,0 +1,80 @@
+<Window
+    x:Class="OrangLauncher.ModDetailsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Project Details">
+    <Grid Background="{ThemeResource BgPrimaryBrush}" Padding="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{ThemeResource BgSecondaryBrush}" CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Width="72" Height="72" Background="{ThemeResource BgTertiaryBrush}"
+                        CornerRadius="8" Margin="0,0,15,0">
+                    <Image x:Name="IconImage" Stretch="UniformToFill"/>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold"
+                               Foreground="{ThemeResource FgPrimaryBrush}"/>
+                    <TextBlock x:Name="DescText" TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis"
+                               FontSize="13" Margin="0,4,0,0"
+                               Foreground="{ThemeResource FgSecondaryBrush}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+                    <Button x:Name="CopyLinkButton" Content="Copy Link" Width="100" Height="32"
+                            Click="CopyLinkButton_Click"/>
+                    <Button x:Name="OpenInBrowserButton" Content="Open in Browser" Width="120" Height="32"
+                            Click="OpenInBrowserButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Pivot x:Name="DetailsPivot" Grid.Row="1">
+            <PivotItem Header="About">
+                <Grid>
+                    <WebView2 x:Name="AboutWebView" Visibility="Visible"/>
+                    <ScrollViewer x:Name="AboutScrollViewer" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <TextBlock x:Name="AboutTextBlock" TextWrapping="Wrap" Padding="15"
+                                   Foreground="{ThemeResource FgPrimaryBrush}" FontSize="13"/>
+                    </ScrollViewer>
+                </Grid>
+            </PivotItem>
+            <PivotItem Header="Versions">
+                <ListView x:Name="VersionsListBox" SelectionMode="None"
+                          Background="{ThemeResource BgSecondaryBrush}"/>
+            </PivotItem>
+            <PivotItem Header="Changelog">
+                <Grid Margin="15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
+                        <TextBlock x:Name="ChangelogVersionText" FontWeight="Bold" FontSize="16"
+                                   Foreground="{ThemeResource FgPrimaryBrush}"/>
+                        <TextBlock x:Name="ChangelogDateText" FontSize="12" Margin="15,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{ThemeResource FgSecondaryBrush}"/>
+                    </StackPanel>
+                    <Border Grid.Row="1" Background="{ThemeResource BgSecondaryBrush}" CornerRadius="6" Padding="15">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="ChangelogTextBlock" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource FgPrimaryBrush}" FontSize="13"/>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </PivotItem>
+        </Pivot>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button Content="Close" Width="100" Height="32" Click="CloseButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

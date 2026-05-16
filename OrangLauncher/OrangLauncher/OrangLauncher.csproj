@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWinUI>true</UseWinUI>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-arm64</RuntimeIdentifiers>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	  <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1721" />
+    <PackageReference Include="fNbt" Version="1.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageReference Include="Mojang.Api.Skins" Version="1.2.1" />
+    <PackageReference Include="MojangAPI" Version="1.2.1" />
+    <PackageReference Include="System.Management" Version="10.0.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Other\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Remove="Other\themes\ArcTheme.xaml" />
+    <Page Remove="Other\themes\DarkPrismTheme.xaml" />
+    <Page Remove="Other\themes\Icons.xaml" />
+    <Page Remove="Other\themes\LightTheme.xaml" />
+    <None Include="Other\themes\ArcTheme.xaml" />
+    <None Include="Other\themes\DarkPrismTheme.xaml" />
+    <None Include="Other\themes\LightTheme.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="Other\themes\Icons.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Content>
+  </ItemGroup>
+</Project>

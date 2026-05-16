@@ -1,0 +1,9 @@
+<Window
+    x:Class="OrangLauncher.MicrosoftLoginDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Microsoft Login">
+    <Grid Background="{ThemeResource BgPrimaryBrush}">
+        <WebView2 x:Name="LoginWebView"/>
+    </Grid>
+</Window>

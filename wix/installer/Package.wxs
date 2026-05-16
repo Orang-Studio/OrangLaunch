@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+    Name="OrangLauncher"
+    Manufacturer="Orang Studio"
+    Version="6.0.0"
+    Language="1033"
+    UpgradeCode="2cf6f0f4-bdef-4b45-a3a9-a14d95b0d6b0"
+    Scope="perMachine"
+    InstallerVersion="500">
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="OrangLauncherIcon.ico" SourceFile="../build/Other/images/orange.ico" />
+    <Property Id="ARPPRODUCTICON" Value="OrangLauncherIcon.ico" />
+    <Property Id="ARPHELPLINK"    Value="https://github.com/Orang-Studio/OrangLaunch" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf"  Value="License.rtf" />
+    <WixVariable Id="WixUIBannerBmp"    Value="assets\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp"    Value="assets\dialog.bmp" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+              Value="Orange Launcher Github is on https://github.com/Orang-Studio/OrangLaunch, You installed Win11 Version " />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX"     Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OrangLauncher!" />
+    <Property Id="WixShellExecTarget" Value="[INSTALLFOLDER]OrangLauncher.exe" />
+    <CustomAction
+      Id="LaunchApplication"
+      BinaryRef="Wix4UtilCA_X86"
+      DllEntry="WixShellExec"
+      Impersonate="yes"
+      Return="ignore" />
+    <UI>
+      <Publish
+        Dialog="ExitDialog"
+        Control="Finish"
+        Event="DoAction"
+        Value="LaunchApplication"
+        Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+    <Property Id="WV2INSTALLED">
+      <RegistrySearch
+        Id="WV2RegistrySearch"
+        Root="HKLM"
+        Key="SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+        Name="pv"
+        Type="raw" />
+    </Property>
+    <CustomAction
+      Id="InstallWV2"
+      Directory="INSTALLFOLDER"
+      ExeCommand="[INSTALLFOLDER]MicrosoftEdgeWebview2Setup.exe /silent /install"
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="no" />
+    <InstallExecuteSequence>
+      <Custom Action="InstallWV2" After="InstallFiles" Condition="NOT WV2INSTALLED" />
+    </InstallExecuteSequence>
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="OrangLauncher">
+        <Directory Id="WEBVIEW2DIR" Name="OrangLauncher.exe.WebView2" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="OrangStartMenuFolder" Name="OrangLauncher" />
+    </StandardDirectory>
+    <Feature Id="ProductFeature" Title="OrangLauncher" Level="1">
+      <ComponentGroupRef Id="AppFiles"                 />
+      <ComponentRef      Id="CmpDesktopShortcut"        />
+      <ComponentRef      Id="CmpStartMenuShortcut"      />
+      <ComponentRef      Id="CmpWebView2DirPermissions" />
+    </Feature>
+  </Package>
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="../build/App.xbf" />
+      <Files Include="../build/CoreMessagingXP.dll" />
+      <Files Include="../build/dcompi.dll" />
+      <Files Include="../build/dwmcorei.dll" />
+      <Files Include="../build/DwmSceneI.dll" />
+      <Files Include="../build/DWriteCore.dll" />
+      <Files Include="../build/fNbt.dll" />
+      <Files Include="../build/LiteDB.dll" />
+      <Files Include="../build/marshal.dll" />
+      <Files Include="../build/Microsoft.CodeAnalysis.CSharp.dll" />
+      <Files Include="../build/Microsoft.CodeAnalysis.dll" />
+      <Files Include="../build/Microsoft.DirectManipulation.dll" />
+      <Files Include="../build/Microsoft.Extensions.Caching.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.Binder.dll" />
+      <Files Include="../build/Microsoft.Extensions.Configuration.dll" />
+      <Files Include="../build/Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.DependencyInjection.dll" />
+      <Files Include="../build/Microsoft.Extensions.Diagnostics.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Diagnostics.dll" />
+      <Files Include="../build/Microsoft.Extensions.Http.dll" />
+      <Files Include="../build/Microsoft.Extensions.Http.Polly.dll" />
+      <Files Include="../build/Microsoft.Extensions.Logging.Abstractions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Logging.dll" />
+      <Files Include="../build/Microsoft.Extensions.Options.ConfigurationExtensions.dll" />
+      <Files Include="../build/Microsoft.Extensions.Options.dll" />
+      <Files Include="../build/Microsoft.Extensions.Primitives.dll" />
+      <Files Include="../build/Microsoft.Foundation.winmd" />
+      <Files Include="../build/Microsoft.Graphics.Display.dll" />
+      <Files Include="../build/Microsoft.Graphics.winmd" />
+      <Files Include="../build/Microsoft.InputStateManager.dll" />
+      <Files Include="../build/Microsoft.InteractiveExperiences.Projection.dll" />
+      <Files Include="../build/Microsoft.Internal.FrameworkUdk.dll" />
+      <Files Include="../build/Microsoft.UI.Composition.OSSupport.dll" />
+      <Files Include="../build/Microsoft.UI.dll" />
+      <Files Include="../build/Microsoft.UI.Input.dll" />
+      <Files Include="../build/Microsoft.UI.pri" />
+      <Files Include="../build/Microsoft.UI.Text.winmd" />
+      <Files Include="../build/Microsoft.UI.Windowing.Core.dll" />
+      <Files Include="../build/Microsoft.UI.Windowing.dll" />
+      <Files Include="../build/Microsoft.UI.winmd" />
+      <Files Include="../build/Microsoft.UI.Xaml.Controls.dll" />
+      <Files Include="../build/Microsoft.UI.Xaml.Controls.pri" />
+      <Files Include="../build/Microsoft.ui.xaml.dll" />
+      <Files Include="../build/Microsoft.UI.Xaml.Internal.dll" />
+      <Files Include="../build/Microsoft.UI.Xaml.Phone.dll" />
+      <Files Include="../build/Microsoft.ui.xaml.resources.19h1.dll" />
+      <Files Include="../build/Microsoft.ui.xaml.resources.common.dll" />
+      <Files Include="../build/Microsoft.UI.Xaml.winmd" />
+      <Files Include="../build/Microsoft.Web.WebView2.Core.dll" />
+      <Files Include="../build/Microsoft.Web.WebView2.Core.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.DynamicDependency.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.DynamicDependency.winmd" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.Resources.dll" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.Resources.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.Resources.winmd" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.WindowsAppRuntime.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.ApplicationModel.WindowsAppRuntime.winmd" />
+      <Files Include="../build/Microsoft.Windows.AppLifecycle.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.AppLifecycle.winmd" />
+      <Files Include="../build/Microsoft.Windows.AppNotifications.Builder.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.AppNotifications.Builder.winmd" />
+      <Files Include="../build/Microsoft.Windows.AppNotifications.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.AppNotifications.winmd" />
+      <Files Include="../build/Microsoft.Windows.Globalization.winmd" />
+      <Files Include="../build/Microsoft.Windows.Management.Deployment.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.Management.Deployment.winmd" />
+      <Files Include="../build/Microsoft.Windows.PushNotifications.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.PushNotifications.winmd" />
+      <Files Include="../build/Microsoft.Windows.SDK.NET.dll" />
+      <Files Include="../build/Microsoft.Windows.Security.AccessControl.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.Security.AccessControl.winmd" />
+      <Files Include="../build/Microsoft.Windows.System.Power.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.System.Power.winmd" />
+      <Files Include="../build/Microsoft.Windows.System.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.System.winmd" />
+      <Files Include="../build/Microsoft.Windows.Storage.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.Storage.winmd" />
+      <Files Include="../build/Microsoft.Windows.Widgets.dll" />
+      <Files Include="../build/Microsoft.Windows.Widgets.Projection.dll" />
+      <Files Include="../build/Microsoft.Windows.Widgets.winmd" />
+      <Files Include="../build/Microsoft.WindowsAppRuntime.Bootstrap.Net.dll" />
+      <Files Include="../build/Microsoft.WindowsAppRuntime.dll" />
+      <Files Include="../build/Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
+      <Files Include="../build/Microsoft.WinUI.dll" />
+      <Files Include="../build/Mojang.Api.Skins.dll" />
+      <Files Include="../build/MojangAPI.dll" />
+      <Files Include="../build/MRM.dll" />
+      <Files Include="../build/OrangeLauncher.xbf" />
+      <Files Include="../build/OrangLauncher.deps.json" />
+      <Files Include="../build/OrangLauncher.dll" />
+      <Files Include="../build/OrangLauncher.exe" />
+      <Files Include="../build/OrangLauncher.pri" />
+      <Files Include="../build/OrangLauncher.runtimeconfig.json" />
+      <Files Include="../build/Polly.dll" />
+      <Files Include="../build/Polly.Extensions.Http.dll" />
+      <Files Include="../build/PushNotificationsLongRunningTask.ProxyStub.dll" />
+      <Files Include="../build/RestartAgent.exe" />
+      <Files Include="../build/SkiaSharp.dll" />
+      <Files Include="../build/System.CodeDom.dll" />
+      <Files Include="../build/System.Diagnostics.DiagnosticSource.dll" />
+      <Files Include="../build/System.IO.Pipelines.dll" />
+      <Files Include="../build/System.Management.dll" />
+      <Files Include="../build/System.Net.Http.Json.dll" />
+      <Files Include="../build/System.Text.Encodings.Web.dll" />
+      <Files Include="../build/System.Text.Json.dll" />
+      <Files Include="../build/WindowsAppRuntime.DeploymentExtensions.OneCore.dll" />
+      <Files Include="../build/WindowsAppRuntime.png" />
+      <Files Include="../build/WindowsAppSdk.AppxDeploymentExtensions.Desktop.dll" />
+      <Files Include="../build/WindowsAppSdk.AppxDeploymentExtensions.Desktop-EventLog-Instrumentation.dll" />
+      <Files Include="../build/WinRT.Runtime.dll" />
+      <Files Include="../build/WinUIEdit.dll" />
+      <Files Include="../build/wuceffectsi.dll" />
+      <Files Include="../build/Microsoft.UI.Xaml/Assets/map.html" Subdirectory="Microsoft.UI.Xaml\Assets" />
+      <Files Include="../build/Microsoft.UI.Xaml/Assets/NoiseAsset_256x256_PNG.png" Subdirectory="Microsoft.UI.Xaml\Assets" />
+      <Files Include="../build/Other/images/minecraft-blue.png" Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/minecraft-green.png" Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/orange.ico" Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/orange.png" Subdirectory="Other\images" />
+      <Files Include="../build/Other/images/ping/incompatible.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_1.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_2.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_3.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_4.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/ping_5.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_1.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_2.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_3.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_4.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/images/ping/pinging_5.png" Subdirectory="Other\images\ping" />
+      <Files Include="../build/Other/locales/de-DE.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/en-US.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/lt-LT.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/lv-LV.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/pl-PL.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/locales/ru-RU.locale" Subdirectory="Other\locales" />
+      <Files Include="../build/Other/plugins/ExamplePlugin.cs" Subdirectory="Other\plugins" />
+      <Files Include="../build/Other/themes/ArcTheme.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/DarkPrismTheme.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/Dimensions.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/Dimensions.xbf" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/Icons.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/LightTheme.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/ThemeResources.xaml" Subdirectory="Other\themes" />
+      <Files Include="../build/Other/themes/ThemeResources.xbf" Subdirectory="Other\themes" />
+      <Files Include="../build/Scripts/AddTextDialog.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/Scripts/DownloadWindow.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/Scripts/MicrosoftLoginDialog.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/Scripts/MicrosoftLoginWindow.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/Scripts/ModDetailsWindow.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/Scripts/UpdateWindow.xbf" Subdirectory="Scripts" />
+      <Files Include="../build/runtimes/browser/lib/net8.0/System.Text.Encodings.Web.dll" Subdirectory="runtimes\browser\lib\net8.0" />
+      <Files Include="../build/runtimes/win/lib/net8.0/System.Management.dll" Subdirectory="runtimes\win\lib\net8.0" />
+      <Files Include="../build/runtimes/win-arm64/native/libSkiaSharp.dll" Subdirectory="runtimes\win-arm64\native" />
+      <Files Include="../build/runtimes/win-arm64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll" Subdirectory="runtimes\win-arm64\native" />
+      <Files Include="../build/runtimes/win-arm64/native/WebView2Loader.dll" Subdirectory="runtimes\win-arm64\native" />
+      <Files Include="../build/runtimes/win-x64/native/libSkiaSharp.dll" Subdirectory="runtimes\win-x64\native" />
+      <Files Include="../build/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll" Subdirectory="runtimes\win-x64\native" />
+      <Files Include="../build/runtimes/win-x64/native/WebView2Loader.dll" Subdirectory="runtimes\win-x64\native" />
+      <Files Include="../build/runtimes/win-x86/native/libSkiaSharp.dll" Subdirectory="runtimes\win-x86\native" />
+      <Files Include="../build/runtimes/win-x86/native/Microsoft.WindowsAppRuntime.Bootstrap.dll" Subdirectory="runtimes\win-x86\native" />
+      <Files Include="../build/runtimes/win-x86/native/WebView2Loader.dll" Subdirectory="runtimes\win-x86\native" />
+      <Files Include="../build/af-ZA/Microsoft.ui.xaml.dll.mui" Subdirectory="af-ZA" />
+      <Files Include="../build/af-ZA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="af-ZA" />
+      <Files Include="../build/am-ET/Microsoft.ui.xaml.dll.mui" Subdirectory="am-ET" />
+      <Files Include="../build/am-ET/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="am-ET" />
+      <Files Include="../build/ar-SA/Microsoft.ui.xaml.dll.mui" Subdirectory="ar-SA" />
+      <Files Include="../build/ar-SA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ar-SA" />
+      <Files Include="../build/as-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="as-IN" />
+      <Files Include="../build/as-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="as-IN" />
+      <Files Include="../build/az-Latn-AZ/Microsoft.ui.xaml.dll.mui" Subdirectory="az-Latn-AZ" />
+      <Files Include="../build/az-Latn-AZ/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="az-Latn-AZ" />
+      <Files Include="../build/bg-BG/Microsoft.ui.xaml.dll.mui" Subdirectory="bg-BG" />
+      <Files Include="../build/bg-BG/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="bg-BG" />
+      <Files Include="../build/bn-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="bn-IN" />
+      <Files Include="../build/bn-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="bn-IN" />
+      <Files Include="../build/bs-Latn-BA/Microsoft.ui.xaml.dll.mui" Subdirectory="bs-Latn-BA" />
+      <Files Include="../build/bs-Latn-BA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="bs-Latn-BA" />
+      <Files Include="../build/ca-ES/Microsoft.ui.xaml.dll.mui" Subdirectory="ca-ES" />
+      <Files Include="../build/ca-ES/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ca-ES" />
+      <Files Include="../build/ca-Es-VALENCIA/Microsoft.ui.xaml.dll.mui" Subdirectory="ca-Es-VALENCIA" />
+      <Files Include="../build/ca-Es-VALENCIA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ca-Es-VALENCIA" />
+      <Files Include="../build/cs-CZ/Microsoft.ui.xaml.dll.mui" Subdirectory="cs-CZ" />
+      <Files Include="../build/cs-CZ/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="cs-CZ" />
+      <Files Include="../build/cy-GB/Microsoft.ui.xaml.dll.mui" Subdirectory="cy-GB" />
+      <Files Include="../build/cy-GB/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="cy-GB" />
+      <Files Include="../build/da-DK/Microsoft.ui.xaml.dll.mui" Subdirectory="da-DK" />
+      <Files Include="../build/da-DK/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="da-DK" />
+      <Files Include="../build/de-DE/Microsoft.ui.xaml.dll.mui" Subdirectory="de-DE" />
+      <Files Include="../build/de-DE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="de-DE" />
+      <Files Include="../build/el-GR/Microsoft.ui.xaml.dll.mui" Subdirectory="el-GR" />
+      <Files Include="../build/el-GR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="el-GR" />
+      <Files Include="../build/en-GB/Microsoft.ui.xaml.dll.mui" Subdirectory="en-GB" />
+      <Files Include="../build/en-GB/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="en-GB" />
+      <Files Include="../build/en-us/Microsoft.ui.xaml.dll.mui" Subdirectory="en-us" />
+      <Files Include="../build/en-us/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="en-us" />
+      <Files Include="../build/es-ES/Microsoft.ui.xaml.dll.mui" Subdirectory="es-ES" />
+      <Files Include="../build/es-ES/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="es-ES" />
+      <Files Include="../build/es-MX/Microsoft.ui.xaml.dll.mui" Subdirectory="es-MX" />
+      <Files Include="../build/es-MX/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="es-MX" />
+      <Files Include="../build/et-EE/Microsoft.ui.xaml.dll.mui" Subdirectory="et-EE" />
+      <Files Include="../build/et-EE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="et-EE" />
+      <Files Include="../build/eu-ES/Microsoft.ui.xaml.dll.mui" Subdirectory="eu-ES" />
+      <Files Include="../build/eu-ES/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="eu-ES" />
+      <Files Include="../build/fa-IR/Microsoft.ui.xaml.dll.mui" Subdirectory="fa-IR" />
+      <Files Include="../build/fa-IR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="fa-IR" />
+      <Files Include="../build/fi-FI/Microsoft.ui.xaml.dll.mui" Subdirectory="fi-FI" />
+      <Files Include="../build/fi-FI/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="fi-FI" />
+      <Files Include="../build/fil-PH/Microsoft.ui.xaml.dll.mui" Subdirectory="fil-PH" />
+      <Files Include="../build/fil-PH/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="fil-PH" />
+      <Files Include="../build/fr-CA/Microsoft.ui.xaml.dll.mui" Subdirectory="fr-CA" />
+      <Files Include="../build/fr-CA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="fr-CA" />
+      <Files Include="../build/fr-FR/Microsoft.ui.xaml.dll.mui" Subdirectory="fr-FR" />
+      <Files Include="../build/fr-FR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="fr-FR" />
+      <Files Include="../build/ga-IE/Microsoft.ui.xaml.dll.mui" Subdirectory="ga-IE" />
+      <Files Include="../build/ga-IE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ga-IE" />
+      <Files Include="../build/gd-gb/Microsoft.ui.xaml.dll.mui" Subdirectory="gd-gb" />
+      <Files Include="../build/gd-gb/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="gd-gb" />
+      <Files Include="../build/gl-ES/Microsoft.ui.xaml.dll.mui" Subdirectory="gl-ES" />
+      <Files Include="../build/gl-ES/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="gl-ES" />
+      <Files Include="../build/gu-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="gu-IN" />
+      <Files Include="../build/gu-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="gu-IN" />
+      <Files Include="../build/he-IL/Microsoft.ui.xaml.dll.mui" Subdirectory="he-IL" />
+      <Files Include="../build/he-IL/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="he-IL" />
+      <Files Include="../build/hi-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="hi-IN" />
+      <Files Include="../build/hi-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="hi-IN" />
+      <Files Include="../build/hr-HR/Microsoft.ui.xaml.dll.mui" Subdirectory="hr-HR" />
+      <Files Include="../build/hr-HR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="hr-HR" />
+      <Files Include="../build/hu-HU/Microsoft.ui.xaml.dll.mui" Subdirectory="hu-HU" />
+      <Files Include="../build/hu-HU/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="hu-HU" />
+      <Files Include="../build/hy-AM/Microsoft.ui.xaml.dll.mui" Subdirectory="hy-AM" />
+      <Files Include="../build/hy-AM/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="hy-AM" />
+      <Files Include="../build/id-ID/Microsoft.ui.xaml.dll.mui" Subdirectory="id-ID" />
+      <Files Include="../build/id-ID/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="id-ID" />
+      <Files Include="../build/is-IS/Microsoft.ui.xaml.dll.mui" Subdirectory="is-IS" />
+      <Files Include="../build/is-IS/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="is-IS" />
+      <Files Include="../build/it-IT/Microsoft.ui.xaml.dll.mui" Subdirectory="it-IT" />
+      <Files Include="../build/it-IT/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="it-IT" />
+      <Files Include="../build/ja-JP/Microsoft.ui.xaml.dll.mui" Subdirectory="ja-JP" />
+      <Files Include="../build/ja-JP/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ja-JP" />
+      <Files Include="../build/ka-GE/Microsoft.ui.xaml.dll.mui" Subdirectory="ka-GE" />
+      <Files Include="../build/ka-GE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ka-GE" />
+      <Files Include="../build/kk-KZ/Microsoft.ui.xaml.dll.mui" Subdirectory="kk-KZ" />
+      <Files Include="../build/kk-KZ/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="kk-KZ" />
+      <Files Include="../build/km-KH/Microsoft.ui.xaml.dll.mui" Subdirectory="km-KH" />
+      <Files Include="../build/km-KH/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="km-KH" />
+      <Files Include="../build/kn-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="kn-IN" />
+      <Files Include="../build/kn-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="kn-IN" />
+      <Files Include="../build/ko-KR/Microsoft.ui.xaml.dll.mui" Subdirectory="ko-KR" />
+      <Files Include="../build/ko-KR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ko-KR" />
+      <Files Include="../build/kok-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="kok-IN" />
+      <Files Include="../build/kok-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="kok-IN" />
+      <Files Include="../build/lb-LU/Microsoft.ui.xaml.dll.mui" Subdirectory="lb-LU" />
+      <Files Include="../build/lb-LU/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="lb-LU" />
+      <Files Include="../build/lo-LA/Microsoft.ui.xaml.dll.mui" Subdirectory="lo-LA" />
+      <Files Include="../build/lo-LA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="lo-LA" />
+      <Files Include="../build/lt-LT/Microsoft.ui.xaml.dll.mui" Subdirectory="lt-LT" />
+      <Files Include="../build/lt-LT/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="lt-LT" />
+      <Files Include="../build/lv-LV/Microsoft.ui.xaml.dll.mui" Subdirectory="lv-LV" />
+      <Files Include="../build/lv-LV/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="lv-LV" />
+      <Files Include="../build/mi-NZ/Microsoft.ui.xaml.dll.mui" Subdirectory="mi-NZ" />
+      <Files Include="../build/mi-NZ/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="mi-NZ" />
+      <Files Include="../build/mk-MK/Microsoft.ui.xaml.dll.mui" Subdirectory="mk-MK" />
+      <Files Include="../build/mk-MK/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="mk-MK" />
+      <Files Include="../build/ml-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="ml-IN" />
+      <Files Include="../build/ml-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ml-IN" />
+      <Files Include="../build/mr-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="mr-IN" />
+      <Files Include="../build/mr-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="mr-IN" />
+      <Files Include="../build/ms-MY/Microsoft.ui.xaml.dll.mui" Subdirectory="ms-MY" />
+      <Files Include="../build/ms-MY/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ms-MY" />
+      <Files Include="../build/mt-MT/Microsoft.ui.xaml.dll.mui" Subdirectory="mt-MT" />
+      <Files Include="../build/mt-MT/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="mt-MT" />
+      <Files Include="../build/nb-NO/Microsoft.ui.xaml.dll.mui" Subdirectory="nb-NO" />
+      <Files Include="../build/nb-NO/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="nb-NO" />
+      <Files Include="../build/ne-NP/Microsoft.ui.xaml.dll.mui" Subdirectory="ne-NP" />
+      <Files Include="../build/ne-NP/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ne-NP" />
+      <Files Include="../build/nl-NL/Microsoft.ui.xaml.dll.mui" Subdirectory="nl-NL" />
+      <Files Include="../build/nl-NL/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="nl-NL" />
+      <Files Include="../build/nn-NO/Microsoft.ui.xaml.dll.mui" Subdirectory="nn-NO" />
+      <Files Include="../build/nn-NO/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="nn-NO" />
+      <Files Include="../build/or-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="or-IN" />
+      <Files Include="../build/or-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="or-IN" />
+      <Files Include="../build/pa-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="pa-IN" />
+      <Files Include="../build/pa-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="pa-IN" />
+      <Files Include="../build/pl-PL/Microsoft.ui.xaml.dll.mui" Subdirectory="pl-PL" />
+      <Files Include="../build/pl-PL/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="pl-PL" />
+      <Files Include="../build/pt-BR/Microsoft.ui.xaml.dll.mui" Subdirectory="pt-BR" />
+      <Files Include="../build/pt-BR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="pt-BR" />
+      <Files Include="../build/pt-PT/Microsoft.ui.xaml.dll.mui" Subdirectory="pt-PT" />
+      <Files Include="../build/pt-PT/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="pt-PT" />
+      <Files Include="../build/quz-PE/Microsoft.ui.xaml.dll.mui" Subdirectory="quz-PE" />
+      <Files Include="../build/quz-PE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="quz-PE" />
+      <Files Include="../build/ro-RO/Microsoft.ui.xaml.dll.mui" Subdirectory="ro-RO" />
+      <Files Include="../build/ro-RO/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ro-RO" />
+      <Files Include="../build/ru-RU/Microsoft.ui.xaml.dll.mui" Subdirectory="ru-RU" />
+      <Files Include="../build/ru-RU/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ru-RU" />
+      <Files Include="../build/sk-SK/Microsoft.ui.xaml.dll.mui" Subdirectory="sk-SK" />
+      <Files Include="../build/sk-SK/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sk-SK" />
+      <Files Include="../build/sl-SI/Microsoft.ui.xaml.dll.mui" Subdirectory="sl-SI" />
+      <Files Include="../build/sl-SI/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sl-SI" />
+      <Files Include="../build/sq-AL/Microsoft.ui.xaml.dll.mui" Subdirectory="sq-AL" />
+      <Files Include="../build/sq-AL/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sq-AL" />
+      <Files Include="../build/sr-Cyrl-BA/Microsoft.ui.xaml.dll.mui" Subdirectory="sr-Cyrl-BA" />
+      <Files Include="../build/sr-Cyrl-BA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sr-Cyrl-BA" />
+      <Files Include="../build/sr-Cyrl-RS/Microsoft.ui.xaml.dll.mui" Subdirectory="sr-Cyrl-RS" />
+      <Files Include="../build/sr-Cyrl-RS/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sr-Cyrl-RS" />
+      <Files Include="../build/sr-Latn-RS/Microsoft.ui.xaml.dll.mui" Subdirectory="sr-Latn-RS" />
+      <Files Include="../build/sr-Latn-RS/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sr-Latn-RS" />
+      <Files Include="../build/sv-SE/Microsoft.ui.xaml.dll.mui" Subdirectory="sv-SE" />
+      <Files Include="../build/sv-SE/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="sv-SE" />
+      <Files Include="../build/ta-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="ta-IN" />
+      <Files Include="../build/ta-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ta-IN" />
+      <Files Include="../build/te-IN/Microsoft.ui.xaml.dll.mui" Subdirectory="te-IN" />
+      <Files Include="../build/te-IN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="te-IN" />
+      <Files Include="../build/th-TH/Microsoft.ui.xaml.dll.mui" Subdirectory="th-TH" />
+      <Files Include="../build/th-TH/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="th-TH" />
+      <Files Include="../build/tr-TR/Microsoft.ui.xaml.dll.mui" Subdirectory="tr-TR" />
+      <Files Include="../build/tr-TR/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="tr-TR" />
+      <Files Include="../build/tt-RU/Microsoft.ui.xaml.dll.mui" Subdirectory="tt-RU" />
+      <Files Include="../build/tt-RU/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="tt-RU" />
+      <Files Include="../build/ug-CN/Microsoft.ui.xaml.dll.mui" Subdirectory="ug-CN" />
+      <Files Include="../build/ug-CN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ug-CN" />
+      <Files Include="../build/uk-UA/Microsoft.ui.xaml.dll.mui" Subdirectory="uk-UA" />
+      <Files Include="../build/uk-UA/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="uk-UA" />
+      <Files Include="../build/ur-PK/Microsoft.ui.xaml.dll.mui" Subdirectory="ur-PK" />
+      <Files Include="../build/ur-PK/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="ur-PK" />
+      <Files Include="../build/uz-Latn-UZ/Microsoft.ui.xaml.dll.mui" Subdirectory="uz-Latn-UZ" />
+      <Files Include="../build/uz-Latn-UZ/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="uz-Latn-UZ" />
+      <Files Include="../build/vi-VN/Microsoft.ui.xaml.dll.mui" Subdirectory="vi-VN" />
+      <Files Include="../build/vi-VN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="vi-VN" />
+      <Files Include="../build/zh-CN/Microsoft.ui.xaml.dll.mui" Subdirectory="zh-CN" />
+      <Files Include="../build/zh-CN/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="zh-CN" />
+      <Files Include="../build/zh-TW/Microsoft.ui.xaml.dll.mui" Subdirectory="zh-TW" />
+      <Files Include="../build/zh-TW/Microsoft.UI.Xaml.Phone.dll.mui" Subdirectory="zh-TW" />
+      <Files Include="../build/cs/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="cs" />
+      <Files Include="../build/cs/Microsoft.CodeAnalysis.resources.dll" Subdirectory="cs" />
+      <Files Include="../build/de/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="de" />
+      <Files Include="../build/de/Microsoft.CodeAnalysis.resources.dll" Subdirectory="de" />
+      <Files Include="../build/es/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="es" />
+      <Files Include="../build/es/Microsoft.CodeAnalysis.resources.dll" Subdirectory="es" />
+      <Files Include="../build/fr/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="fr" />
+      <Files Include="../build/fr/Microsoft.CodeAnalysis.resources.dll" Subdirectory="fr" />
+      <Files Include="../build/it/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="it" />
+      <Files Include="../build/it/Microsoft.CodeAnalysis.resources.dll" Subdirectory="it" />
+      <Files Include="../build/ja/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="ja" />
+      <Files Include="../build/ja/Microsoft.CodeAnalysis.resources.dll" Subdirectory="ja" />
+      <Files Include="../build/ko/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="ko" />
+      <Files Include="../build/ko/Microsoft.CodeAnalysis.resources.dll" Subdirectory="ko" />
+      <Files Include="../build/pl/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="pl" />
+      <Files Include="../build/pl/Microsoft.CodeAnalysis.resources.dll" Subdirectory="pl" />
+      <Files Include="../build/pt-BR/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="pt-BR" />
+      <Files Include="../build/pt-BR/Microsoft.CodeAnalysis.resources.dll" Subdirectory="pt-BR" />
+      <Files Include="../build/ru/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="ru" />
+      <Files Include="../build/ru/Microsoft.CodeAnalysis.resources.dll" Subdirectory="ru" />
+      <Files Include="../build/tr/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="tr" />
+      <Files Include="../build/tr/Microsoft.CodeAnalysis.resources.dll" Subdirectory="tr" />
+      <Files Include="../build/zh-Hans/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="zh-Hans" />
+      <Files Include="../build/zh-Hans/Microsoft.CodeAnalysis.resources.dll" Subdirectory="zh-Hans" />
+      <Files Include="../build/zh-Hant/Microsoft.CodeAnalysis.CSharp.resources.dll" Subdirectory="zh-Hant" />
+      <Files Include="../build/zh-Hant/Microsoft.CodeAnalysis.resources.dll" Subdirectory="zh-Hant" />
+      <Files Include="assets/MicrosoftEdgeWebview2Setup.exe" />
+    </ComponentGroup>
+  </Fragment>
+  <Fragment>
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="CmpDesktopShortcut" Guid="*">
+        <Shortcut
+          Id="DesktopShortcut"
+          Name="OrangLauncher"
+          Description="OrangLauncher — Minecraft Launcher"
+          Target="[INSTALLFOLDER]OrangLauncher.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="OrangLauncherIcon.ico"
+          IconIndex="0" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\OrangLauncher"
+          Name="DesktopShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Fragment>
+  <Fragment>
+    <DirectoryRef Id="OrangStartMenuFolder">
+      <Component Id="CmpStartMenuShortcut" Guid="*">
+        <Shortcut
+          Id="StartMenuShortcut"
+          Name="OrangLauncher"
+          Description="OrangLauncher — Minecraft Launcher"
+          Target="[INSTALLFOLDER]OrangLauncher.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="OrangLauncherIcon.ico"
+          IconIndex="0" />
+        <RemoveFolder
+          Id="RemoveOrangStartMenuFolder"
+          Directory="OrangStartMenuFolder"
+          On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\OrangLauncher"
+          Name="StartMenuShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <Component Id="CmpWebView2DirPermissions" Directory="WEBVIEW2DIR" Guid="7B3E9F2A-4C1D-4A8E-B6F5-0D2E8A3C7F91">
+      <CreateFolder>
+        <util:PermissionEx User="Users" GenericAll="yes" />
+      </CreateFolder>
+    </Component>
+  </Fragment>
+</Wix>
