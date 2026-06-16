@@ -1,0 +1,118 @@
+name: Publish AUR Source Package
+
+on:
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  publish-aur-src:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: pacman -Sy --noconfirm git openssh sudo base-devel curl perl
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^CURRENT_VERSION' launcher.py | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check AUR version
+        id: check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          AUR_PKGBUILD=$(curl -s "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=oranglauncher")
+          AUR_VERSION=$(echo "$AUR_PKGBUILD" | grep '^pkgver=' | sed 's/pkgver=//')
+          echo "aur_version=$AUR_VERSION" >> $GITHUB_OUTPUT
+          if [ "$VERSION" != "$AUR_VERSION" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "New version $VERSION (AUR is on $AUR_VERSION) — will publish"
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already on AUR — skipping"
+          fi
+
+      - name: Push version tag
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "vakarux"
+          git config user.email "vakaris@oranges.lt"
+          git tag "$VERSION" || true
+          git push origin "$VERSION" || true
+
+      - name: Compute source tarball sha256
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          URL="https://github.com/${REPO}/archive/refs/tags/${VERSION}.tar.gz"
+          curl -fsSL "$URL" -o source.tar.gz
+          echo "SHA256=$(sha256sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Set up AUR SSH key
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SRC_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
+
+      - name: Clone AUR repo
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
+        run: git clone ssh://aur@aur.archlinux.org/oranglauncher.git /tmp/aur-src
+
+      - name: Update PKGBUILD
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          PKGBUILD=/tmp/aur-src/PKGBUILD
+
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$PKGBUILD"
+          sed -i "s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
+          perl -i -0pe "s|(sha256sums=\()['\"](?:SKIP|[a-f0-9]{64})['\"]|\${1}'${SHA256}'|" "$PKGBUILD"
+
+      - name: Regenerate .SRCINFO
+        if: steps.check.outputs.should_publish == 'true'
+        run: |
+          cd /tmp/aur-src
+          useradd -m builder
+          chown -R builder:builder .
+          git config --global --add safe.directory /tmp/aur-src
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+      - name: Push to AUR
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd /tmp/aur-src
+          git config user.name "vakarux"
+          git config user.email "vakaris@oranges.lt"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${VERSION}"
+          git push origin master
