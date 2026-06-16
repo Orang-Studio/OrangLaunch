@@ -21,7 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install tools
-        run: pacman -Sy --noconfirm git openssh sudo base-devel curl perl
+        run: |
+          pacman -Sy --noconfirm git openssh sudo base-devel curl perl
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Extract version
         id: version
