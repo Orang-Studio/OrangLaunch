@@ -24,6 +24,7 @@ jobs:
         run: |
           pacman -Sy --noconfirm git openssh sudo base-devel curl perl
           git config --global --add safe.directory '*'
+          git config --global --add safe.directory /github/workspace
 
       - name: Extract version
         id: version
@@ -53,12 +54,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
         run: |
-          cd "$GITHUB_WORKSPACE"
-          git config user.name "adasjusk"
-          git config user.email "adasjusk2011@gmail.com"
-          git tag "$VERSION" || true
-          git push origin "$VERSION" || true
+          SHA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${REPO}/git/ref/heads/main" \
+            | grep '"sha"' | head -1 | sed 's/.*"sha": "\([^"]*\)".*/\1/')
+          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${REPO}/git/refs" \
+            -d "{\"ref\":\"refs/tags/${VERSION}\",\"sha\":\"${SHA}\"}" || true
 
       - name: Compute source tarball sha256
         if: steps.check.outputs.should_publish == 'true'
