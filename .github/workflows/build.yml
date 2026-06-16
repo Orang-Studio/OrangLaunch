@@ -161,8 +161,7 @@ jobs:
 
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$PKGBUILD"
           sed -i "s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
-          CURRENT_SHA=$(grep -m1 "sha256sums=" "$PKGBUILD" | grep -oP "'[a-f0-9]{64}'" | tr -d "'")
-          sed -i "s/${CURRENT_SHA}/${SHA256}/" "$PKGBUILD"
+          sed -i "0,/^sha256sums=(/{s/^sha256sums=('[^']*'/sha256sums=('${SHA256}'/}" "$PKGBUILD"
           sed -i "s|/download/[^/]*/launcher_x64_linux_[^\"']*\.tar\.gz|/download/${GH_TAG}/launcher_x64_linux_${VERSION}.tar.gz|" "$PKGBUILD"
 
       - name: Regenerate .SRCINFO
