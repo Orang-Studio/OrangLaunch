@@ -52,10 +52,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git config user.name "vakarux"
-          git config user.email "vakaris@oranges.lt"
-          git tag "$VERSION" || true
-          git push origin "$VERSION" || true
+          git -C "$GITHUB_WORKSPACE" config user.name "adasjusk"
+          git -C "$GITHUB_WORKSPACE" config user.email "adasjusk2011@gmail.com"
+          git -C "$GITHUB_WORKSPACE" tag "$VERSION" || true
+          git -C "$GITHUB_WORKSPACE" push origin "$VERSION" || true
 
       - name: Compute source tarball sha256
         if: steps.check.outputs.should_publish == 'true'
@@ -111,8 +111,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd /tmp/aur-src
-          git config user.name "vakarux"
-          git config user.email "vakaris@oranges.lt"
+          git config user.name "adasjusk"
+          git config user.email "adasjusk2011@gmail.com"
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${VERSION}"
           git push origin master
