@@ -23,7 +23,7 @@ jobs:
       - name: Install tools
         run: |
           pacman -Sy --noconfirm git openssh sudo base-devel curl perl
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory '*'
 
       - name: Extract version
         id: version
@@ -54,10 +54,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git -C "$GITHUB_WORKSPACE" config user.name "adasjusk"
-          git -C "$GITHUB_WORKSPACE" config user.email "adasjusk2011@gmail.com"
-          git -C "$GITHUB_WORKSPACE" tag "$VERSION" || true
-          git -C "$GITHUB_WORKSPACE" push origin "$VERSION" || true
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "adasjusk"
+          git config user.email "adasjusk2011@gmail.com"
+          git tag "$VERSION" || true
+          git push origin "$VERSION" || true
 
       - name: Compute source tarball sha256
         if: steps.check.outputs.should_publish == 'true'
