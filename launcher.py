@@ -1,19 +1,22 @@
+import os
 import sys
+os.environ["GDK_BACKEND"] = "x11"
 if sys.platform.startswith("linux") and os.environ.get("ORANG_FC_PRELOAD") != "1":
-    _fc = next((p for p in ("/usr/lib/libfontconfig.so.1", "/usr/lib64/libfontconfig.so.1",
-                            "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1") if os.path.exists(p)), None)
-    if _fc:
-        os.environ["ORANG_FC_PRELOAD"] = "1"
-        _pre = os.environ.get("LD_PRELOAD", "")
-        os.environ["LD_PRELOAD"] = _fc + (":" + _pre if _pre else "")
-        try:
-            if "__compiled__" in globals() or getattr(sys, "frozen", False):
-                os.execv(sys.executable, sys.argv)
-            else:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception:
-            pass
-os.environ.setdefault("GDK_BACKEND", "x11")
+    try:
+        _exe = os.readlink("/proc/self/exe")
+    except OSError:
+        _exe = ""
+    if _exe and not os.path.basename(_exe).startswith("python"):
+        _fc = next((p for p in ("/usr/lib/libfontconfig.so.1", "/usr/lib64/libfontconfig.so.1",
+                                "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1") if os.path.exists(p)), None)
+        if _fc:
+            os.environ["ORANG_FC_PRELOAD"] = "1"
+            _pre = os.environ.get("LD_PRELOAD", "")
+            os.environ["LD_PRELOAD"] = _fc + (":" + _pre if _pre else "")
+            try:
+                os.execv(_exe, sys.argv)
+            except Exception:
+                pass
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import builtins
 import tkinter as tk
@@ -5465,7 +5468,7 @@ class GameProfilesTab:
                                                font=("Consolas", 9), bd=1, relief="solid",
                                                highlightthickness=0)
         self.settings_env_vars_text.pack()
-        tk.Label(env_frame, text="One var per line: KEY=VALUE
+        tk.Label(env_frame, text="One var per line: KEY=VALUE  (lines starting with # are ignored)",
                  fg=self.theme_manager.get_color('fg_secondary'), bg=self._get_card_bg(),
                  font=("Segoe UI", 8)).pack(anchor="w")
 
