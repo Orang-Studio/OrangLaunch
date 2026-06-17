@@ -1,8 +1,8 @@
-name: Publish AUR Source Package
+name: Source
 
 on:
   workflow_run:
-    workflows: ["Build"]
+    workflows: ["Binary"]
     types: [completed]
   workflow_dispatch:
 
