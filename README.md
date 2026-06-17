@@ -17,8 +17,19 @@
 # Installation 
 
 ## Arch Linux x64
-Install with [**yay**](https://github.com/Jguer/yay):
-```yay -Syu oranglauncher-bin```
+[![Source](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/buildsrc.yml/badge.svg)](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/buildsrc.yml) [![Binary](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/build.yml/badge.svg)](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/build.yml)
+
+Install with [**yay**](https://github.com/Jguer/yay). There is two options for btw users:<br>
+Prebuild binary (Fast)<br>
+```shell
+yay -Sy oranglauncher-bin
+```
+
+Build from source py (Slower, can fail)<br>
+```shell
+yay -Syu oranglauncher
+```
+<br>
 
 ## Linux Other x64 
 Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
