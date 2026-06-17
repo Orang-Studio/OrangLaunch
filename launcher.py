@@ -1,9 +1,4 @@
-import os
 import sys
-# The standalone (Nuitka) build bundles an older libfontconfig that shadows the system
-# one, leaving system libpangoft2/libgdk-3 without FcConfigSetDefaultSubstitute — which
-# breaks the WebKitGTK news view. Preload the system fontconfig (so it wins) and re-exec
-# once. Harmless when running from source. Must happen before tkinter loads fontconfig.
 if sys.platform.startswith("linux") and os.environ.get("ORANG_FC_PRELOAD") != "1":
     _fc = next((p for p in ("/usr/lib/libfontconfig.so.1", "/usr/lib64/libfontconfig.so.1",
                             "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1") if os.path.exists(p)), None)
@@ -13,11 +8,13 @@ if sys.platform.startswith("linux") and os.environ.get("ORANG_FC_PRELOAD") != "1
         os.environ["LD_PRELOAD"] = _fc + (":" + _pre if _pre else "")
         try:
             if "__compiled__" in globals() or getattr(sys, "frozen", False):
-                os.execv(sys.executable, sys.argv)            # bundled binary
+                os.execv(sys.executable, sys.argv)
             else:
-                os.execv(sys.executable, [sys.executable] + sys.argv)  # source run
+                os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception:
             pass
+os.environ.setdefault("GDK_BACKEND", "x11")
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import builtins
 import tkinter as tk
 import platform
@@ -35,9 +32,6 @@ import base64
 import urllib.parse
 import importlib.util
 import os
-# force X11/GDK backend so the embedded WebKitGTK news view works under XWayland
-# on any compositor (XFCE/Hyprland/GNOME). Tk is X11-only so the webview must match.
-os.environ.setdefault("GDK_BACKEND", "x11")
 import minecraft_launcher_lib
 import requests
 import uuid as uuid_module
@@ -56,7 +50,7 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog, simpledialog
 from datetime import datetime, timedelta
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import io
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable, Tuple
 try:
     from pypresence.presence import Presence
 except ImportError:
@@ -64,15 +58,23 @@ except ImportError:
 from collections import deque
 from pathlib import Path
 
-os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+
 import pygame as _pygame
 import pygame as _pg
+import platform as _platform
+import uuid as _uuid
+import gi
+import socket, json, struct
+import re as _re_ansi
+import stat
+from minecraft_launcher_lib.mod_loader import Neoforge
+import subprocess as _sp
+import re as _re
+
 pygame = None
 pygame_available = False
 pygame_mixer_initialized = False
 pygame = _pygame
-# DO NOT CALL pygame.init() HERE - it will initialize audio and other modules
-# Only initialize mixer on first music play via _toggle_music()
 pygame_available = True
 _http_session = requests.Session()
 _http_session.headers.update({"User-Agent": "OrangLauncher"})
@@ -192,7 +194,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "6.1.5"
+CURRENT_VERSION = "6.1.7"
 REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
@@ -225,7 +227,6 @@ def check_for_updates():
             data = response.json()
             tag_name = data.get("tag_name", "")
             latest_version = tag_name.lstrip("v")
-            
             compare_version = latest_version.replace("-Linux", "")
             current_compare = CURRENT_VERSION.replace("-Linux", "") 
 
@@ -288,7 +289,6 @@ def perform_update(download_url, launcher_root):
         print(f"Downloading update from {download_url}...")
         is_tar_gz = download_url.endswith(".tar.gz")
         filename = "update.tar.gz" if is_tar_gz else "update.zip"
-
         update_file = Path.home() / ".cache" / "oranglauncher" / filename
         update_file.parent.mkdir(parents=True, exist_ok=True)
         with _http_session.get(download_url, stream=True) as response:
@@ -320,15 +320,15 @@ def perform_update(download_url, launcher_root):
         python_exe = sys.executable
         main_script = Path(launcher_root) / "launcher.py"
         script_content = f"""#!/bin/bash
-sleep 2
-echo "Updating OrangLauncher..."
-cp -r "{update_source}"/* "{launcher_root}/"
-rm -rf "{extract_path}"
-rm -f "{update_file}"
-rm -f "$0"
-cd "{launcher_root}"
-"{python_exe}" "{main_script}" &
-"""
+        sleep 2
+        echo "Updating OrangLauncher..."
+        cp -r "{update_source}"/* "{launcher_root}/"
+        rm -rf "{extract_path}"
+        rm -f "{update_file}"
+        rm -f "$0"
+        cd "{launcher_root}"
+        "{python_exe}" "{main_script}" &
+        """
         with open(update_script, "w") as f:
             f.write(script_content)
         os.chmod(update_script, 0o755)
@@ -881,7 +881,6 @@ def _build_advanced_page(parent, launcher):
     _build_java_management(java_card, launcher)
 
 def _install_java_pm_or_download(major: int, status_fn, done_fn):
-    """Try pacman → apt → Adoptium download. Runs in a thread."""
     def work():
         # check pacman
         if shutil.which("pacman"):
@@ -1128,7 +1127,6 @@ def _build_about_page(parent, launcher):
     github_btn.image = github_icon  # type: ignore
     github_btn.pack(side="left")
 
-    # 6.1.0 — let users know about the new source-built AUR package
     _build_source_package_note(parent, launcher)
 
 def _build_source_package_note(parent, launcher):
@@ -1136,7 +1134,6 @@ def _build_source_package_note(parent, launcher):
     accent = launcher._get_theme_color('accent_primary')
     container = tk.Frame(parent, bg=bg_primary)
     container.pack(fill="x", pady=(0, 20), padx=4)
-    # accent strip on the left for a clean, single-accent look
     card = tk.Frame(container, bg=launcher._get_theme_color('bg_secondary'),
                     highlightthickness=0, bd=0)
     card.pack(fill="x")
@@ -1144,7 +1141,7 @@ def _build_source_package_note(parent, launcher):
     strip.pack(side="left", fill="y")
     inner = tk.Frame(card, bg=launcher._get_theme_color('bg_secondary'))
     inner.pack(side="left", fill="both", expand=True, padx=16, pady=14)
-    tk.Label(inner, text="New in 6.1.0  ·  Build-from-source package",
+    tk.Label(inner, text="New in 6.1.5  ·  Build-from-source package",
              bg=launcher._get_theme_color('bg_secondary'), fg=accent,
              font=("Segoe UI", 11, "bold")).pack(anchor="w")
     tk.Label(inner,
@@ -1324,7 +1321,6 @@ def _load_plugins():
 def _save_plugins(plugins):
     pass
 def _refresh_plugins_runtime(launcher):
-    """Refresh native plugins by reinitializing the plugin system."""
     try:
         launcher._initialize_plugins()
         _refresh_plugins_list(launcher)
@@ -2094,20 +2090,15 @@ def _toggle_debug_mode(launcher):
     _save_settings(launcher)
     if launcher.debug_mode_enabled.get():
         print("[DEBUG] Debug mode enabled")
-        # Set up stream capture
         log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        
-        # Create StreamCapture wrappers
         if not hasattr(launcher, '_original_stdout'):
             launcher._original_stdout = sys.stdout
             launcher._original_stderr = sys.stderr
-        
         sys.stdout = StreamCapture(str(log_file), launcher._original_stdout)
         sys.stderr = StreamCapture(str(log_file), launcher._original_stderr)
         launcher._current_log_file = str(log_file)
-        
         print(f"[DEBUG] Logging to: {log_file}")
         
         if hasattr(launcher, '_debug_text_widget'):
@@ -2148,8 +2139,6 @@ def _update_debug_info(launcher):
         if launcher.debug_mode_enabled.get() and hasattr(launcher, '_current_log_file'):
             debug_info.append(f"Log file: {launcher._current_log_file}")
             debug_info.append("=== CAPTURED OUTPUT (last 30 lines) ===")
-            
-            # Get captured output from StreamCapture
             if isinstance(sys.stdout, StreamCapture):
                 output = sys.stdout.get_buffer_content()
                 lines = output.split('\n')
@@ -2250,7 +2239,6 @@ class ModrinthPackImporter:
             traceback.print_exc()
             return False, f"Error importing modpack: {str(e)}", None
     def _detect_mod_loader(self, pack_data):
-        # returns (loader, loader_version) using the app's loader vocabulary
         dependencies = pack_data.get("dependencies", {})
         if "fabric-loader" in dependencies:
             return "fabric", dependencies.get("fabric-loader", "")
@@ -2580,11 +2568,6 @@ def import_curseforge_pack(zip_path, launcher=None):
     importer = CurseForgePackImporter(launcher)
     return importer.import_zip(zip_path)
 
-
-import hashlib
-import shutil
-import tempfile
-from typing import Callable, Dict, List, Optional, Tuple
 MODRINTH_API_BASE = "https://api.modrinth.com/v2"
 
 
@@ -3462,7 +3445,7 @@ class ModdingTab:
         errors = []
         for bak in bak_files:
             try:
-                orig = bak.with_suffix('')  # remove .bak
+                orig = bak.with_suffix('')
                 if orig.exists():
                     try:
                         orig.unlink()
@@ -4086,9 +4069,6 @@ class MinecraftVersion:
         return f"{self.id} ({self.type})"
     def __repr__(self):
         return f"MinecraftVersion(id='{self.id}', type='{self.type}')"
-
-# keep the version selector clean: never list mod-loader entries that may leak
-# in from a polluted cache or locally-installed loader profiles
 _MODDED_VERSION_MARKERS = ("forge", "fabric", "quilt", "neo", "optifine", "loader")
 def _is_modded_version_id(version_id: str) -> bool:
     vid = (version_id or "").lower()
@@ -4652,7 +4632,7 @@ def find_java_executable(java_major: int) -> Optional[str]:
     return None
 
 def download_java_runtime(java_major: int, progress_callback=None) -> Optional[str]:
-    import platform as _platform
+    
     os_name = {"linux": "linux", "darwin": "mac", "win32": "windows"}.get(sys.platform, "linux")
     machine = _platform.machine().lower()
     arch = "aarch64" if machine in ("aarch64", "arm64") else "x64"
@@ -4748,7 +4728,6 @@ def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
             if detected == 1:
                 m2 = re.search(r'version "1\.(\d+)', out)
                 detected = int(m2.group(1)) if m2 else 8
-            # Java 9+ broke URLClassLoader — ancient MC needs exactly Java 8
             if required > 8 and detected >= required:
                 if log_fn:
                     log_fn(f"[Java] System Java {detected} satisfies requirement >= {required}")
@@ -5486,7 +5465,7 @@ class GameProfilesTab:
                                                font=("Consolas", 9), bd=1, relief="solid",
                                                highlightthickness=0)
         self.settings_env_vars_text.pack()
-        tk.Label(env_frame, text="One var per line: KEY=VALUE  (lines starting with # are ignored)",
+        tk.Label(env_frame, text="One var per line: KEY=VALUE
                  fg=self.theme_manager.get_color('fg_secondary'), bg=self._get_card_bg(),
                  font=("Segoe UI", 8)).pack(anchor="w")
 
@@ -5947,7 +5926,6 @@ class GameProfilesTab:
             self.parent.status_bar_progress.start(15)
         def _do_import():
             try:
-                import uuid as _uuid
                 new_id = str(_uuid.uuid4())
                 dest = InstanceManager.get_instances_dir() / new_id
                 dest.mkdir(parents=True, exist_ok=True)
@@ -6472,8 +6450,6 @@ class PluginSandbox:
             (r'socketserver', "uses socketserver (network server)"),
             (r'BaseHTTPServer|HTTPServer|SimpleHTTPServer', "creates HTTP server"),
         ]
-        
-        import re
         for pattern, description in dangerous_patterns:
             if re.search(pattern, source, re.IGNORECASE):
                 warnings.append(f"Plugin {description}")
@@ -7297,7 +7273,7 @@ def build_res_sh_tab(launcher, notebook, instance_manager=None):
     rs_tab = ResourceShaderTab(launcher, instance_manager)
     rs_tab.build_tab()
     launcher.res_sh_tab = rs_tab
-_WEBKIT_MODS = None  # cached or False if unavailable
+_WEBKIT_MODS = None 
 
 def _load_webkit():
     global _WEBKIT_MODS
@@ -7305,10 +7281,9 @@ def _load_webkit():
         return _WEBKIT_MODS or None
     os.environ.setdefault("GDK_BACKEND", "x11")
     try:
-        import gi
+        
         gi.require_version("Gtk", "3.0")
         gi.require_version("GdkX11", "3.0")
-        # webkit2gtk-4.1 first, fall back to the older 4.0 ABI
         try:
             gi.require_version("WebKit2", "4.1")
         except ValueError:
@@ -7895,7 +7870,7 @@ def _read_varint(sock) -> int:
 
 
 def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
-    import socket, json, time, struct
+    
 
     def read_varint_from_file(f):
         result = 0
@@ -7960,7 +7935,7 @@ def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
 
 
 def _strip_mc_formatting(text: str) -> str:
-    import re
+    
     return re.sub(r'§[0-9a-fk-or]', '', text, flags=re.IGNORECASE)
 
 
@@ -7993,7 +7968,7 @@ class ServersNBT:
 
     @staticmethod
     def _parse_nbt(data: bytes) -> list:
-        import struct
+        
         pos = [0]
 
         def read_byte():
@@ -8056,7 +8031,7 @@ class ServersNBT:
 
     @staticmethod
     def write_servers_dat(path: Path, servers: list):
-        import struct
+        
         out = bytearray()
 
         def write_byte(val):
@@ -8389,7 +8364,7 @@ class ServersTab:
                 bars_canvas = self._create_signal_bars(latency_row, bar_count, lat_fg, card_bg)
                 bars_canvas.pack(side="left")
 
-            # quick play / join button — only enabled for MC >= 1.20.1
+            # quick play only enabled for MC >= 1.20.1
             qp_supported = self._quickplay_supported()
             try:
                 accent = self.theme_manager.get_color('accent')
@@ -8432,7 +8407,7 @@ class ServersTab:
         elif ms < 800:
             n, color = 2, "#ff922b"
         else:
-            n, color = 1, "#d51414" # next time use better colors.. previous were blanked like whitish
+            n, color = 1, "#d51414"
         return f"{ms}ms", color, n
 
     @staticmethod
@@ -8454,7 +8429,6 @@ class ServersTab:
         return canvas
 
     def _current_launch_version(self):
-        # the version that the Play button would launch (instance wins, else profile)
         try:
             inst = self.parent.instance_manager.get_selected_instance()
             if inst and getattr(inst, 'version', ''):
@@ -8470,7 +8444,6 @@ class ServersTab:
         return ""
 
     def _quickplay_supported(self):
-        # quick play join is only available on Minecraft 1.20.1+
         ver = self._current_launch_version()
         if not ver:
             return False
@@ -8600,7 +8573,6 @@ class ServersTab:
                   fg="#ffffff", font=("Segoe UI", 9, "bold"), bd=0, padx=14, pady=6, cursor="hand2", relief="flat").pack(side="right")
 
     def _ping_all_servers(self):
-        import threading
         for i, srv in enumerate(self.servers):
             ip = srv.get('ip', '')
             host, _, port_str = ip.partition(':')
@@ -8851,7 +8823,7 @@ def build_launcher_log_tab(launcher, notebook):
         '90': '#808080', '91': '#ff8787', '92': '#69db7c', '93': '#ffd43b',
         '94': '#91a7ff', '95': '#f783ac', '96': '#66d9e8', '97': '#ffffff',
     }
-    import re as _re_ansi
+    
 
     def _ensure_ansi_tag(color_hex):
         tag_name = f"ansi_{color_hex[1:]}"
@@ -9173,7 +9145,7 @@ def load_profiles_safe():
     return [SecureProfileWrapper(p) for p in profiles_data]
 def _set_secure_file_permissions(file_path):
     try:
-        import stat
+        
         os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
     except Exception as e:
         print(f"Warning: Could not set secure file permissions: {e}")
@@ -9668,14 +9640,12 @@ def make_style(root: tk.Tk) -> ttk.Style:
     root.option_add('*TCheckbutton*indicatorBackground', tm.get_color('bg_input'))
     root.option_add('*TCheckbutton*indicatorForeground', tm.get_color('accent_primary'))
     return style
-# first-run setup marker (setup.mark -> setup_done=true/false)
 def _get_setup_mark_path():
     config_dir = Path.home() / ".config" / "oranglauncher"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "setup.mark"
 
 def is_setup_done():
-    # if the marker is missing (most fresh installs) create it as not-done
     path = _get_setup_mark_path()
     try:
         if not path.exists():
@@ -9698,7 +9668,6 @@ def mark_setup_done(done=True):
         print(f"[setup] failed to write setup.mark: {e}")
 
 def _wizard_detect_javas():
-    # returns list of (major, path) for installed JDKs, highest first
     found = []
     for major in (25, 21, 17, 11, 8):
         p = find_java_executable(major)
@@ -9715,7 +9684,7 @@ def _wizard_loader_versions(loader, mc_version):
             fv = minecraft_launcher_lib.forge.list_forge_versions()
             return [v for v in reversed(fv) if v.startswith(f"{mc_version}-")]
         if loader == "neoforge":
-            from minecraft_launcher_lib.mod_loader import Neoforge
+            
             nf = Neoforge()
             return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
         if loader == "fabric" and hasattr(minecraft_launcher_lib, "fabric"):
@@ -9732,27 +9701,20 @@ class WelcomeWizard(tk.Frame):
         self.launcher = launcher
         self.tm = launcher.theme_manager
         super().__init__(launcher, bg=self._c('bg_primary'))
-
         self.page = 0
-        self.completed = [True, False, False, False, True]  # greet + settings auto-complete
-
-        # page 3 — java
+        self.completed = [True, False, False, False, True]  # greet
         self.java_var = tk.StringVar()
-        self.java_choices = {}  # label -> value ("Auto" or path)
+        self.java_choices = {}  # label
         self.recommended_java_label = None
-        # page 4 — profile
         self.p_name = tk.StringVar()
         self.p_loader = tk.StringVar(value="vanilla")
         self.p_version = tk.StringVar()
         self.p_loader_version = tk.StringVar(value="N/A")
         self.p_ram = tk.StringVar(value="4G")
         self.profile_created = False
-        # page 5 — recommended settings
         self.rec_vars = {}
-
         self._build_chrome()
         self._render_page()
-        # overlay the entire launcher window — WM can't interfere
         self.place(x=0, y=0, relwidth=1, relheight=1)
         self.lift()
         self.focus_force()
@@ -9765,7 +9727,6 @@ class WelcomeWizard(tk.Frame):
         self.destroy()
 
     def _build_chrome(self):
-        # header
         header = tk.Frame(self, bg=self._c('bg_primary'))
         header.pack(fill="x", padx=28, pady=(24, 8))
         tk.Label(header, text="OrangLauncher", font=("Segoe UI", 20, "bold"),
@@ -9773,7 +9734,6 @@ class WelcomeWizard(tk.Frame):
         self.subtitle = tk.Label(header, text="", font=("Segoe UI", 10),
                                  bg=self._c('bg_primary'), fg=self._c('fg_secondary'))
         self.subtitle.pack(anchor="w", pady=(2, 0))
-        # step dots
         self.dots_frame = tk.Frame(self, bg=self._c('bg_primary'))
         self.dots_frame.pack(fill="x", padx=28, pady=(6, 4))
         self.dot_labels = []
@@ -9782,10 +9742,8 @@ class WelcomeWizard(tk.Frame):
                          bg=self._c('bg_primary'), fg=self._c('fg_disabled'))
             d.pack(side="left", padx=(0, 6))
             self.dot_labels.append(d)
-        # body
         self.body = tk.Frame(self, bg=self._c('bg_secondary'))
         self.body.pack(fill="both", expand=True, padx=28, pady=12)
-        # footer
         footer = tk.Frame(self, bg=self._c('bg_primary'))
         footer.pack(fill="x", padx=28, pady=(0, 22))
         self.back_btn = tk.Button(footer, text="Back", command=self._go_back,
@@ -9812,7 +9770,6 @@ class WelcomeWizard(tk.Frame):
         self._refresh_nav()
 
     def _refresh_nav(self):
-        # dots
         for i, d in enumerate(self.dot_labels):
             if i == self.page:
                 d.config(fg=self._c('accent_primary'))
@@ -9820,9 +9777,7 @@ class WelcomeWizard(tk.Frame):
                 d.config(fg=self._c('fg_secondary'))
             else:
                 d.config(fg=self._c('fg_disabled'))
-        # back
         self.back_btn.config(state="normal" if self.page > 0 else "disabled")
-        # next / finish
         last = self.page == self.PAGE_COUNT - 1
         self.next_btn.config(text="Finish" if last else "Continue")
         if self.completed[self.page]:
@@ -9840,7 +9795,6 @@ class WelcomeWizard(tk.Frame):
     def _go_next(self):
         if not self.completed[self.page]:
             return
-        # page 4 actually creates the profile on continue
         if self.page == 3 and not self.profile_created:
             if not self._create_profile():
                 return
@@ -9859,11 +9813,8 @@ class WelcomeWizard(tk.Frame):
         except Exception:
             pass
         self._on_close()
-
-    # ---- pages ----
     def _render_page(self):
         self._clear_body()
-        # restore next_btn visibility (accounts page hides it)
         self.next_btn.pack(side="right")
         [self._page_greet, self._page_account, self._page_java,
          self._page_profile, self._page_settings][self.page]()
@@ -10020,7 +9971,7 @@ class WelcomeWizard(tk.Frame):
                                 font=("Segoe UI", 10), bd=0, highlightthickness=0,
                                 command=lambda: self._set_complete(2))
             rb.pack(anchor="w", pady=3, fill="x")
-        self._set_complete(2)  # a default is always selected
+        self._set_complete(2)
 
     def _page_profile(self):
         self.subtitle.config(text=self.launcher._t('WIZARD_STEP_PROFILE'))
@@ -10075,7 +10026,6 @@ class WelcomeWizard(tk.Frame):
         self.profile_status = tk.Label(self.body, text="", font=("Segoe UI", 9),
                                        bg=self._c('bg_secondary'), fg=self._c('fg_secondary'))
         self.profile_status.pack(anchor="w", padx=24, pady=(4, 0))
-        # name being filled is enough to allow continue (creation runs on Continue)
         self._set_complete(3, bool(self.p_name.get().strip()))
         self.p_name.trace_add("write", lambda *_: self._set_complete(3, bool(self.p_name.get().strip())))
 
@@ -10439,12 +10389,10 @@ class MinecraftLauncher(tk.Tk):
     
     def _initialize_plugins(self):
         try:
-            from pathlib import Path
-            import importlib.util
+            
             #
             # Time wasted here: 5 h now
             # add more if you encounter issues with loading of plugins
-            #
             #
             builtin_plugin_dir = Path(__file__).parent / "oranglauncher" / "plugin"
             launcher_root = Path.home() / ".local" / "share" / "oranglauncher"
@@ -10672,7 +10620,7 @@ class MinecraftLauncher(tk.Tk):
                 else:
                     self.status_bar_frame.pack_forget()
         except Exception as e:
-            import traceback
+            
             print(f"Settings initialization failed: {e}")
             traceback.print_exc()
         self.after(1000, self._on_tab_changed)
@@ -10695,7 +10643,6 @@ class MinecraftLauncher(tk.Tk):
                 WelcomeWizard(self)
                 print("[setup] wizard created ok")
         except Exception as e:
-            import traceback
             print(f"[setup] welcome wizard failed: {e}")
             traceback.print_exc()
         if self._pending_open_file:
@@ -11440,7 +11387,6 @@ class MinecraftLauncher(tk.Tk):
                     elif mod_loader.lower() == "neoforge":
                         self._safe_append_log(f"[Launcher] Installing NeoForge...")
                         try:
-                            from minecraft_launcher_lib.mod_loader import Neoforge
                             nf = Neoforge()
                             stored_nf = getattr(current_instance, 'loader_version', '') or ''
                             nf_versions = [stored_nf] if stored_nf else (nf.get_loader_versions(version, True) or nf.get_loader_versions(version, False))
@@ -11701,7 +11647,7 @@ class MinecraftLauncher(tk.Tk):
             btn_row = tk.Frame(win, bg=self._get_theme_color('bg_primary'))
             btn_row.pack(fill="x", padx=16, pady=(0, 12))
             def _open_full():
-                import subprocess as _sp
+                
                 _sp.Popen(["xdg-open", str(latest)])
             tk.Button(btn_row, text="Open full report", command=_open_full,
                       bg=self._get_theme_color('bg_tertiary'), fg=self._get_theme_color('fg_primary'),
@@ -11757,7 +11703,7 @@ class MinecraftLauncher(tk.Tk):
             self._update_discord_rpc("Idling in Launcher")
     def _append_log(self, message):
         if hasattr(self, 'log_text'):
-            import re as _re
+
             message = message.rstrip()
             if not message:
                 return
@@ -11976,7 +11922,6 @@ class MinecraftLauncher(tk.Tk):
                     except Exception:
                         installed_id = None
                 elif loader.lower() == "neoforge":
-                    from minecraft_launcher_lib.mod_loader import Neoforge
                     nf = Neoforge()
                     nf_loader_ver = loader_version
                     if not nf_loader_ver:
@@ -12489,6 +12434,7 @@ def terminal_main():
             except ValueError:
                 print(f"Invalid input. Please enter a number 1-{len(profiles)}")
         # Get RAM for me I want 64gb plz, I only have 16 GB now :>
+        # I have now 32 again, yayyy and yay works halfway..
         ram_input = input("\nEnter RAM amount (default: 4G): ").strip()
         ram = ram_input if ram_input else "4G"
         print(f"\nLaunching {selected_instance.name} as {selected_profile.get('username')}...")
