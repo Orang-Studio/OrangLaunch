@@ -1,4 +1,23 @@
+import os
 import sys
+# The standalone (Nuitka) build bundles an older libfontconfig that shadows the system
+# one, leaving system libpangoft2/libgdk-3 without FcConfigSetDefaultSubstitute — which
+# breaks the WebKitGTK news view. Preload the system fontconfig (so it wins) and re-exec
+# once. Harmless when running from source. Must happen before tkinter loads fontconfig.
+if sys.platform.startswith("linux") and os.environ.get("ORANG_FC_PRELOAD") != "1":
+    _fc = next((p for p in ("/usr/lib/libfontconfig.so.1", "/usr/lib64/libfontconfig.so.1",
+                            "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1") if os.path.exists(p)), None)
+    if _fc:
+        os.environ["ORANG_FC_PRELOAD"] = "1"
+        _pre = os.environ.get("LD_PRELOAD", "")
+        os.environ["LD_PRELOAD"] = _fc + (":" + _pre if _pre else "")
+        try:
+            if "__compiled__" in globals() or getattr(sys, "frozen", False):
+                os.execv(sys.executable, sys.argv)            # bundled binary
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)  # source run
+        except Exception:
+            pass
 import builtins
 import tkinter as tk
 import platform
@@ -173,7 +192,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "6.1.3"
+CURRENT_VERSION = "6.1.5"
 REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
