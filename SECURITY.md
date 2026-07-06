@@ -16,13 +16,12 @@ If you want to make this open to more distros, contact us first.
 ## Supported Versions
 The Operating systems support, also we do not support python version of windows because issues and lag.
 
-| Version          | Supported           |
-| ---------------- | ------------------- |
-| Linux Global     | :white_check_mark:  |
-| Arch Linux       | :white_check_mark:  |
-| Windows 10 WPF   | :white_check_mark:  |
-| Windows 11 WinUI | :white_check_mark:  |
-| Windows Python   | :x:                 |
+| Version             | Supported           |
+| --------------------| ------------------- |
+| Linux Global        | :white_check_mark:  |
+| Fedora DNF          | :white_check_mark:  |
+| Arch Linux Aur      | :white_check_mark:  |
+| Windows 10 WPF WinUI| :white_check_mark:  |
 
 ## Reporting a Vulnerability
 

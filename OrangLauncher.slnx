@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OrangLauncher.Core/OrangLauncher.Core.csproj" />
+    <Project Path="src/OrangLauncher.Ui.WinUI/OrangLauncher.Ui.WinUI.csproj" />
+    <Project Path="src/OrangLauncher.Ui.Wpf/OrangLauncher.Ui.Wpf.csproj" />
+    <Project Path="src/OrangLauncher/OrangLauncher.csproj" />
+  </Folder>
+</Solution>

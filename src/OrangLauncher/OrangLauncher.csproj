@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Platforms>x86;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-arm64</RuntimeIdentifiers>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <AssemblyName>OrangLauncher</AssemblyName>
+    <RootNamespace>OrangLauncher.Host</RootNamespace>
+    <ApplicationIcon Condition="Exists('..\..\assets\Other\images\orange.ico')">..\..\assets\Other\images\orange.ico</ApplicationIcon>
+    <LauncherVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\version.txt').Trim())</LauncherVersion>
+    <Version>$(LauncherVersion)</Version>
+    <InformationalVersion>$(LauncherVersion)</InformationalVersion>
+    <WebView2EnableCsWinRTProjectionExcludeCoreRef>true</WebView2EnableCsWinRTProjectionExcludeCoreRef>
+    <WebView2WinRTPlatform>x86</WebView2WinRTPlatform>
+    <WebView2WinRTPlatform Condition="'$(Platform)' == 'ARM64'">arm64</WebView2WinRTPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3856.49\runtimes\win-$(WebView2WinRTPlatform)\native_uap\Microsoft.Web.WebView2.Core.dll" Link="Microsoft.Web.WebView2.Core.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <Content Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3856.49\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll" Link="UiWpf\Microsoft.Web.WebView2.Core.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <Content Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3856.49\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll" Link="UiWpf\Microsoft.Web.WebView2.Wpf.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <Content Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3856.49\runtimes\win-$(WebView2WinRTPlatform)\native\WebView2Loader.dll" Link="UiWpf\WebView2Loader.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="RelocateManagedWebView2ForWpfHead" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+        Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Core' Or '%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or '%(Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
+      <ReferencePath Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Core' Or '%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or '%(Filename)' == 'Microsoft.Web.WebView2.WinForms'">
+        <IncludeRuntimeDependency>false</IncludeRuntimeDependency>
+      </ReferencePath>
+      <ReferenceDependencyPaths Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Core' Or '%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or '%(Filename)' == 'Microsoft.Web.WebView2.WinForms'">
+        <IncludeRuntimeDependency>false</IncludeRuntimeDependency>
+      </ReferenceDependencyPaths>
+    </ItemGroup>
+  </Target>
+  <Target Name="PublishWinUiXamlPayload" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <_WinUiXamlPayload Include="$(OutDir)OrangLauncher.Ui.WinUI\**\*.*" />
+      <ResolvedFileToPublish Include="@(_WinUiXamlPayload)">
+        <RelativePath>OrangLauncher.Ui.WinUI\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(OutDir)OrangLauncher.pri" Condition="Exists('$(OutDir)OrangLauncher.pri')">
+        <RelativePath>OrangLauncher.pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1721" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OrangLauncher.Core\OrangLauncher.Core.csproj" />
+    <ProjectReference Include="..\OrangLauncher.Ui.Wpf\OrangLauncher.Ui.Wpf.csproj" />
+    <ProjectReference Include="..\OrangLauncher.Ui.WinUI\OrangLauncher.Ui.WinUI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\assets\Other\**" LinkBase="Other">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="WixToolset.Sdk/6.0.0">
   <PropertyGroup>
-    <OutputName>OrangLauncher-Windows11</OutputName>
+    <OutputName>OrangLauncher-Windows</OutputName>
     <Platform>x86</Platform>
     <Configurations>Release</Configurations>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <SuppressWarnings>WIX1077</SuppressWarnings>
     <NoWarn>WIX1077</NoWarn>
     <SuppressValidation>true</SuppressValidation>
+    <!-- Version comes from version.txt at the repo root; override with -p:ProductVersion=x.y.z -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\version.txt').Trim())</ProductVersion>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext"   Version="6.0.0" />
