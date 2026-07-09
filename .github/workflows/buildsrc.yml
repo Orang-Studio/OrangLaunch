@@ -43,10 +43,10 @@ jobs:
           echo "aur_version=$AUR_VERSION" >> $GITHUB_OUTPUT
           if [ "$VERSION" != "$AUR_VERSION" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "New version $VERSION (AUR is on $AUR_VERSION) — will publish"
+            echo "New version $VERSION (AUR is on $AUR_VERSION) - will publish"
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "Version $VERSION already on AUR — skipping"
+            echo "Version $VERSION already on AUR - skipping"
           fi
 
       - name: Push version tag

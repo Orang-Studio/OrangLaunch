@@ -31,26 +31,25 @@ yay -Syu oranglauncher
 ```
 <br>
 
+## Fedora x64 
+Install with **dnf**
+```bash
+sudo dnf install oranglauncher-bin
+```
+for the open source build version:
+
+```bash
+sudo dnf install oranglauncher
+```
+
 ## Linux Other x64 
 Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
 
-## Windows 10 x86-x64
-Download installer: [OrangLauncher_Windows10.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
-Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
 
+## Windows 10-11 x86-x64
+Download installer: [OrangLauncher_Windows.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
 ### arm32-arm64
 Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
-
-> [!CAUTION]
-> I'v never tried running arm64 version, because I don't have that processor <br>
-> so if you find the bugs on that architecture, please say in issues. arm32 version works even on x64, please don't use it like that.
-
-## Windows 11 x86
-
-> [!TIP]
-> If you want better bugfixes and better features and greater performace with privacy included, then switch to linux or windows 10 ltsc.
-
-Download installer: [OrangLauncher_Windows11.msi](https://github.com/Orang-Studio/OrangLaunch/releases)
 
 # Terminal Mode
 

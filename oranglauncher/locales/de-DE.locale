@@ -457,7 +457,7 @@ SETTINGS_SHOW_PROGRESS_BAR=Fortschrittsbalken während Downloads und Installatio
 SETTINGS_SHOW_PROGRESS_BAR_DESC=Zeigt einen Fortschrittsbalken während Dateidownloads und Installationen an
 
 # Welcome Wizard
-WIZARD_STEP_GREET=Quick setup — takes about a minute
+WIZARD_STEP_GREET=Quick setup - takes about a minute
 WIZARD_GREET_TAGLINE=A clean, fast Minecraft launcher for Linux
 WIZARD_GREET_STEP_ACCOUNT=Account
 WIZARD_GREET_STEP_ACCOUNT_DESC=Sign in with Microsoft or add an offline account
@@ -467,23 +467,23 @@ WIZARD_GREET_STEP_PROFILE=Profile
 WIZARD_GREET_STEP_PROFILE_DESC=Set up your first game profile with mods or vanilla
 WIZARD_GREET_STEP_SETTINGS=Settings
 WIZARD_GREET_STEP_SETTINGS_DESC=Apply sensible defaults to get started fast
-WIZARD_SKIP_ALL=Skip — I'll set up myself
-WIZARD_STEP_ACCOUNT=Sign in — step 2 of 5
+WIZARD_SKIP_ALL=Skip - I'll set up myself
+WIZARD_STEP_ACCOUNT=Sign in - step 2 of 5
 WIZARD_ACCOUNT_TITLE=Add your Minecraft account
 WIZARD_ACCOUNT_DESC=Sign in with Microsoft to play online. If you don't have an account yet, skip for now.
 WIZARD_ACCOUNT_NO_ACCOUNTS=No account added yet.
 WIZARD_ACCOUNT_LOGIN_MS=Login with Microsoft
 WIZARD_ACCOUNT_SKIP=Skip for now
 WIZARD_ACCOUNT_SIGNED_IN=Signed in: {names}
-WIZARD_STEP_JAVA=Java runtime — step 3 of 5
+WIZARD_STEP_JAVA=Java runtime - step 3 of 5
 WIZARD_JAVA_TITLE=Choose your Java
 WIZARD_JAVA_DESC=Minecraft needs Java. The newest installed version is recommended.
-WIZARD_JAVA_AUTO=Auto — download what each profile needs
+WIZARD_JAVA_AUTO=Auto - download what each profile needs
 WIZARD_JAVA_RECOMMENDED=recommended (newest)
-WIZARD_STEP_PROFILE=First profile — step 4 of 5
+WIZARD_STEP_PROFILE=First profile - step 4 of 5
 WIZARD_PROFILE_TITLE=Create your first profile
-WIZARD_PROFILE_DESC=Set up a game profile — choose a version, mod loader, and RAM.
-WIZARD_STEP_SETTINGS=Recommended settings — step 5 of 5
+WIZARD_PROFILE_DESC=Set up a game profile - choose a version, mod loader, and RAM.
+WIZARD_STEP_SETTINGS=Recommended settings - step 5 of 5
 WIZARD_SETTINGS_TITLE=Recommended settings
 WIZARD_SETTINGS_DESC=These are sensible defaults. You can change anything later in Settings.
 WIZARD_SETTINGS_SHOW_PROGRESS=Show download progress bar
@@ -497,3 +497,58 @@ SETTINGS_JAVA_RUNTIMES=Java Runtimes
 SETTINGS_JAVA_DESC=Install or update Java runtimes. Checks pacman / apt first, then downloads from Adoptium.
 SETTINGS_JAVA_NOT_FOUND=not found
 SETTINGS_JAVA_INSTALL_BTN=Install / Update
+
+# Content tab, mclo.gs export & skin preview (added)
+CONTENT_TAB=Inhalte
+CONTENT_TYPE_MODS=Mods
+CONTENT_TYPE_RESOURCEPACKS=Ressourcenpakete
+CONTENT_TYPE_DATAPACKS=Datenpakete
+CONTENT_TYPE_SHADERS=Shader
+CONTENT_TYPE_MODPACKS=Modpacks
+CONTENT_IMPORT_MRPACK=.mrpack-Datei importieren
+CONTENT_SEARCH=Suchen
+CONTENT_PREV=Zurück
+CONTENT_NEXT=Weiter
+CONTENT_PAGE=Seite {n}
+LOGS_MCLOGS_BTN=Zu mclo.gs hochladen
+LOGS_MCLOGS_UPLOADING=Wird hochgeladen...
+LOGS_MCLOGS_SUCCESS=Protokoll hochgeladen — Link kopiert
+LOGS_MCLOGS_OPEN=Im Browser öffnen?
+LOGS_MCLOGS_FAIL=Hochladen fehlgeschlagen: {error}
+SKIN_PREVIEW_UNAVAILABLE=Keine Skin-Vorschau verfügbar
+MODS_REFRESH_LIST=Mod-Liste aktualisieren
+
+# Loader / content compatibility (added)
+LOADER_NOT_COMPATIBLE=Nicht kompatibel
+LOADER_NOT_COMPATIBLE_TITLE=Loader nicht kompatibel
+LOADER_NOT_COMPATIBLE_MSG={loader} hat keine Version für Minecraft {version}.
+CONTENT_NOT_COMPATIBLE_BTN=Nicht kompatibel
+CONTENT_NOT_COMPATIBLE_TITLE=Nicht kompatibel
+CONTENT_NOT_COMPATIBLE_MSG={title} hat keine mit {target} kompatible Version.
+
+# Profile form / mods / content strings (added)
+PROFILE_CREATE_BTN=Erstellen
+PROFILE_SAVE_BTN=Speichern
+MODS_LOADER_VERSION=Mod-Loader: {loader} | Version: {version}
+MODS_NO_PROFILE=Aktuelles Profil: keines gewählt
+MODS_NO_PROFILE_SELECTED=Kein Profil gewählt
+MODS_COUNT={n} Mods geladen
+CONTENT_SEARCHING=Suche auf Modrinth...
+CONTENT_NO_RESULTS=Keine Ergebnisse.
+CONTENT_RESULTS_COUNT={count} Ergebnisse
+CONTENT_INSTALL_BTN=Installieren
+CONTENT_VANILLA_WARNING=Dieses Profil ist Vanilla - Mods brauchen Fabric/Forge/Quilt/NeoForge.
+CONTENT_NEED_PROFILE=Erstelle zuerst ein Spielprofil, damit der Inhalt ein Ziel hat.
+CONTENT_VANILLA_NO_MODS=Vanilla-Profile können keine Mods nutzen - wähle ein Loader-Profil.
+
+# Content install states (added)
+CONTENT_INSTALLING_BTN=...
+CONTENT_INSTALLED_BTN=Installiert
+CONTENT_FAILED_BTN=Fehlgeschlagen
+CONTENT_INSTALLED_STATUS=Installiert {name}
+CONTENT_INSTALL_FAILED=Installation fehlgeschlagen: {error}
+CONTENT_NO_MRPACK=Keine .mrpack für {title} verfügbar.
+CONTENT_DOWNLOADING=Lade {title} herunter...
+CONTENT_INSTALLING_STATUS=Installiere {title}...
+CONTENT_MODPACK_DONE=Modpack installiert.\n\nProfil: {profile}\n{message}
+CONTENT_MODPACK_FAIL=Modpack-Installation fehlgeschlagen:\n{message}

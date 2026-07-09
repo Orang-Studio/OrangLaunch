@@ -33,6 +33,7 @@ import traceback as tb
 import json
 import base64
 import urllib.parse
+import hashlib
 import importlib.util
 import os
 import minecraft_launcher_lib
@@ -47,12 +48,23 @@ import traceback
 import copy
 import tkinterweb
 import webbrowser
-import webview
+import gi
+gi.require_version("Gtk", "3.0")
+try:
+    gi.require_version("WebKit2", "4.1")
+except ValueError:
+    gi.require_version("WebKit2", "4.0")
+from gi.repository import Gtk, WebKit2, GdkX11
+try:
+    import webview
+except Exception:  # pywebview or its GTK/Qt backend can be missing
+    webview = None
 import random
 from tkinter import ttk, messagebox, scrolledtext, filedialog, simpledialog
 from datetime import datetime, timedelta
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import io
+import math
 from typing import List, Dict, Any, Optional, Union, Callable, Tuple
 try:
     from pypresence.presence import Presence
@@ -60,8 +72,6 @@ except ImportError:
     Presence = None
 from collections import deque
 from pathlib import Path
-
-
 import pygame as _pygame
 import pygame as _pg
 import platform as _platform
@@ -80,7 +90,7 @@ pygame_mixer_initialized = False
 pygame = _pygame
 pygame_available = True
 _http_session = requests.Session()
-_http_session.headers.update({"User-Agent": "OrangLauncher"})
+_http_session.headers.update({"User-Agent": "Orang-Studio/OrangLaunch/7.0 (github.com/Orang-Studio/OrangLaunch)"})
 _image_cache: Dict[str, bytes] = {}
 _image_cache_lock = threading.Lock()
 
@@ -88,8 +98,13 @@ def _cached_image_get(url: str, timeout: int = 8) -> bytes:
     with _image_cache_lock:
         if url in _image_cache:
             return _image_cache[url]
-    r = _http_session.get(url, timeout=timeout)
-    r.raise_for_status()
+    try:
+        r = _http_session.get(url, timeout=timeout)
+        r.raise_for_status()
+    except Exception:
+        time.sleep(0.5)
+        r = _http_session.get(url, timeout=timeout)
+        r.raise_for_status()
     data = r.content
     with _image_cache_lock:
         if len(_image_cache) >= 500:
@@ -197,7 +212,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "6.1.7"
+CURRENT_VERSION = "7.0.0"
 REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
@@ -909,7 +924,7 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
         if path:
             done_fn(True, f"Downloaded to {path}")
         else:
-            done_fn(False, f"Failed — check your internet connection")
+            done_fn(False, f"Failed - check your internet connection")
     threading.Thread(target=work, daemon=True).start()
 
 def _build_java_management(card, launcher):
@@ -936,7 +951,7 @@ def _build_java_management(card, launcher):
             status_text = f"Java {major}  ✓  {path}"
             status_color = acc
         else:
-            status_text = f"Java {major}  —  not found"
+            status_text = f"Java {major}  -  not found"
             status_color = fgs
 
         status_lbl = tk.Label(row, text=status_text, bg=bg, fg=status_color,
@@ -947,7 +962,7 @@ def _build_java_management(card, launcher):
             def on_install():
                 lbl.config(text=f"Java {m}  …  working", fg=fgs)
                 def set_status(msg):
-                    try: lbl.config(text=f"Java {m}  —  {msg}")
+                    try: lbl.config(text=f"Java {m}  -  {msg}")
                     except Exception: pass
                 def on_done(ok, msg):
                     color = acc if ok else launcher._get_theme_color('fg_disabled')
@@ -963,6 +978,363 @@ def _build_java_management(card, launcher):
                   font=("Segoe UI", 9), bd=0, relief="flat", padx=12, pady=4,
                   cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
                   activeforeground=fg).pack(side="right")
+
+def _fetch_skin_texture(acc):
+    token = acc.get('minecraft_token')
+    if token and token != "0":
+        try:
+            r = _http_session.get("https://api.minecraftservices.com/minecraft/profile",
+                                  headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            if r.ok:
+                data = r.json()
+                skins = data.get("skins", [])
+                active = next((s for s in skins if s.get("state") == "ACTIVE"), skins[0] if skins else None)
+                capes = data.get("capes", [])
+                active_cape = next((c for c in capes if c.get("state") == "ACTIVE"), None)
+                if active and active.get("url"):
+                    slim = (active.get("variant", "").upper() == "SLIM")
+                    skin_img = Image.open(io.BytesIO(_cached_image_get(active["url"]))).convert("RGBA")
+                    cape_img = None
+                    if active_cape and active_cape.get("url"):
+                        cape_img = Image.open(io.BytesIO(_cached_image_get(active_cape["url"]))).convert("RGBA")
+                    return skin_img, slim, cape_img
+        except Exception:
+            pass
+    try:
+        uuid = (acc.get('uuid') or "").replace("-", "")
+        # offline accounts store an all-zero placeholder uuid; resolve by name instead
+        if not uuid or uuid.strip("0") == "":
+            name = acc.get('username')
+            if not name:
+                return None, False, None
+            r = _http_session.get(f"https://api.mojang.com/users/profiles/minecraft/{name}", timeout=10)
+            if not r.ok:
+                return None, False, None
+            uuid = r.json().get("id", "")
+            if not uuid:
+                return None, False, None
+        r = _http_session.get(f"https://sessionserver.mojang.com/session/minecraft/profile/{uuid}", timeout=10)
+        if not r.ok:
+            return None, False, None
+        props = r.json().get("properties", [])
+        textures_b64 = next((p.get("value") for p in props if p.get("name") == "textures"), None)
+        if not textures_b64:
+            return None, False, None
+        textures = json.loads(base64.b64decode(textures_b64)).get("textures", {})
+        skin_info = textures.get("SKIN", {})
+        skin_url = skin_info.get("url")
+        if not skin_url:
+            return None, False, None
+        slim = skin_info.get("metadata", {}).get("model") == "slim"
+        skin_img = Image.open(io.BytesIO(_cached_image_get(skin_url))).convert("RGBA")
+        cape_img = None
+        cape_url = textures.get("CAPE", {}).get("url")
+        if cape_url:
+            try:
+                cape_img = Image.open(io.BytesIO(_cached_image_get(cape_url))).convert("RGBA")
+            except Exception:
+                cape_img = None
+        return skin_img, slim, cape_img
+    except Exception:
+        return None, False, None
+
+
+
+def _skin_add_box(faces, center, w, h, d, texU, texV, boxW, boxH, boxD, mirror, inflate):
+    hw = w / 2 + inflate; hh = h / 2 + inflate; hd = d / 2 + inflate
+    cx, cy, cz = center
+    p000 = (cx - hw, cy - hh, cz - hd); p001 = (cx - hw, cy - hh, cz + hd)
+    p010 = (cx - hw, cy + hh, cz - hd); p011 = (cx - hw, cy + hh, cz + hd)
+    p100 = (cx + hw, cy - hh, cz - hd); p101 = (cx + hw, cy - hh, cz + hd)
+    p110 = (cx + hw, cy + hh, cz - hd); p111 = (cx + hw, cy + hh, cz + hd)
+    u, v, bw, bh, bd = texU, texV, boxW, boxH, boxD
+    faces.append((p011, p111, p101, p001, u + bd, v + bd, bw, bh, mirror, (0, 0, 1)))
+    faces.append((p110, p010, p000, p100, u + bd + bw + bd, v + bd, bw, bh, mirror, (0, 0, -1)))
+    faces.append((p111, p110, p100, p101, u + bd + bw, v + bd, bd, bh, mirror, (1, 0, 0)))
+    faces.append((p010, p011, p001, p000, u, v + bd, bd, bh, mirror, (-1, 0, 0)))
+    faces.append((p010, p110, p111, p011, u + bd, v, bw, bd, mirror, (0, 1, 0)))
+    faces.append((p001, p101, p100, p000, u + bd + bw, v, bw, bd, mirror, (0, -1, 0)))
+
+
+def _skin_build_model(slim, overlay, legacy):
+    f = []
+    arm_w = 3 if slim else 4
+    arm_x = 5.5 if slim else 6.0
+    _skin_add_box(f, (0, 10, 0), 8, 8, 8, 0, 0, 8, 8, 8, False, 0)           # head
+    _skin_add_box(f, (0, 0, 0), 8, 12, 4, 16, 16, 8, 12, 4, False, 0)        # body
+    _skin_add_box(f, (-arm_x, 0, 0), arm_w, 12, 4, 40, 16, arm_w, 12, 4, False, 0)  # right arm
+    if legacy:
+        _skin_add_box(f, (arm_x, 0, 0), arm_w, 12, 4, 40, 16, arm_w, 12, 4, True, 0)
+    else:
+        _skin_add_box(f, (arm_x, 0, 0), arm_w, 12, 4, 32, 48, arm_w, 12, 4, False, 0)
+    _skin_add_box(f, (-2, -12, 0), 4, 12, 4, 0, 16, 4, 12, 4, False, 0)      # right leg
+    if legacy:
+        _skin_add_box(f, (2, -12, 0), 4, 12, 4, 0, 16, 4, 12, 4, True, 0)
+    else:
+        _skin_add_box(f, (2, -12, 0), 4, 12, 4, 16, 48, 4, 12, 4, False, 0)
+    if overlay:
+        _skin_add_box(f, (0, 10, 0), 8, 8, 8, 32, 0, 8, 8, 8, False, 0.5)    # hat
+        if not legacy:
+            _skin_add_box(f, (0, 0, 0), 8, 12, 4, 16, 32, 8, 12, 4, False, 0.25)          # jacket
+            _skin_add_box(f, (-arm_x, 0, 0), arm_w, 12, 4, 40, 32, arm_w, 12, 4, False, 0.25)  # right sleeve
+            _skin_add_box(f, (arm_x, 0, 0), arm_w, 12, 4, 48, 48, arm_w, 12, 4, False, 0.25)   # left sleeve
+            _skin_add_box(f, (-2, -12, 0), 4, 12, 4, 0, 32, 4, 12, 4, False, 0.25)         # right leg overlay
+            _skin_add_box(f, (2, -12, 0), 4, 12, 4, 0, 48, 4, 12, 4, False, 0.25)          # left leg overlay
+    return f
+
+
+def _skin_build_cape():
+    raw = []
+    _skin_add_box(raw, (0, 0, 0), 10, 16, 1, 0, 0, 10, 16, 1, False, 0)
+    # a worn cape shows its outer texture backwards
+    ry = math.pi
+    rx = math.radians(10.0)
+    cy_, sy_ = math.cos(ry), math.sin(ry)
+    cx_, sx_ = math.cos(rx), math.sin(rx)
+    box_top = (0, 8, 0)
+    anchor = (0, 6, -3.0)
+
+    def tilt(p):
+        x, y, z = p[0] - box_top[0], p[1] - box_top[1], p[2] - box_top[2]
+        x1 = x * cy_ + z * sy_; z1 = -x * sy_ + z * cy_
+        y2 = y * cx_ - z1 * sx_; z2 = y * sx_ + z1 * cx_
+        return (x1 + anchor[0], y2 + anchor[1], z2 + anchor[2])
+
+    faces = []
+    for A, B, C, D, U, V, Uw, Vh, mirror, n in raw:
+        nx, ny, nz = n
+        n1x = nx * cy_ + nz * sy_; n1z = -nx * sy_ + nz * cy_
+        n2y = ny * cx_ - n1z * sx_; n2z = ny * sx_ + n1z * cx_
+        faces.append((tilt(A), tilt(B), tilt(C), tilt(D), U, V, Uw, Vh, mirror, (n1x, n2y, n2z)))
+    return faces
+
+
+def _skin_raster_tri(pix, zbuf, width, height, a, b, c, ta, tb, tc,
+                     fU, fV, fUw, fVh, mirror, tex, W, H, shade):
+    ax, ay, az = a; bx, by, bz = b; cx, cy, cz = c
+    minX = max(0, int(math.floor(min(ax, bx, cx))))
+    maxX = min(width - 1, int(math.ceil(max(ax, bx, cx))))
+    minY = max(0, int(math.floor(min(ay, by, cy))))
+    maxY = min(height - 1, int(math.ceil(max(ay, by, cy))))
+    if minX > maxX or minY > maxY:
+        return
+    denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if abs(denom) < 1e-6:
+        return
+    inv = 1.0 / denom
+    taX, taY = ta; tbX, tbY = tb; tcX, tcY = tc
+    e0y = by - cy; e0x = cx - bx
+    e1y = cy - ay; e1x = ax - cx
+    for y in range(minY, maxY + 1):
+        pyc = (y + 0.5) - cy
+        rowbase = y * width
+        for x in range(minX, maxX + 1):
+            pxc = (x + 0.5) - cx
+            w0 = (e0y * pxc + e0x * pyc) * inv
+            if w0 < 0:
+                continue
+            w1 = (e1y * pxc + e1x * pyc) * inv
+            if w1 < 0:
+                continue
+            w2 = 1.0 - w0 - w1
+            if w2 < 0:
+                continue
+            z = w0 * az + w1 * bz + w2 * cz
+            zi = rowbase + x
+            if z <= zbuf[zi]:
+                continue
+            fu = w0 * taX + w1 * tbX + w2 * tcX
+            fv = w0 * taY + w1 * tbY + w2 * tcY
+            if mirror:
+                fu = 1.0 - fu
+            u = fU + min(fUw - 1, int(fu * fUw))
+            v = fV + min(fVh - 1, int(fv * fVh))
+            if u < 0 or u >= W or v < 0 or v >= H:
+                continue
+            ti = (v * W + u) * 4
+            if tex[ti + 3] < 8:
+                continue
+            zbuf[zi] = z
+            pi = zi * 4
+            pix[pi] = int(tex[ti] * shade)
+            pix[pi + 1] = int(tex[ti + 1] * shade)
+            pix[pi + 2] = int(tex[ti + 2] * shade)
+            pix[pi + 3] = 255
+
+
+def _render_skin_3d(skin, width, height, yaw_deg=25.0, pitch_deg=10.0, slim=False,
+                    overlay=True, cape=None):
+    """Renders a full-body 3D view of a skin (PIL RGBA). yaw/pitch in degrees,
+    0/0 = facing the viewer. Pure Python software rasterizer (~40ms at 180x280)."""
+    W, H = skin.width, skin.height
+    tex = skin.tobytes()
+    legacy = H == 32
+    faces = _skin_build_model(slim, overlay, legacy)
+    yaw = math.radians(yaw_deg); pitch = math.radians(pitch_deg)
+    cyr, syr = math.cos(yaw), math.sin(yaw)
+    cxr, sxr = math.cos(pitch), math.sin(pitch)
+
+    def rot(p):
+        x, y, z = p
+        x1 = x * cyr + z * syr
+        z1 = -x * syr + z * cyr
+        return (x1, y * cxr - z1 * sxr, y * sxr + z1 * cxr)
+
+    scale = height / 40.0
+    cx = width / 2.0; cy = height / 2.0
+    zbuf = [float("-inf")] * (width * height)
+    pix = bytearray(width * height * 4)
+    lx, ly, lz = -0.3, 0.9, 0.6
+    ll = math.sqrt(lx * lx + ly * ly + lz * lz); lx /= ll; ly /= ll; lz /= ll
+
+    def render_faces(face_list, texture, tw, th):
+        for face in face_list:
+            A, B, C, D, fU, fV, fUw, fVh, mirror, normal = face
+            nx, ny, nz = rot(normal)
+            if nz <= 0.02:
+                continue
+            shade = 0.62 + 0.38 * max(0.0, nx * lx + ny * ly + nz * lz)
+            proj = []
+            for corner in (A, B, C, D):
+                px_, py_, pz_ = rot((corner[0], corner[1] - 2, corner[2]))
+                persp = 140.0 / (140.0 - pz_)
+                proj.append((cx + px_ * scale * persp, cy - py_ * scale * persp, pz_))
+            _skin_raster_tri(pix, zbuf, width, height, proj[0], proj[1], proj[2],
+                             (0.0, 0.0), (1.0, 0.0), (1.0, 1.0), fU, fV, fUw, fVh, mirror, texture, tw, th, shade)
+            _skin_raster_tri(pix, zbuf, width, height, proj[0], proj[2], proj[3],
+                             (0.0, 0.0), (1.0, 1.0), (0.0, 1.0), fU, fV, fUw, fVh, mirror, texture, tw, th, shade)
+
+    render_faces(faces, tex, W, H)
+    if cape is not None:
+        render_faces(_skin_build_cape(), cape.tobytes(), cape.width, cape.height)
+    return Image.frombuffer("RGBA", (width, height), bytes(pix), "raw", "RGBA", 0, 1)
+
+
+def _compose_skin_front(skin, slim=False):
+    """Builds a front-facing 2D render (PIL Image) from a raw skin texture,
+    including the outer overlay layers. Handles legacy 64x32 skins."""
+    legacy = skin.height == 32
+    arm_w = 3 if slim else 4
+    out = Image.new("RGBA", (16, 32), (0, 0, 0, 0))
+
+    def part(x, y, w, h):
+        return skin.crop((x, y, x + w, y + h))
+
+    def mirrored(img):
+        return ImageOps.mirror(img)
+
+    # base layer
+    out.paste(part(8, 8, 8, 8), (4, 0))                       # head
+    out.paste(part(20, 20, 8, 12), (4, 8))                    # body
+    right_arm = part(44, 20, arm_w, 12)
+    out.paste(right_arm, (4 - arm_w, 8))                      # right arm (viewer left)
+    left_arm = part(36, 52, arm_w, 12) if not legacy else mirrored(right_arm)
+    out.paste(left_arm, (12, 8))                              # left arm
+    right_leg = part(4, 20, 4, 12)
+    out.paste(right_leg, (4, 20))                             # right leg
+    left_leg = part(20, 52, 4, 12) if not legacy else mirrored(right_leg)
+    out.paste(left_leg, (8, 20))                              # left leg
+
+    def overlay(x, y, w, h, dest):
+        piece = part(x, y, w, h)
+        out.paste(piece, dest, piece)
+
+    overlay(40, 8, 8, 8, (4, 0))                              # hat
+    if not legacy:
+        overlay(20, 36, 8, 12, (4, 8))                        # jacket
+        overlay(44, 36, arm_w, 12, (4 - arm_w, 8))            # right sleeve
+        overlay(52, 52, arm_w, 12, (12, 8))                   # left sleeve
+        overlay(4, 36, 4, 12, (4, 20))                        # right leg overlay
+        overlay(4, 52, 4, 12, (8, 20))                        # left leg overlay
+
+    scale = 5
+    return out.resize((out.width * scale, out.height * scale), Image.NEAREST)
+
+
+_SKIN_PREVIEW_W = 180
+_SKIN_PREVIEW_H = 280
+
+
+def _skin_preview_render(launcher):
+    """(Re)renders the current skin at the stored yaw/pitch onto the preview label."""
+    st = getattr(launcher, '_skin_preview_state', None)
+    label = getattr(launcher, '_skin_preview_label', None)
+    if not st or label is None or st.get('skin') is None:
+        return
+    try:
+        img = _render_skin_3d(st['skin'], _SKIN_PREVIEW_W, _SKIN_PREVIEW_H,
+                              yaw_deg=st['yaw'], pitch_deg=st['pitch'],
+                              slim=st['slim'], cape=st.get('cape'))
+        photo = ImageTk.PhotoImage(img)
+        label.config(image=photo, text="")
+        label.image = photo  # keep a reference
+    except Exception:
+        pass
+
+
+def _skin_preview_bind_drag(launcher):
+    """Wires drag-to-rotate on the preview label (once)."""
+    label = getattr(launcher, '_skin_preview_label', None)
+    if label is None or getattr(launcher, '_skin_preview_drag_bound', False):
+        return
+
+    def on_press(e):
+        st = getattr(launcher, '_skin_preview_state', None)
+        if st:
+            st['last'] = (e.x, e.y)
+
+    def on_drag(e):
+        st = getattr(launcher, '_skin_preview_state', None)
+        if not st or st.get('skin') is None or st.get('last') is None:
+            return
+        lx, ly = st['last']
+        st['yaw'] += (e.x - lx) * 0.8
+        st['pitch'] = max(-60.0, min(60.0, st['pitch'] + (e.y - ly) * 0.4))
+        st['last'] = (e.x, e.y)
+        _skin_preview_render(launcher)
+
+    label.bind("<Button-1>", on_press, add="+")
+    label.bind("<B1-Motion>", on_drag, add="+")
+    label.config(cursor="fleur")
+    launcher._skin_preview_drag_bound = True
+
+
+def _update_account_skin_preview(launcher, acc):
+    label = getattr(launcher, '_skin_preview_label', None)
+    caption = getattr(launcher, '_skin_preview_caption', None)
+    if label is None:
+        return
+    _skin_preview_bind_drag(launcher)
+
+    def worker():
+        skin, slim, cape = _fetch_skin_texture(acc)
+
+        def apply():
+            try:
+                if skin is None:
+                    launcher._skin_preview_state = {'skin': None}
+                    unavailable = launcher._t("SKIN_PREVIEW_UNAVAILABLE")
+                    if unavailable == "SKIN_PREVIEW_UNAVAILABLE":
+                        unavailable = "No skin preview available"
+                    label.config(image="", text=unavailable)
+                    label.image = None
+                else:
+                    launcher._skin_preview_state = {
+                        'skin': skin, 'slim': slim, 'cape': cape,
+                        'yaw': 25.0, 'pitch': 10.0, 'last': None,
+                    }
+                    _skin_preview_render(launcher)
+                if caption is not None:
+                    caption.config(text=acc.get('username', ''))
+            except Exception:
+                pass
+        try:
+            launcher.after(0, apply)
+        except RuntimeError:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
 
 def _build_accounts_page(parent, launcher):
     bg_primary = launcher._get_theme_color('bg_primary')
@@ -991,6 +1363,23 @@ def _build_accounts_page(parent, launcher):
     canvas.configure(yscrollcommand=scrollbar.set)
     canvas.pack(side="left", fill="both", expand=True, padx=8, pady=8)
     scrollbar.pack(side="right", fill="y", pady=8, padx=(0, 4))
+
+    # Native skin preview
+    preview_frame = tk.Frame(account_card,
+                             bg=launcher._get_theme_color('bg_secondary'),
+                             highlightthickness=1,
+                             highlightbackground=launcher._get_theme_color('border_primary'))
+    preview_frame.pack(fill="x", pady=(0, 12))
+    launcher._skin_preview_label = tk.Label(preview_frame, text="",
+                                            bg=launcher._get_theme_color('bg_secondary'),
+                                            fg=launcher._get_theme_color('fg_secondary'))
+    launcher._skin_preview_label.pack(pady=(10, 2))
+    launcher._skin_preview_caption = tk.Label(preview_frame, text="",
+                                              bg=launcher._get_theme_color('bg_secondary'),
+                                              fg=launcher._get_theme_color('fg_primary'),
+                                              font=("Segoe UI", 10, "bold"))
+    launcher._skin_preview_caption.pack(pady=(0, 10))
+
     _refresh_accounts_list(launcher)
     btn_frame = tk.Frame(account_card, bg=launcher._get_theme_color('bg_primary'))
     btn_frame.pack(fill="x")
@@ -1752,14 +2141,20 @@ def _refresh_accounts_list(launcher):
                                  text=f"{username} ({acc_type})",
                                  bg=launcher._get_theme_color('bg_hover'),
                                  fg=launcher._get_theme_color('fg_primary'),
-                                 font=("Segoe UI", 8, "bold"))
+                                 font=("Segoe UI", 8, "bold"),
+                                 cursor="hand2")
             name_label.pack(anchor="w")
+            for w in (acc_container, acc_frame, info_frame, name_label):
+                w.bind("<Button-1>", lambda e, a=acc: _update_account_skin_preview(launcher, a))
             btn = ttk.Button(acc_frame,
                            text=launcher._t("REMOVE"),
                            style="Settings.TButton",
                            width=8,
                            command=lambda idx=i: _remove_account_persistent(launcher, idx))
             btn.pack(side="right")
+        # show the first account's skin by default
+        if getattr(launcher, '_skin_preview_label', None) is not None:
+            _update_account_skin_preview(launcher, accounts[0])
 def _get_settings_path():
     config_dir = Path.home() / ".config" / "oranglauncher"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -1798,7 +2193,7 @@ def _load_settings(launcher):
     except Exception as e:
         print(f"Error loading settings: {e}")
 def _on_share_toggle(launcher):
-    # persist the new state, then re-link every instance so sharing takes effect now
+    # persist the new state
     _save_settings(launcher)
     if hasattr(launcher, '_apply_sharing_all'):
         threading.Thread(target=launcher._apply_sharing_all, daemon=True).start()
@@ -2236,6 +2631,11 @@ class ModrinthPackImporter:
                 except Exception as inner_e:
                     return False, f"Failed to create instance: {str(inner_e)}", None
             shutil.rmtree(temp_dir)
+            if self.launcher is not None and hasattr(self.launcher, '_apply_sharing_for_instance'):
+                try:
+                    self.launcher._apply_sharing_for_instance(instance)
+                except Exception as share_e:
+                    print(f"[MRPACK] sharing apply failed: {share_e}")
             self.instance_mgr._notify_callbacks()
             return True, f"Successfully imported {pack_name} (Minecraft {game_version}, {mod_loader})", instance.name
         except Exception as e:
@@ -2316,8 +2716,9 @@ class ModrinthPackImporter:
         minecraft_version = dependencies.get("minecraft", "")
         if not minecraft_version:
             minecraft_version = pack_data.get("game_versions", [""])[0]
-        mod_loader = self._detect_mod_loader(pack_data).lower()
-        if mod_loader == "none" or mod_loader == "vanilla":
+        detected = self._detect_mod_loader(pack_data)
+        mod_loader = (detected[0] if isinstance(detected, (tuple, list)) else detected or "").lower()
+        if mod_loader == "none" or mod_loader == "vanilla" or not mod_loader:
             mod_loader = "fabric"
         print(f"[MRPACK] Checking dependencies for {mod_loader} {minecraft_version}...")
         downloaded_deps = 0
@@ -2459,7 +2860,7 @@ class CurseForgePackImporter:
 
             manifest_path = temp_dir / "manifest.json"
             if not manifest_path.exists():
-                return False, "manifest.json not found — this does not appear to be a CurseForge modpack.", None
+                return False, "manifest.json not found - this does not appear to be a CurseForge modpack.", None
 
             with open(manifest_path, 'r', encoding='utf-8') as f:
                 manifest = json.load(f)
@@ -3184,7 +3585,7 @@ class ModdingTab:
         create_mod_btn(self.parent._t("MODS_ADD_BTN"), "plus", self.add_mods).pack(side="left", padx=(0, 10))
         create_mod_btn(self.parent._t("MODS_REMOVE_BTN"), "trash", self.remove_selected_mods).pack(side="left", padx=(0, 10))
         create_mod_btn(self.parent._t("MODS_UPDATE_BTN"), "update", self.update_mods).pack(side="left", padx=(0, 10))
-        create_mod_btn(self.parent._t("MODS_RESTORE_BACKUPS"), "refresh", self.restore_backups).pack(side="left", padx=(0, 10))
+        create_mod_btn(self.parent._t("MODS_REFRESH_LIST"), "refresh", self.refresh_ui).pack(side="left", padx=(0, 10))
         create_mod_btn(self.parent._t("MODS_OPEN_FOLDER_BTN"), "folder", self.open_mods_folder).pack(side="left", padx=(0, 10))
         self.refresh_ui()
     def refresh_ui(self):
@@ -3193,10 +3594,11 @@ class ModdingTab:
             if self.current_instance:
                 self.current_profile = None
                 self.profile_info_label.config(
-                    text=f"Current Instance: {self.current_instance.name}"
+                    text=self.parent._t("MODS_CURRENT_INSTANCE").format(name=self.current_instance.name)
                 )
                 self.mod_loader_info_label.config(
-                    text=f"Mod Loader: {self.current_instance.mod_loader} | Version: {self.current_instance.version}"
+                    text=self.parent._t("MODS_LOADER_VERSION").format(
+                        loader=self.current_instance.mod_loader, version=self.current_instance.version)
                 )
                 if self.current_instance.mod_loader.lower() == "vanilla":
                     self.loader_warning_frame.pack()
@@ -3207,16 +3609,17 @@ class ModdingTab:
                 return
         self.current_profile = self.profile_manager.get_selected_profile()
         if not self.current_profile:
-            self.profile_info_label.config(text="Current Profile: None selected")
-            self.mod_loader_info_label.config(text="Mod Loader: N/A")
+            self.profile_info_label.config(text=self.parent._t("MODS_NO_PROFILE"))
+            self.mod_loader_info_label.config(text=self.parent._t("MODS_LOADER_NA"))
             self.loader_warning_frame.pack()
             self.refresh_mods_list()
             return
         self.profile_info_label.config(
-            text=f"Current Profile: {self.current_profile.name}"
+            text=self.parent._t("MODS_CURRENT_PROFILE").format(name=self.current_profile.name)
         )
         self.mod_loader_info_label.config(
-            text=f"Mod Loader: {self.current_profile.mod_loader} | Version: {self.current_profile.version}"
+            text=self.parent._t("MODS_LOADER_VERSION").format(
+                loader=self.current_profile.mod_loader, version=self.current_profile.version)
         )
         if self.current_profile.mod_loader == "None":
             self.loader_warning_frame.pack()
@@ -3235,7 +3638,7 @@ class ModdingTab:
             return
         if len(selection) == 1:
             mod_name = self.mods_listbox.get(selection[0])
-            if mod_name != "No mods installed" and mod_name != "No profile selected":
+            if mod_name not in (self.parent._t("MODS_NONE_INSTALLED"), self.parent._t("MODS_NO_PROFILE_SELECTED")):
                 if self.current_instance:
                     mod_path = self.current_instance.mods_dir / mod_name
                     if mod_path.exists():
@@ -3329,7 +3732,7 @@ class ModdingTab:
         if (not self.current_instance and not self.current_profile):
             return
         mod_names = [self.mods_listbox.get(i) for i in selection]
-        mod_names = [name for name in mod_names if name not in ["No mods installed", "No profile selected"]]
+        mod_names = [name for name in mod_names if name not in (self.parent._t("MODS_NONE_INSTALLED"), self.parent._t("MODS_NO_PROFILE_SELECTED"))]
         if not mod_names:
             return
         if len(mod_names) == 1:
@@ -3834,37 +4237,36 @@ class ModdingTab:
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
+    def _mods_count_text(self, n):
+        return self.parent._t("MODS_COUNT").format(n=n)
+
     def refresh_mods_list(self):
+        none_txt = self.parent._t("MODS_NONE_INSTALLED")
+        no_profile_txt = self.parent._t("MODS_NO_PROFILE_SELECTED")
         self.mods_listbox.delete(0, tk.END)
         if self.current_instance:
             mods_dir = self.current_instance.mods_dir
             if not mods_dir.exists():
-                self.mods_listbox.insert(tk.END, "No mods installed")
-                self.mods_count_label.config(text="0 mods loaded")
+                self.mods_listbox.insert(tk.END, none_txt)
+                self.mods_count_label.config(text=self._mods_count_text(0))
                 return
             mods = [f.name for f in mods_dir.iterdir() if f.suffix.lower() == '.jar' and f.is_file()]
             self._all_mods = sorted(mods)
             self._apply_search_filter()
             if not mods:
-                self.mods_listbox.insert(tk.END, "No mods installed")
-                self.mods_count_label.config(text="0 mods loaded")
-            else:
-                mod_text = "1 mod loaded" if len(mods) == 1 else f"{len(mods)} mods loaded"
-                self.mods_count_label.config(text=mod_text)
+                self.mods_listbox.insert(tk.END, none_txt)
+            self.mods_count_label.config(text=self._mods_count_text(len(mods)))
             return
         if not self.current_profile:
-            self.mods_listbox.insert(tk.END, "No profile selected")
-            self.mods_count_label.config(text="0 mods loaded")
+            self.mods_listbox.insert(tk.END, no_profile_txt)
+            self.mods_count_label.config(text=self._mods_count_text(0))
             return
         mods = get_current_profile_mods()
         self._all_mods = sorted(mods)
         self._apply_search_filter()
         if not mods:
-            self.mods_listbox.insert(tk.END, "No mods installed")
-            self.mods_count_label.config(text="0 mods loaded")
-        else:
-            mod_text = "1 mod loaded" if len(mods) == 1 else f"{len(mods)} mods loaded"
-            self.mods_count_label.config(text=mod_text)
+            self.mods_listbox.insert(tk.END, none_txt)
+        self.mods_count_label.config(text=self._mods_count_text(len(mods)))
 
     def _apply_search_filter(self):
         q = (self.search_var.get() or '').strip().lower()
@@ -4746,6 +5148,107 @@ def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
         log_fn(f"[Java] Download failed, falling back to system java")
     return system_java
 
+# ---- OptiFine (standalone) support ----
+OPTIFINE_SITE = "https://optifine.net"
+_OPTIFINE_UA = {"User-Agent": "Mozilla/5.0"}
+
+
+def get_optifine_files_for(mc_version):
+    """Returns OptiFine jar filenames available for mc_version, newest first."""
+    if not mc_version:
+        return []
+    try:
+        r = _http_session.get(f"{OPTIFINE_SITE}/downloads", timeout=20, headers=_OPTIFINE_UA)
+        r.raise_for_status()
+        pat = r'adloadx\?f=((?:preview_)?OptiFine_' + re.escape(mc_version) + r'_[^"&]+\.jar)'
+        seen, out = set(), []
+        for f in re.findall(pat, r.text):
+            if f not in seen:
+                seen.add(f)
+                out.append(f)
+        return out
+    except Exception as e:
+        print(f"[OptiFine] version list failed: {e}")
+        return []
+
+
+def download_optifine(filename, dest_path, log_fn=None):
+    """Resolves the per-session download token and saves the OptiFine jar."""
+    r = _http_session.get(f"{OPTIFINE_SITE}/adloadx?f={filename}", timeout=20, headers=_OPTIFINE_UA)
+    r.raise_for_status()
+    m = re.search(r'downloadx\?f=[^"&]+&(?:amp;)?x=([0-9a-f]+)', r.text)
+    if not m:
+        raise RuntimeError("could not resolve OptiFine download token")
+    url = f"{OPTIFINE_SITE}/downloadx?f={filename}&x={m.group(1)}"
+    with _http_session.get(url, stream=True, timeout=120, headers=_OPTIFINE_UA) as dl:
+        dl.raise_for_status()
+        with open(dest_path, "wb") as out:
+            for chunk in dl.iter_content(chunk_size=1024 * 128):
+                if chunk:
+                    out.write(chunk)
+    if log_fn:
+        log_fn(f"[OptiFine] Downloaded {filename}")
+
+
+def optifine_version_id(filename):
+    """OptiFine_1.21.4_HD_U_J3.jar -> 1.21.4-OptiFine_HD_U_J3 (matches the
+    version folder the OptiFine installer creates)."""
+    base = filename[:-4] if filename.lower().endswith(".jar") else filename
+    if base.startswith("preview_"):
+        base = base[len("preview_"):]
+    rest = base.split("_", 1)[1] if "_" in base else base   # drop leading 'OptiFine'
+    mc, _, edition = rest.partition("_")
+    return f"{mc}-OptiFine_{edition}"
+
+
+def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
+                     log_fn=None, progress_fn=None):
+    """Standalone OptiFine install into the instance dir. Downloads the installer,
+    ensures the vanilla base version exists, then runs OptiFine's headless installer
+    redirected at the instance via user.home. Returns the installed version id."""
+    log = log_fn or (lambda *_: None)
+    if not filename:
+        files = get_optifine_files_for(mc_version)
+        if not files:
+            raise RuntimeError(f"no OptiFine build found for Minecraft {mc_version}")
+        filename = files[0]
+    log(f"[OptiFine] Selected {filename}")
+    if progress_fn:
+        progress_fn(0, f"Installing Minecraft {mc_version}...")
+    minecraft_launcher_lib.install.install_minecraft_version(mc_version, minecraft_directory)
+    if progress_fn:
+        progress_fn(50, "Downloading OptiFine...")
+    tmp_jar = Path(tempfile.gettempdir()) / filename
+    download_optifine(filename, str(tmp_jar), log_fn=log)
+    base_home = str(Path(minecraft_directory).parent)
+    lp = Path(minecraft_directory) / "launcher_profiles.json"
+    if not lp.exists():
+        lp.parent.mkdir(parents=True, exist_ok=True)
+        lp.write_text(json.dumps({"profiles": {}, "settings": {}, "version": 3}), encoding="utf-8")
+    if progress_fn:
+        progress_fn(80, "Installing OptiFine...")
+    log(f"[OptiFine] Running installer (home={base_home})")
+    proc = subprocess.run(
+        [java_exe, f"-Duser.home={base_home}", "-cp", str(tmp_jar), "optifine.Installer"],
+        capture_output=True, text=True, timeout=240)
+    if (proc.stdout or "").strip():
+        log(f"[OptiFine] {proc.stdout.strip()[:400]}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"OptiFine installer failed: {(proc.stderr or proc.stdout or '').strip()[:300]}")
+    try:
+        tmp_jar.unlink()
+    except Exception:
+        pass
+    version_id = optifine_version_id(filename)
+    vjson = Path(minecraft_directory) / "versions" / version_id / f"{version_id}.json"
+    if not vjson.exists():
+        raise RuntimeError(f"OptiFine version {version_id} was not created")
+    if progress_fn:
+        progress_fn(100, "OptiFine installed")
+    log(f"[OptiFine] Installed {version_id}")
+    return version_id
+
+
 def get_available_versions(force_refresh=False):
     manager = get_game_profile_manager()
     versions = manager.get_versions(force_refresh)
@@ -5271,6 +5774,8 @@ class GameProfilesTab:
                 self.parent._refresh_game_profiles()
             if hasattr(self.parent, '_update_profile_display'):
                 self.parent._update_profile_display()
+            if hasattr(self.parent, '_sync_active_instance'):
+                self.parent._sync_active_instance()
         except Exception:
             pass
         self._highlight_selection()
@@ -5321,7 +5826,7 @@ class GameProfilesTab:
         self.name_entry.grid(row=0, column=2, sticky="w", pady=6)
         tk.Label(form_container, text=self.parent._t("GAME_PROFILES_LOADER"), width=18, anchor="e",
                  fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=1, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.loader_combo = ttk.Combobox(form_container, textvariable=self.loader_var, state="readonly", values=["vanilla", "forge", "neoforge", "fabric", "quilt"], width=37)
+        self.loader_combo = ttk.Combobox(form_container, textvariable=self.loader_var, state="readonly", values=["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"], width=37)
         self.loader_combo.bind("<<ComboboxSelected>>", lambda e: self._on_loader_change())
         self.loader_combo.grid(row=1, column=2, sticky="w", pady=6)
         tk.Label(form_container, text=self.parent._t("GAME_PROFILES_VERSION"), width=18, anchor="e",
@@ -5509,6 +6014,7 @@ class GameProfilesTab:
         self.form_icon_label.configure(image=icon)
         self.form_icon_label.image = icon  # type: ignore
         self.loader_version_combo.configure(state="disabled" if loader == "vanilla" else "readonly")
+        self._loader_incompatible = False
         if loader == "vanilla":
             self.loader_version_var.set("N/A")
         else:
@@ -5518,9 +6024,17 @@ class GameProfilesTab:
             def _fetch_and_set(loader=loader, mc_ver=mc_ver):
                 versions = self._fetch_loader_versions(loader, mc_ver)
                 def _apply():
-                    self.loader_version_combo.configure(values=versions)
-                    if self.loader_version_var.get() not in versions:
-                        self.loader_version_var.set(versions[0] if versions else "Latest")
+                    if versions:
+                        self._loader_incompatible = False
+                        self.loader_version_combo.configure(values=versions)
+                        if self.loader_version_var.get() not in versions:
+                            self.loader_version_var.set(versions[0])
+                    else:
+                        # no build of this loader exists for the chosen MC version
+                        self._loader_incompatible = True
+                        msg = self.parent._t("LOADER_NOT_COMPATIBLE")
+                        self.loader_version_combo.configure(values=[msg])
+                        self.loader_version_var.set(msg)
                 try:
                     self.parent.after(0, _apply)
                 except Exception:
@@ -5544,6 +6058,8 @@ class GameProfilesTab:
                 return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
             if loader == "quilt" and hasattr(minecraft_launcher_lib, "quilt"):
                 return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
+            if loader == "optifine":
+                return get_optifine_files_for(mc_version)
         except Exception as e:
             print(f"[DEBUG] Error fetching loader versions: {e}")
         return []
@@ -5559,15 +6075,15 @@ class GameProfilesTab:
         self.loader_var.set("vanilla")
         self.version_var.set(self.version_values[0] if self.version_values else "")
         self.loader_version_var.set("N/A")
-        self.form_title_var.set("Create profile")
-        self.form_submit_btn.config(text="Create")
+        self.form_title_var.set(self.parent._t("GAME_PROFILES_CREATE_TITLE"))
+        self.form_submit_btn.config(text=self.parent._t("PROFILE_CREATE_BTN"))
         self._on_loader_change()
         self._show_form_view()
     def _open_edit_form(self, instance):
         self.current_mode = "edit"
         self.editing_instance_id = instance.instance_id
-        self.form_title_var.set("Edit profile")
-        self.form_submit_btn.config(text="Save")
+        self.form_title_var.set(self.parent._t("GAME_PROFILES_EDIT_TITLE"))
+        self.form_submit_btn.config(text=self.parent._t("PROFILE_SAVE_BTN"))
         self.name_var.set(instance.name)
         self.loader_var.set(instance.mod_loader.lower())
         self.version_var.set(instance.version)
@@ -5709,14 +6225,22 @@ class GameProfilesTab:
         if not name or not version:
             messagebox.showerror("Invalid Profile", "Name and version are required.")
             return
-        if loader not in {"vanilla", "forge", "neoforge", "fabric", "quilt"}:
+        if loader not in {"vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"}:
             messagebox.showerror("Invalid Loader", "Please select a supported mod loader.")
             return
         if not self._validate_version(version):
             return
+        # a modded loader with no build for this MC version cannot be created
+        if loader != "vanilla" and getattr(self, "_loader_incompatible", False):
+            messagebox.showerror(self.parent._t("LOADER_NOT_COMPATIBLE_TITLE"),
+                                 self.parent._t("LOADER_NOT_COMPATIBLE_MSG").format(loader=loader, version=version))
+            return
+        loader_ver = self.loader_version_var.get().strip()
+        if loader_ver in ("N/A", "Latest", "Loading…", "", self.parent._t("LOADER_NOT_COMPATIBLE")):
+            loader_ver = None
         if self.current_mode == "create":
             try:
-                new_instance = self.instance_manager.create_instance(name, version, loader)
+                new_instance = self.instance_manager.create_instance(name, version, loader, loader_version=loader_ver)
             except ValueError as e:
                 messagebox.showerror(self.parent._t("GAME_PROFILES_CREATE_TITLE"), str(e))
                 return
@@ -5740,6 +6264,7 @@ class GameProfilesTab:
             instance.name = name
             instance.version = version
             instance.mod_loader = loader
+            instance.loader_version = loader_ver or ""
             if version_changed or loader_changed:
                 instance.installed_version_id = None
             try:
@@ -5839,7 +6364,7 @@ class GameProfilesTab:
             messagebox.showinfo("Screenshots", "No screenshots found.")
             return
         dlg = tk.Toplevel(self.parent)
-        dlg.title(f"Screenshots — {instance.name}")
+        dlg.title(f"Screenshots - {instance.name}")
         dlg.geometry("760x520")
         dlg.configure(bg=self.theme_manager.get_color('bg_primary'))
         toolbar = tk.Frame(dlg, bg=self.theme_manager.get_color('bg_secondary'))
@@ -5936,7 +6461,7 @@ class GameProfilesTab:
                     zf.extractall(dest)
                 inst_json = dest / "instance.json"
                 if not inst_json.exists():
-                    raise FileNotFoundError("instance.json not found in zip — not a valid OrangLauncher export.")
+                    raise FileNotFoundError("instance.json not found in zip - not a valid OrangLauncher export.")
                 with open(inst_json, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 data['instance_id'] = new_id
@@ -7276,7 +7801,472 @@ def build_res_sh_tab(launcher, notebook, instance_manager=None):
     rs_tab = ResourceShaderTab(launcher, instance_manager)
     rs_tab.build_tab()
     launcher.res_sh_tab = rs_tab
-_WEBKIT_MODS = None 
+
+
+MODRINTH_API_URL = "https://api.modrinth.com/v2"
+
+
+class ContentStoreTab:
+    """Modrinth content browser (mods / resource packs / data packs / shaders),
+    ported from the Windows launcher's Content page. Installs are filtered by
+    the target instance's mod loader and game version so the matching file is
+    downloaded instead of the newest release."""
+
+    PAGE_SIZE = 20
+
+    def __init__(self, launcher, instance_manager=None):
+        self.parent = launcher
+        self.theme_manager = launcher.theme_manager
+        self.instance_manager = instance_manager or get_instance_manager()
+        self.content_type = "mod"
+        self.offset = 0
+        self.total_hits = 0
+        self.instances = []
+        self._icon_refs = []
+        self._type_buttons = {}
+    def _color(self, key):
+        return self.theme_manager.get_color(key)
+
+    def _t(self, key, **kwargs):
+        return self.parent._t(key, **kwargs)
+
+    def _target_instance(self):
+        idx = self.instance_combo.current() if hasattr(self, 'instance_combo') else -1
+        if 0 <= idx < len(self.instances):
+            return self.instances[idx]
+        return None
+
+    @staticmethod
+    def _normalized_loader(instance):
+        loader = (instance.mod_loader or "").lower() if instance else ""
+        return loader if loader in ("fabric", "forge", "quilt", "neoforge") else None
+
+    @staticmethod
+    def _is_vanilla(instance):
+        loader = (instance.mod_loader or "vanilla").lower() if instance else "vanilla"
+        return loader in ("vanilla", "none", "")
+
+    def _set_status(self, text):
+        try:
+            self.status_label.config(text=text)
+        except Exception:
+            pass
+
+    def _set_btn(self, button, **kw):
+        try:
+            if button.winfo_exists():
+                button.config(**kw)
+        except tk.TclError:
+            pass
+
+    def build_tab(self, notebook):
+        tab_frame = ttk.Frame(notebook)
+        notebook.add(tab_frame, text=self.parent._t('CONTENT_TAB') if self.parent._t('CONTENT_TAB') != 'CONTENT_TAB' else 'Content')
+        bg = self._color('bg_primary')
+        self.container = tk.Frame(tab_frame, bg=bg)
+        self.container.pack(fill="both", expand=True, padx=14, pady=14)
+        types_row = tk.Frame(self.container, bg=bg)
+        types_row.pack(fill="x", pady=(0, 8))
+        for tag, label in (("mod", self.parent._t('CONTENT_TYPE_MODS')),
+                           ("resourcepack", self.parent._t('CONTENT_TYPE_RESOURCEPACKS')),
+                           ("datapack", self.parent._t('CONTENT_TYPE_DATAPACKS')),
+                           ("shader", self.parent._t('CONTENT_TYPE_SHADERS')),
+                           ("modpack", self.parent._t('CONTENT_TYPE_MODPACKS')),
+                           ("oranglib", self.parent._t('ORANGLIB'))):
+            btn = tk.Button(types_row, text=label, relief="flat", padx=14, pady=6,
+                            bg=self._color('bg_secondary'), fg=self._color('fg_primary'),
+                            activebackground=self._color('accent_primary'),
+                            command=lambda t=tag: self._on_type_change(t))
+            btn.pack(side="left", padx=(0, 6))
+            self._type_buttons[tag] = btn
+        self.import_mrpack_btn = tk.Button(types_row, text=self.parent._t('CONTENT_IMPORT_MRPACK'),
+                                           relief="flat", padx=12, pady=6,
+                                           bg=self._color('bg_tertiary'), fg=self._color('fg_primary'),
+                                           cursor="hand2", command=self._import_local_mrpack)
+        self.modrinth_section = tk.Frame(self.container, bg=bg)
+        controls = tk.Frame(self.modrinth_section, bg=bg)
+        controls.pack(fill="x", pady=(0, 8))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(controls, textvariable=self.search_var)
+        search_entry.pack(side="left", fill="x", expand=True)
+        search_entry.bind("<Return>", lambda e: self._on_search())
+        ttk.Button(controls, text=self.parent._t('CONTENT_SEARCH'), command=self._on_search).pack(side="left", padx=(8, 0))
+        self.sort_var = tk.StringVar(value="relevance")
+        sort_combo = ttk.Combobox(controls, textvariable=self.sort_var, state="readonly", width=16,
+                                  values=("relevance", "downloads", "newest", "updated"))
+        sort_combo.pack(side="left", padx=(8, 0))
+        sort_combo.bind("<<ComboboxSelected>>", lambda e: self._on_search())
+        self.instance_combo = ttk.Combobox(controls, state="readonly", width=28)
+        self.instance_combo.pack(side="left", padx=(8, 0))
+        self.instance_combo.bind("<<ComboboxSelected>>", lambda e: self._on_search())
+
+        self.status_label = tk.Label(self.modrinth_section, text="", anchor="w", bg=bg,
+                                     fg=self._color('fg_secondary'))
+        self.status_label.pack(fill="x", pady=(0, 6))
+
+        # scrollable results
+        results_holder = tk.Frame(self.modrinth_section, bg=bg)
+        results_holder.pack(fill="both", expand=True)
+        self.results_canvas = tk.Canvas(results_holder, bg=bg, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(results_holder, orient="vertical", command=self.results_canvas.yview)
+        self.results_frame = tk.Frame(self.results_canvas, bg=bg)
+        self.results_frame.bind(
+            "<Configure>", lambda e: self.results_canvas.configure(scrollregion=self.results_canvas.bbox("all")))
+        self._results_window = self.results_canvas.create_window((0, 0), window=self.results_frame, anchor="nw")
+        self.results_canvas.bind(
+            "<Configure>", lambda e: self.results_canvas.itemconfigure(self._results_window, width=e.width))
+        self.results_canvas.configure(yscrollcommand=scrollbar.set)
+        self.results_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        paging = tk.Frame(self.modrinth_section, bg=bg)
+        paging.pack(pady=(8, 0))
+        self.prev_btn = ttk.Button(paging, text=self._t('CONTENT_PREV'), command=self._prev_page, state="disabled")
+        self.prev_btn.pack(side="left")
+        self.page_label = tk.Label(paging, text=self._t('CONTENT_PAGE').format(n=1), bg=bg, fg=self._color('fg_secondary'))
+        self.page_label.pack(side="left", padx=10)
+        self.next_btn = ttk.Button(paging, text=self._t('CONTENT_NEXT'), command=self._next_page, state="disabled")
+        self.next_btn.pack(side="left")
+        self.oranglib_section = tk.Frame(self.container, bg=bg)
+        self._oranglib_tab = None
+        self._highlight_type_button()
+        self.refresh_instances()
+        self._update_sections()
+        self._run_search()
+
+    def _ensure_oranglib(self):
+        if self._oranglib_tab is None:
+            self._oranglib_tab = OrangLibTab(self.parent)
+            self._oranglib_tab.build_tab(self.oranglib_section)
+            self.parent.oranglib_tab = self._oranglib_tab
+
+    def _update_sections(self):
+        if self.content_type == "oranglib":
+            self.modrinth_section.pack_forget()
+            self.oranglib_section.pack(fill="both", expand=True)
+            self._ensure_oranglib()
+        else:
+            self.oranglib_section.pack_forget()
+            self.modrinth_section.pack(fill="both", expand=True)
+        if self.content_type == "modpack":
+            self.import_mrpack_btn.pack(side="right")
+            try:
+                self.instance_combo.pack_forget()
+            except Exception:
+                pass
+        else:
+            self.import_mrpack_btn.pack_forget()
+            if self.content_type != "oranglib":
+                try:
+                    self.instance_combo.pack(side="left", padx=(8, 0))
+                except Exception:
+                    pass
+
+    def _import_local_mrpack(self):
+        path = filedialog.askopenfilename(
+            title=self.parent._t('CONTENT_IMPORT_MRPACK'),
+            filetypes=[("Modrinth modpack", "*.mrpack"), ("All files", "*.*")])
+        if not path:
+            return
+        self._set_status(f"Installing {os.path.basename(path)}...")
+
+        def worker():
+            try:
+                success, message, profile_name = import_modpack(str(path), self.parent)
+                if success:
+                    self.parent.after(0, lambda: messagebox.showinfo(
+                        "Content", f"Installed modpack.\n\nProfile: {profile_name}\n{message}"))
+                    if hasattr(self.parent, '_refresh_game_profiles'):
+                        self.parent.after(0, self.parent._refresh_game_profiles)
+                    self.parent.after(0, lambda: self._set_status(f"Installed {profile_name}"))
+                else:
+                    self.parent.after(0, lambda: messagebox.showerror("Content", f"Import failed:\n{message}"))
+                    self.parent.after(0, lambda: self._set_status("Import failed"))
+            except Exception as exc:
+                self.parent.after(0, lambda: messagebox.showerror("Content", f"Import failed:\n{exc}"))
+                self.parent.after(0, lambda: self._set_status(f"Import failed: {exc}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_instances(self):
+        try:
+            self.instances = list(self.instance_manager.instances.values())
+        except Exception:
+            self.instances = []
+        names = [f"{i.name} ({i.mod_loader} {i.version})" for i in self.instances]
+        self.instance_combo['values'] = names
+        if names:
+            selected = self.instance_manager.get_selected_instance()
+            idx = 0
+            if selected is not None:
+                for n, inst in enumerate(self.instances):
+                    if inst.instance_id == selected.instance_id:
+                        idx = n
+                        break
+            self.instance_combo.current(idx)
+
+    def _highlight_type_button(self):
+        for tag, btn in self._type_buttons.items():
+            active = tag == self.content_type
+            btn.config(bg=self._color('accent_primary') if active else self._color('bg_secondary'),
+                       fg='#ffffff' if active else self._color('fg_primary'))
+
+    def _on_type_change(self, tag):
+        self.content_type = tag
+        self.offset = 0
+        self._highlight_type_button()
+        self._update_sections()
+        if tag != "oranglib":
+            self._run_search()
+
+    def _on_search(self):
+        self.offset = 0
+        self._run_search()
+
+    def _prev_page(self):
+        self.offset = max(0, self.offset - self.PAGE_SIZE)
+        self._run_search()
+
+    def _next_page(self):
+        self.offset += self.PAGE_SIZE
+        self._run_search()
+
+    def _update_paging(self):
+        self.prev_btn.config(state="normal" if self.offset > 0 else "disabled")
+        self.next_btn.config(state="normal" if self.offset + self.PAGE_SIZE < self.total_hits else "disabled")
+        self.page_label.config(text=self._t('CONTENT_PAGE').format(n=self.offset // self.PAGE_SIZE + 1))
+    def _run_search(self):
+        for child in self.results_frame.winfo_children():
+            child.destroy()
+        self._icon_refs = []
+        instance = self._target_instance()
+        if self.content_type == "mod" and instance is not None and self._is_vanilla(instance):
+            self._set_status(self._t("CONTENT_VANILLA_WARNING"))
+            self._update_paging()
+            return
+        query = self.search_var.get().strip()
+        sort = self.sort_var.get() or "relevance"
+        is_modpack = self.content_type == "modpack"
+        # modpacks bring their own MC version/loader, so don't constrain by the instance
+        version = None if is_modpack else (instance.version if instance else None)
+        loader = self._normalized_loader(instance) if self.content_type == "mod" else None
+        self._set_status(self._t("CONTENT_SEARCHING"))
+
+        def worker():
+            try:
+                facets = [[f"project_type:{self.content_type}"]]
+                if version:
+                    facets.append([f"versions:{version}"])
+                if loader:
+                    facets.append([f"categories:{loader}"])
+                params = {
+                    "query": query,
+                    "facets": json.dumps(facets),
+                    "index": sort,
+                    "offset": self.offset,
+                    "limit": self.PAGE_SIZE,
+                }
+                response = _http_session.get(f"{MODRINTH_API_URL}/search", params=params, timeout=25)
+                response.raise_for_status()
+                payload = response.json()
+                hits = payload.get("hits", [])
+                total = payload.get("total_hits", 0)
+                self.parent.after(0, lambda: self._apply_results(hits, total, version, loader))
+            except Exception as exc:
+                self.parent.after(0, lambda: self._set_status(f"Search failed: {exc}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_results(self, hits, total, version, loader):
+        self.total_hits = total
+        bg = self._color('bg_primary')
+        row_bg = self._color('bg_secondary')
+        for hit in hits:
+            row = tk.Frame(self.results_frame, bg=row_bg, padx=8, pady=6)
+            row.pack(fill="x", pady=3)
+            icon_label = tk.Label(row, bg=row_bg, width=48, height=48)
+            icon_label.pack(side="left")
+            self._load_icon_async(icon_label, hit.get("icon_url"))
+            text_frame = tk.Frame(row, bg=row_bg)
+            text_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
+            author = hit.get("author") or ""
+            title_row = tk.Frame(text_frame, bg=row_bg)
+            title_row.pack(fill="x")
+            tk.Label(title_row, text=hit.get("title", "?"), font=("TkDefaultFont", 10, "bold"),
+                     bg=row_bg, fg=self._color('fg_primary'), anchor="w").pack(side="left")
+            if author:
+                tk.Label(title_row, text=f"by {author}", bg=row_bg,
+                         fg=self._color('fg_secondary'), anchor="w").pack(side="left", padx=(6, 0))
+            desc = (hit.get("description") or "").replace("\n", " ")
+            if len(desc) > 160:
+                desc = desc[:157] + "..."
+            tk.Label(text_frame, text=desc, bg=row_bg, fg=self._color('fg_secondary'),
+                     anchor="w", justify="left", wraplength=620).pack(fill="x")
+            categories = ", ".join((hit.get("categories") or [])[:4])
+            meta = f"{hit.get('downloads', 0):,} downloads" + (f"  |  {categories}" if categories else "")
+            tk.Label(text_frame, text=meta, bg=row_bg, fg=self._color('fg_secondary'),
+                     anchor="w").pack(fill="x")
+            slug = hit.get("slug") or hit.get("project_id")
+            install_btn = ttk.Button(row, text=self._t("CONTENT_INSTALL_BTN"))
+            install_btn.config(command=lambda s=slug, b=install_btn, t=hit.get("title", "?"): self._install(s, b, t))
+            install_btn.pack(side="right", padx=(10, 0))
+        if total == 0:
+            self._set_status(self._t("CONTENT_NO_RESULTS"))
+        else:
+            suffix = (f" for {version}" if version else "") + (f" ({loader})" if loader else "")
+            self._set_status(self._t("CONTENT_RESULTS_COUNT").format(count=f"{total:,}") + suffix)
+        self.results_canvas.yview_moveto(0)
+        self._update_paging()
+
+    def _load_icon_async(self, label, icon_url):
+        if not icon_url:
+            return
+
+        def worker():
+            try:
+                data = _cached_image_get(icon_url)
+                img = Image.open(io.BytesIO(data)).convert("RGBA").resize((48, 48), Image.LANCZOS)
+
+                def apply():
+                    try:
+                        photo = ImageTk.PhotoImage(img)
+                        self._icon_refs.append(photo)
+                        label.config(image=photo, width=48, height=48)
+                    except Exception:
+                        pass
+                self.parent.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+    def _install(self, slug, button, title):
+        if self.content_type == "modpack":
+            self._install_modpack(slug, button, title)
+            return
+        instance = self._target_instance()
+        if instance is None:
+            messagebox.showwarning("Content", self._t("CONTENT_NEED_PROFILE"))
+            return
+        if self.content_type == "mod" and self._is_vanilla(instance):
+            messagebox.showwarning("Content", self._t("CONTENT_VANILLA_NO_MODS"))
+            return
+        dest_dir = {
+            "mod": instance.mods_dir,
+            "resourcepack": instance.resourcepacks_dir,
+            "shader": instance.shaderpacks_dir,
+        }.get(self.content_type, instance.minecraft_dir / "datapacks")
+        version = instance.version
+        loader = self._normalized_loader(instance) if self.content_type == "mod" else None
+        self._set_btn(button, state="disabled", text=self._t("CONTENT_INSTALLING_BTN"))
+
+        def worker():
+            try:
+                params = {}
+                if version:
+                    params["game_versions"] = json.dumps([version])
+                if loader:
+                    params["loaders"] = json.dumps([loader])
+                response = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version",
+                                             params=params, timeout=25)
+                response.raise_for_status()
+                versions = response.json() or []
+                versions.sort(key=lambda v: v.get("date_published", ""), reverse=True)
+                chosen = versions[0] if versions else None
+                files = (chosen or {}).get("files", [])
+                file_info = next((f for f in files if f.get("primary")), files[0] if files else None)
+                if not file_info:
+                    target = version + (f" ({loader})" if loader else "")
+                    self.parent.after(0, lambda: (
+                        self._set_btn(button, state="normal", text=self._t("CONTENT_NOT_COMPATIBLE_BTN")),
+                        self._set_status(self._t("CONTENT_NOT_COMPATIBLE_MSG").format(title=title, target=target)),
+                        messagebox.showwarning(self._t("CONTENT_NOT_COMPATIBLE_TITLE"),
+                                               self._t("CONTENT_NOT_COMPATIBLE_MSG").format(title=title, target=target))))
+                    return
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = Path(dest_dir) / file_info["filename"]
+                with _http_session.get(file_info["url"], stream=True, timeout=60) as dl:
+                    dl.raise_for_status()
+                    with open(dest_path, "wb") as out:
+                        for chunk in dl.iter_content(chunk_size=1024 * 128):
+                            if chunk:
+                                out.write(chunk)
+                if self.content_type in ("resourcepack", "shader") and hasattr(self.parent, '_apply_sharing_for_instance'):
+                    try:
+                        self.parent._apply_sharing_for_instance(instance)
+                    except Exception:
+                        pass
+                self.parent.after(0, lambda: (
+                    self._set_btn(button, text=self._t("CONTENT_INSTALLED_BTN")),
+                    self._set_status(self._t("CONTENT_INSTALLED_STATUS").format(name=dest_path.name))))
+            except Exception as exc:
+                self.parent.after(0, lambda: (
+                    self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
+                    self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=exc))))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _install_modpack(self, slug, button, title):
+        self._set_btn(button, state="disabled", text=self._t("CONTENT_INSTALLING_BTN"))
+
+        def worker():
+            try:
+                response = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version", timeout=25)
+                response.raise_for_status()
+                versions = response.json() or []
+                versions.sort(key=lambda v: v.get("date_published", ""), reverse=True)
+                file_info = None
+                for v in versions:
+                    files = v.get("files", [])
+                    primary = next((f for f in files if f.get("primary")), files[0] if files else None)
+                    if primary and (primary.get("filename", "").lower().endswith(".mrpack")):
+                        file_info = primary
+                        break
+                if not file_info:
+                    self.parent.after(0, lambda: (
+                        self._set_btn(button, state="normal", text=self._t("CONTENT_NOT_COMPATIBLE_BTN")),
+                        self._set_status(self._t("CONTENT_NO_MRPACK").format(title=title))))
+                    return
+                self.parent.after(0, lambda: self._set_status(self._t("CONTENT_DOWNLOADING").format(title=title)))
+                tmp_dir = Path(tempfile.gettempdir())
+                dest_path = tmp_dir / file_info["filename"]
+                with _http_session.get(file_info["url"], stream=True, timeout=120) as dl:
+                    dl.raise_for_status()
+                    with open(dest_path, "wb") as out:
+                        for chunk in dl.iter_content(chunk_size=1024 * 128):
+                            if chunk:
+                                out.write(chunk)
+                self.parent.after(0, lambda: self._set_status(self._t("CONTENT_INSTALLING_STATUS").format(title=title)))
+                success, message, profile_name = import_modpack(str(dest_path), self.parent)
+                try:
+                    dest_path.unlink()
+                except Exception:
+                    pass
+                if success:
+                    self.parent.after(0, lambda: (
+                        self._set_btn(button, text=self._t("CONTENT_INSTALLED_BTN")),
+                        self._set_status(self._t("CONTENT_INSTALLED_STATUS").format(name=profile_name)),
+                        messagebox.showinfo("Content", self._t("CONTENT_MODPACK_DONE").format(profile=profile_name, message=message))))
+                    if hasattr(self.parent, '_refresh_game_profiles'):
+                        self.parent.after(0, self.parent._refresh_game_profiles)
+                else:
+                    self.parent.after(0, lambda: (
+                        self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
+                        self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=message)),
+                        messagebox.showerror("Content", self._t("CONTENT_MODPACK_FAIL").format(message=message))))
+            except Exception as exc:
+                self.parent.after(0, lambda: (
+                    self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
+                    self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=exc))))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+
+def build_content_store_tab(launcher, notebook, instance_manager=None):
+    content_tab = ContentStoreTab(launcher, instance_manager)
+    content_tab.build_tab(notebook)
+    launcher.content_store_tab = content_tab
+
+
+_WEBKIT_MODS = None
 
 def _load_webkit():
     global _WEBKIT_MODS
@@ -7291,7 +8281,6 @@ def _load_webkit():
             gi.require_version("WebKit2", "4.1")
         except ValueError:
             gi.require_version("WebKit2", "4.0")
-        from gi.repository import Gtk, WebKit2, GdkX11
         _WEBKIT_MODS = (Gtk, WebKit2, GdkX11)
     except Exception as e:
         print(f"[news] WebKitGTK unavailable, falling back: {e}")
@@ -7486,9 +8475,13 @@ class OrangLibTab:
         self.versions = []
         self.selected_modpack = None
         self.search_var = tk.StringVar()
-    def build_tab(self, notebook):
-        tab_frame = ttk.Frame(notebook)
-        notebook.add(tab_frame, text=self.parent._t('ORANGLIB'))
+    def build_tab(self, parent):
+        # parent is either a notebook (own tab) or a plain frame (embedded in Content tab)
+        if isinstance(parent, (ttk.Notebook, tk.ttk.Notebook)):
+            tab_frame = ttk.Frame(parent)
+            parent.add(tab_frame, text=self.parent._t('ORANGLIB'))
+        else:
+            tab_frame = parent
         container = tk.Frame(tab_frame, bg=self.theme_manager.get_color('bg_primary'))
         container.pack(fill="both", expand=True, padx=14, pady=14)
         header = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
@@ -8762,12 +9755,61 @@ def build_launcher_log_tab(launcher, notebook):
         except Exception as e:
             messagebox.showerror(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_EXPORT_FAIL") + f"\n{e}")
 
+    def _upload_mclogs():
+        if not getattr(launcher, '_log_buffer', None):
+            messagebox.showinfo("mclo.gs", launcher._t("LOGS_NO_ENTRIES"))
+            return
+        # keep the newest lines within the mclo.gs limits (25000 lines / 10 MiB)
+        lines = [msg for msg, _ in launcher._log_buffer][-25000:]
+        content = "\n".join(lines)
+        if len(content.encode("utf-8")) > 10 * 1024 * 1024:
+            content = content.encode("utf-8")[-10 * 1024 * 1024:].decode("utf-8", "ignore")
+        mclogs_btn.config(state="disabled", text=launcher._t("LOGS_MCLOGS_UPLOADING"))
+
+        def worker():
+            try:
+                r = _http_session.post("https://api.mclo.gs/1/log",
+                                       data={"content": content, "source": "OrangLauncher"}, timeout=20)
+                data = r.json()
+            except Exception as exc:
+                data = {"success": False, "error": str(exc)}
+
+            def done():
+                mclogs_btn.config(state="normal", text=launcher._t("LOGS_MCLOGS_BTN"))
+                if data.get("success") and data.get("url"):
+                    url = data["url"]
+                    try:
+                        launcher.clipboard_clear()
+                        launcher.clipboard_append(url)
+                    except Exception:
+                        pass
+                    if messagebox.askyesno(
+                            "mclo.gs",
+                            f"{launcher._t('LOGS_MCLOGS_SUCCESS')}\n\n{url}\n\n{launcher._t('LOGS_MCLOGS_OPEN')}"):
+                        webbrowser.open(url)
+                else:
+                    messagebox.showerror("mclo.gs",
+                                         launcher._t("LOGS_MCLOGS_FAIL").format(error=data.get("error", "?")))
+            try:
+                launcher.after(0, done)
+            except RuntimeError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     save_btn = tk.Button(toolbar, text=launcher._t("LOGS_SAVE_BTN"), command=_export_log,
                          bg=bg_input, fg=fg, font=("Segoe UI", 9),
                          relief="flat", bd=0, padx=10, pady=4,
                          cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
                          activeforeground=fg)
     save_btn.pack(side="right", padx=(0, 8))
+
+    mclogs_btn = tk.Button(toolbar, text=launcher._t("LOGS_MCLOGS_BTN"), command=_upload_mclogs,
+                           bg=bg_input, fg=fg, font=("Segoe UI", 9),
+                           relief="flat", bd=0, padx=10, pady=4,
+                           cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
+                           activeforeground=fg)
+    mclogs_btn.pack(side="right", padx=(0, 8))
 
     filter_bar = tk.Frame(toolbar, bg=bg)
     filter_bar.pack(side="right")
@@ -9192,8 +10234,67 @@ def ms_token_flow_interactive():
     try:
         return _ms_token_flow_webview()
     except Exception as e:
-        raise Exception(f"Embedded browser login failed: {e}")
+        msg = str(e).lower()
+        if 'cancelled' in msg:
+            raise Exception(f"Embedded browser login failed: {e}")
+        # Webview itself is broken/unavailable: let the user finish the login
+        # in their normal browser and paste the redirect URL back.
+        print(f"[DEBUG] Webview login failed ({e}); falling back to system browser")
+        return _ms_token_flow_browser()
+
+
+def _extract_code_from_redirect(text):
+    """Accepts the pasted redirect URL (login.live.com/oauth20_desktop.srf?code=...)
+    or the bare code value itself. Returns the auth code or None."""
+    if not text:
+        return None
+    text = text.strip()
+    idx = text.lower().find('code=')
+    if idx >= 0:
+        code = text[idx + 5:]
+        amp = code.find('&')
+        if amp >= 0:
+            code = code[:amp]
+        return urllib.parse.unquote(code) or None
+    if '://' in text or ' ' in text:
+        return None
+    return text or None
+
+
+def _ms_token_flow_browser():
+    """Browser-based fallback: opens the OAuth page in the default browser and
+    asks the user to paste the redirect address (or just the code) back."""
+    oauth_url = (
+        "https://login.live.com/oauth20_authorize.srf"
+        f"?client_id={CLIENT_ID}"
+        f"&redirect_uri={REDIRECT_URI}"
+        "&response_type=code"
+        f"&scope={SCOPE}"
+    )
+    try:
+        webbrowser.open(oauth_url)
+    except Exception as e:
+        raise Exception(f"Could not open browser for login: {e}")
+    parent = _ensure_tk()
+    prompt = (
+        "The embedded browser is unavailable, so your web browser was opened instead.\n"
+        "1. Sign in with your Microsoft account in the browser.\n"
+        "2. When you land on a blank page, copy its full address IMMEDIATELY -\n"
+        "    the code is removed from the address a moment after the page loads.\n"
+        "3. Paste that address (or just the code=... value) below."
+    )
+    pasted = themed_askstring("Sign in with your browser", prompt, parent=parent)
+    if not pasted:
+        raise Exception("Login cancelled or failed")
+    auth_code = _extract_code_from_redirect(pasted)
+    if not auth_code:
+        raise Exception("Could not extract the authorization code from the pasted text")
+    return _complete_oauth_flow(auth_code)
+
+
 def _ms_token_flow_webview():
+    if webview is None:
+        raise Exception("pywebview is not available")
     auth_code_result = {'code': None, 'cancelled': False}
     oauth_url = (
         "https://login.live.com/oauth20_authorize.srf"
@@ -9954,7 +11055,7 @@ class WelcomeWizard(tk.Frame):
             for major, path in installed:
                 label = f"Java {major}"
                 if major == newest_major:
-                    label += f"  —  {self.launcher._t('WIZARD_JAVA_RECOMMENDED')}"
+                    label += f"  -  {self.launcher._t('WIZARD_JAVA_RECOMMENDED')}"
                     self.recommended_java_label = label
                 self.java_choices[label] = path
                 radio_items.append(label)
@@ -10258,30 +11359,36 @@ class MinecraftLauncher(tk.Tk):
             print(f"[ERROR] Failed to load icon {icon_name}: {e}")
             return None
 
+    # ordered (title_key, icon) spec matching the build order in _build_interface
+    TAB_SPEC = [
+        ('UPDATE_NOTES', 'news'),
+        ('LAUNCHER_LOG', 'logs'),
+        ('GAME_PROFILES_TITLE', 'instances'),
+        ('MODS_TAB_TITLE', 'modding'),
+        ('SERVERS', 'plugin'),
+        ('RES_SH_TAB_TITLE', 'rs_sh'),
+        ('CONTENT_TAB', 'file'),
+        ('SETTINGS', 'settings'),
+    ]
+
     def _refresh_tabs_styling(self):
         if hasattr(self, 'notebook'):
-            tab_icons = {
-                0: 'news', 
-                1: 'logs', 
-                2: 'instances', 
-                3: 'modding', 
-                4: 'file',
-                5: 'plugin',
-                6: 'rs_sh', 
-                7: 'settings'
-            }
-            
-            for i in range(self.notebook.index('end')):
-                if i in tab_icons:
-                    icon_name = tab_icons[i]
-                    icon = self._load_themed_icon(icon_name, size=(20, 20))
-                    if icon:
-                        try:
-                            self.notebook.tab(i, image=icon, compound="left")
-                            if not hasattr(self.notebook, '_tab_icons'): self.notebook._tab_icons = {}
-                            self.notebook._tab_icons[i] = icon
-                        except Exception as e:
-                            print(f"Error setting tab icon: {e}")
+            for tab_id, (title_key, icon_name) in zip(self.notebook.tabs(), self.TAB_SPEC):
+                title = self._t(title_key)
+                if title == 'CONTENT_TAB':
+                    title = 'Content'
+                try:
+                    self.notebook.tab(tab_id, text=title)
+                except Exception as e:
+                    print(f"Error setting tab title: {e}")
+                icon = self._load_themed_icon(icon_name, size=(20, 20))
+                if icon:
+                    try:
+                        self.notebook.tab(tab_id, image=icon, compound="left")
+                        if not hasattr(self.notebook, '_tab_icons'): self.notebook._tab_icons = {}
+                        self.notebook._tab_icons[tab_id] = icon
+                    except Exception as e:
+                        print(f"Error setting tab icon: {e}")
 
         if hasattr(self, '_settings_nav_buttons_data'):
             for btn, icon_name, text_key in self._settings_nav_buttons_data:
@@ -10320,25 +11427,6 @@ class MinecraftLauncher(tk.Tk):
                 self.version_title_label.config(text=self._t('GAME_PROFILES'))
             except Exception:
                 pass
-        if hasattr(self, 'notebook'):
-            for i in range(self.notebook.index('end')):
-                tab_id = self.notebook.tabs()[i]
-                if i == 0:
-                    self.notebook.tab(tab_id, text=self._t('UPDATE_NOTES'))
-                elif i == 1:
-                    self.notebook.tab(tab_id, text=self._t('LAUNCHER_LOG'))
-                elif i == 2:
-                    self.notebook.tab(tab_id, text=self._t('GAME_PROFILES'))
-                elif i == 3:
-                    self.notebook.tab(tab_id, text=self._t('MODS'))
-                elif i == 4:
-                    self.notebook.tab(tab_id, text=self._t('ORANGLIB'))
-                elif i == 5:
-                    self.notebook.tab(tab_id, text=self._t('SERVERS'))
-                elif i == 6:
-                    self.notebook.tab(tab_id, text=self._t('RES_SH_TAB_TITLE'))
-                elif i == 7:
-                    self.notebook.tab(tab_id, text=self._t('SETTINGS'))
         if hasattr(self, 'game_profile_cb'):
             self._refresh_game_profiles()
         try:
@@ -11414,6 +12502,20 @@ class MinecraftLauncher(tk.Tk):
                                 self._safe_append_log(f"[Launcher] No NeoForge versions found for {version}")
                         except Exception as e:
                             self._safe_append_log(f"[Launcher] NeoForge install failed: {e}")
+                    elif mod_loader.lower() == "optifine":
+                        self._safe_append_log(f"[Launcher] Installing OptiFine...")
+                        try:
+                            base_mc = current_instance.version
+                            of_file = getattr(current_instance, 'loader_version', '') or None
+                            def _of_progress(p, msg): self._submit_progress_update(p, msg)
+                            version = install_optifine(base_mc, minecraft_directory, java_exe,
+                                                       filename=of_file, log_fn=self._safe_append_log,
+                                                       progress_fn=_of_progress)
+                            current_instance.installed_version_id = version
+                            self.instance_manager.save_instances()
+                            loader_installed = True
+                        except Exception as e:
+                            self._safe_append_log(f"[Launcher] OptiFine install failed: {e}")
             if not loader_installed:
                 self._safe_append_log(f"[Launcher] Preparing {version}...")
                 _install_max = [1]
@@ -11849,10 +12951,6 @@ class MinecraftLauncher(tk.Tk):
         except Exception as e:
             print(f"Error building modding tab: {e}")
         try:
-            build_oranglib_tab(self, self.notebook)
-        except Exception as e:
-            print(f"Error building OrangLib tab: {e}")
-        try:
             build_servers_tab(self, self.notebook)
         except Exception as e:
             print(f"Error building Servers tab: {e}")
@@ -11860,6 +12958,10 @@ class MinecraftLauncher(tk.Tk):
             build_res_sh_tab(self, self.notebook, get_instance_manager())
         except Exception as e:
             print(f"Error building resource & shader packs tab: {e}")
+        try:
+            build_content_store_tab(self, self.notebook, get_instance_manager())
+        except Exception as e:
+            print(f"Error building content store tab: {e}")
         build_settings_tab(self, self.notebook)
     def _load_plugins(self):
         if hasattr(self, 'loaded_plugins'):
@@ -11943,6 +13045,12 @@ class MinecraftLauncher(tk.Tk):
                             loader_version=nf_loader_ver
                         )
                         installed_id = nf.get_installed_version(instance.version, nf_loader_ver)
+                elif loader.lower() == "optifine":
+                    java_path = resolve_java_for_instance(instance, instance.version, log_fn=self._safe_append_log)
+                    def _of2_progress(p, msg): self._submit_progress_update(p, msg)
+                    installed_id = install_optifine(instance.version, minecraft_directory, java_path,
+                                                    filename=loader_version or None,
+                                                    log_fn=self._safe_append_log, progress_fn=_of2_progress)
 
                 if installed_id:
                     instance.installed_version_id = installed_id
@@ -12318,9 +13426,29 @@ class MinecraftLauncher(tk.Tk):
         instance = self.instance_manager.get_instance_by_name(selection)
         if instance:
             self.instance_manager.set_selected_instance(instance.instance_id)
-        else:
-            pass
         self._update_profile_display()
+        self._sync_active_instance()
+
+    def _sync_active_instance(self):
+        """Propagate the active game profile to every instance-aware part of the UI."""
+        instance = self.instance_manager.get_selected_instance()
+        if instance is not None:
+            try:
+                self.selected_mod_loader.set(instance.mod_loader)
+            except Exception:
+                pass
+        # mods tab: re-read instance + reload mod list
+        if hasattr(self, 'modding_tab'):
+            try:
+                self.modding_tab.refresh_ui()
+            except Exception as e:
+                print(f"[Profile] modding refresh failed: {e}")
+        # content tab: refresh its target-instance dropdown
+        if getattr(self, 'content_store_tab', None) is not None:
+            try:
+                self.content_store_tab.refresh_instances()
+            except Exception as e:
+                print(f"[Profile] content refresh failed: {e}")
 
 def terminal_launch_game(instance, profile, ram="4G"):
     try:
@@ -12450,6 +13578,53 @@ def terminal_main():
         traceback.print_exc()
         sys.exit(1)
 
+def _register_mrpack_association():
+    try:
+        home = Path.home()
+        if getattr(sys, 'frozen', False):
+            exec_cmd = f'"{sys.executable}" %f'
+        else:
+            exec_cmd = f'"{sys.executable}" "{Path(__file__).resolve()}" %f'
+        apps_dir = home / ".local/share/applications"
+        apps_dir.mkdir(parents=True, exist_ok=True)
+        icon_path = find_resource("oranglauncher/images/orange.png")
+        desktop = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=OrangLauncher\n"
+            "Comment=Modular Minecraft launcher\n"
+            f"Exec={exec_cmd}\n"
+            f"Icon={icon_path or 'oranglauncher'}\n"
+            "Terminal=false\n"
+            "Categories=Game;\n"
+            "MimeType=application/x-modrinth-modpack+zip;\n"
+        )
+        desktop_file = apps_dir / "oranglauncher.desktop"
+        if not desktop_file.exists() or desktop_file.read_text() != desktop:
+            desktop_file.write_text(desktop)
+        mime_dir = home / ".local/share/mime/packages"
+        mime_dir.mkdir(parents=True, exist_ok=True)
+        mime_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
+            '  <mime-type type="application/x-modrinth-modpack+zip">\n'
+            '    <comment>Modrinth Modpack</comment>\n'
+            '    <glob pattern="*.mrpack"/>\n'
+            '  </mime-type>\n'
+            '</mime-info>\n'
+        )
+        mime_file = mime_dir / "oranglauncher-mrpack.xml"
+        if not mime_file.exists() or mime_file.read_text() != mime_xml:
+            mime_file.write_text(mime_xml)
+            subprocess.run(["update-mime-database", str(home / ".local/share/mime")],
+                           check=False, capture_output=True)
+            subprocess.run(["update-desktop-database", str(apps_dir)],
+                           check=False, capture_output=True)
+        subprocess.run(["xdg-mime", "default", "oranglauncher.desktop",
+                        "application/x-modrinth-modpack+zip"],
+                       check=False, capture_output=True)
+    except Exception as e:
+        print(f"[setup] mrpack association failed: {e}")
 
 def main():
     try:
@@ -12473,6 +13648,7 @@ def main():
                 subprocess.run(["fc-cache", "-f"], check=False, capture_output=True)
             except:
                 pass
+            _register_mrpack_association()
         app = MinecraftLauncher()
         if open_file_arg:
             app._pending_open_file = open_file_arg
