@@ -74,7 +74,6 @@
     </Feature>
   </Package>
   <Fragment>
-    <!-- Everything the publish step put into wix/build ships as-is. -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Files Include="../build/**" />
       <Files Include="assets/MicrosoftEdgeWebview2Setup.exe" />
