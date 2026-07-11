@@ -21,7 +21,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Read version
         id: version
@@ -46,9 +46,10 @@ jobs:
             "should_publish=true" >> $env:GITHUB_OUTPUT
             Write-Host "Release Win-$v does not exist - will publish"
           }
+          exit 0
 
       - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -93,7 +94,7 @@ jobs:
             "OrangLauncher-Windows.msi"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: oranglauncher-windows-${{ steps.version.outputs.version }}
           path: |
