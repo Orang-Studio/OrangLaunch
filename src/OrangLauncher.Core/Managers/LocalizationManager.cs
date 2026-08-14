@@ -4,7 +4,6 @@
     {
         private static Dictionary<string, string> _strings = new();
         private static string _currentLanguage = "en-US";
-        /// <summary>UI variant subfolder ("wpf" or "winui") - the two UIs ship different locale files. Set by the UI entry point.</summary>
         public static string Variant { get; set; } = "";
         public static void LoadLanguage(string languageCode)
         {

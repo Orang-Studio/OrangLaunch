@@ -41,63 +41,81 @@ namespace OrangLauncher.Managers
         [JsonPropertyName("loaders")] public List<string> Loaders { get; set; } = new();
         [JsonPropertyName("files")] public List<ModrinthVersionFile> Files { get; set; } = new();
         [JsonPropertyName("date_published")] public DateTime DatePublished { get; set; }
+        // "release" "beta" "alpha"
+        [JsonPropertyName("version_type")] public string VersionType { get; set; } = "release";
     }
 
-    /// <summary>
-    /// Native Modrinth API v2 client for the Content browser.
-    /// Project types: mod, resourcepack, shader, datapack.
-    /// </summary>
     public static class ModrinthClient
     {
         private const string BaseUrl = "https://api.modrinth.com/v2";
         private static readonly HttpClient Http = CreateClient();
-
         private static HttpClient CreateClient()
         {
             var c = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            // Modrinth requires a descriptive User-Agent.
             c.DefaultRequestHeaders.Add("User-Agent", "Orang-Studio/OrangLaunch (https://github.com/Orang-Studio/OrangLaunch)");
             return c;
         }
-
-        /// <summary>
-        /// Searches projects. loader applies to mods (fabric/forge/quilt/neoforge);
-        /// mcVersion filters to compatible game versions. Sort: relevance, downloads, follows, newest, updated.
-        /// </summary>
         public static async Task<ModrinthSearchResult> SearchAsync(
             string query, string projectType, string? mcVersion = null, string? loader = null,
             string sort = "relevance", int offset = 0, int limit = 20)
         {
             var facets = new List<List<string>> { new() { $"project_type:{projectType}" } };
             if (!string.IsNullOrEmpty(mcVersion)) facets.Add(new List<string> { $"versions:{mcVersion}" });
-            if (!string.IsNullOrEmpty(loader)) facets.Add(new List<string> { $"categories:{loader}" });
+            if (!string.IsNullOrEmpty(loader))
+                facets.Add(AcceptedLoaders(loader).Select(l => $"categories:{l}").ToList());
             var facetsJson = Uri.EscapeDataString(JsonSerializer.Serialize(facets));
             var url = $"{BaseUrl}/search?query={Uri.EscapeDataString(query ?? "")}&facets={facetsJson}&index={sort}&offset={offset}&limit={limit}";
             var json = await Http.GetStringAsync(url);
             return JsonSerializer.Deserialize<ModrinthSearchResult>(json) ?? new ModrinthSearchResult();
         }
 
-        /// <summary>Lists a project's versions, optionally filtered by game version and loader.</summary>
         public static async Task<List<ModrinthVersion>> GetVersionsAsync(string idOrSlug, string? mcVersion = null, string? loader = null)
         {
             var url = $"{BaseUrl}/project/{idOrSlug}/version";
             var q = new List<string>();
             if (!string.IsNullOrEmpty(mcVersion)) q.Add($"game_versions={Uri.EscapeDataString($"[\"{mcVersion}\"]")}");
-            if (!string.IsNullOrEmpty(loader)) q.Add($"loaders={Uri.EscapeDataString($"[\"{loader}\"]")}");
+            if (!string.IsNullOrEmpty(loader))
+            {
+                var list = string.Join(",", AcceptedLoaders(loader).Select(l => $"\"{l}\""));
+                q.Add($"loaders={Uri.EscapeDataString($"[{list}]")}");
+            }
             if (q.Count > 0) url += "?" + string.Join("&", q);
             var json = await Http.GetStringAsync(url);
-            return JsonSerializer.Deserialize<List<ModrinthVersion>>(json) ?? new List<ModrinthVersion>();
+            var versions = JsonSerializer.Deserialize<List<ModrinthVersion>>(json) ?? new List<ModrinthVersion>();
+            return versions.Where(v => IsCompatible(v, mcVersion, loader)).ToList();
         }
 
-        /// <summary>
-        /// Downloads the best matching file of a project's newest compatible version into destDir.
-        /// Returns the full path of the downloaded file, or null when nothing compatible exists.
-        /// </summary>
+        public static string[] AcceptedLoaders(string loader)
+            => string.Equals(loader, "quilt", StringComparison.OrdinalIgnoreCase)
+                ? new[] { "quilt", "fabric" }
+                : new[] { loader };
+        public static bool IsCompatible(ModrinthVersion version, string? mcVersion, string? loader)
+        {
+            if (!string.IsNullOrEmpty(mcVersion) && version.GameVersions.Count > 0 &&
+                !version.GameVersions.Any(g => string.Equals(g, mcVersion, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            if (string.IsNullOrEmpty(loader) || version.Loaders.Count == 0) return true;
+            return version.Loaders.Any(l => AcceptedLoaders(loader!).Contains(l, StringComparer.OrdinalIgnoreCase));
+        }
+
+        public static ModrinthVersion? PickBestVersion(IEnumerable<ModrinthVersion> versions)
+            => versions
+                .OrderBy(v => (v.VersionType ?? "release").ToLowerInvariant() switch
+                {
+                    "release" => 0,
+                    "beta" => 1,
+                    "alpha" => 2,
+                    _ => 3,
+                })
+                .ThenByDescending(v => v.DatePublished)
+                .FirstOrDefault();
+
         public static async Task<string?> InstallAsync(string idOrSlug, string destDir,
             string? mcVersion = null, string? loader = null, IProgress<double>? progress = null)
         {
+            // no fallback to unfiltered versions here installing file for the wrong loader is worse than reporting that nothing compatible exists
             var versions = await GetVersionsAsync(idOrSlug, mcVersion, loader);
-            var version = versions.OrderByDescending(v => v.DatePublished).FirstOrDefault();
+            var version = PickBestVersion(versions);
             var file = version?.Files.FirstOrDefault(f => f.Primary) ?? version?.Files.FirstOrDefault();
             if (file == null) return null;
             Directory.CreateDirectory(destDir);
@@ -124,7 +142,6 @@ namespace OrangLauncher.Managers
             }
         }
 
-        /// <summary>Fetches a project icon (small PNG/WebP) or null.</summary>
         public static async Task<byte[]?> GetIconAsync(string? iconUrl)
         {
             if (string.IsNullOrEmpty(iconUrl)) return null;

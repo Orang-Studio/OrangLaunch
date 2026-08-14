@@ -2,20 +2,14 @@ using SkiaSharp;
 
 namespace OrangLauncher.Rendering
 {
-    /// <summary>
-    /// Image decoding for Core (SkiaSharp): skins (PNG) and content icons (PNG/WebP/JPEG -
-    /// Modrinth serves many icons as WebP, which WPF/WIC cannot decode natively).
-    /// </summary>
     public static class SkinTextureLoader
     {
-        /// <summary>Decodes to raw RGBA for <see cref="SkinRenderer3D"/>.</summary>
         public static (byte[] Rgba, int Width, int Height)? DecodePng(byte[] pngBytes)
         {
             var d = Decode(pngBytes, SKColorType.Rgba8888);
             return d == null ? null : (d.Value.Pixels, d.Value.Width, d.Value.Height);
         }
 
-        /// <summary>Decodes to premultiplied BGRA, ready for WriteableBitmap in either UI.</summary>
         public static (byte[] Bgra, int Width, int Height)? DecodeToBgra(byte[] imageBytes)
         {
             var d = Decode(imageBytes, SKColorType.Bgra8888);

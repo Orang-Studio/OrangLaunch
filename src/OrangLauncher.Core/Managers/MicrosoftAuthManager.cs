@@ -16,11 +16,7 @@ namespace OrangLauncher.Managers
                    $"&scope={Uri.EscapeDataString(Scope)}";
         }
         public string GetRedirectUri() => RedirectUri;
-        /// <summary>
-        /// Extracts the authorization code from a pasted redirect URL (the
-        /// login.live.com/oauth20_desktop.srf?code=... address the browser lands on).
-        /// Used by the no-WebView2 browser fallback. Returns null if no code is present.
-        /// </summary>
+
         public static string? TryExtractCodeFromRedirect(string redirectUrlOrCode)
         {
             if (string.IsNullOrWhiteSpace(redirectUrlOrCode)) return null;

@@ -656,10 +656,16 @@ namespace OrangLauncher.Backend
         {
             var minecraftDir = Managers.PlatformPaths.GetMinecraftDir();
             EnsureLauncherProfilesExist(minecraftDir);
-            var installerUrl = $"{NeoForgeMavenBase}/{neoforgeVersion}/neoforge-{neoforgeVersion}-installer.jar";
+            bool isLegacy = neoforgeVersion.StartsWith(NeoForgeVersionLoader.LegacyMcVersion + "-");
+            var installerBase = isLegacy
+                ? "https://maven.neoforged.net/releases/net/neoforged/forge"
+                : NeoForgeMavenBase;
+            var installerFilePrefix = isLegacy ? "forge" : "neoforge";
+            var marker = installerFilePrefix;
+            var installerUrl = $"{installerBase}/{neoforgeVersion}/{installerFilePrefix}-{neoforgeVersion}-installer.jar";
             var tempDir = Path.Combine(Path.GetTempPath(), "oranglauncher_neoforge");
             Directory.CreateDirectory(tempDir);
-            var installerPath = Path.Combine(tempDir, $"neoforge-{neoforgeVersion}-installer.jar");
+            var installerPath = Path.Combine(tempDir, $"{installerFilePrefix}-{neoforgeVersion}-installer.jar");
             System.Diagnostics.Debug.WriteLine($"[NeoForge] Downloading installer from {installerUrl}");
             if (!File.Exists(installerPath))
             {
@@ -673,7 +679,7 @@ namespace OrangLauncher.Backend
                 foreach (var d in Directory.GetDirectories(versionsDir))
                 {
                     var name = Path.GetFileName(d);
-                    if (name != null && name.Contains("neoforge", StringComparison.OrdinalIgnoreCase))
+                    if (name != null && name.Contains(marker, StringComparison.OrdinalIgnoreCase))
                         existingNeoforgeDirs.Add(name);
                 }
             }
@@ -717,36 +723,40 @@ namespace OrangLauncher.Backend
                 }
             }
             try { File.Delete(installerPath); } catch { }
+            var expectedName = isLegacy
+                ? $"{NeoForgeVersionLoader.LegacyMcVersion}-forge-{neoforgeVersion[(NeoForgeVersionLoader.LegacyMcVersion.Length + 1)..]}"
+                : $"neoforge-{neoforgeVersion}";
             if (Directory.Exists(versionsDir))
             {
-                var expectedName = $"neoforge-{neoforgeVersion}";
                 var expectedDir = Path.Combine(versionsDir, expectedName);
                 if (Directory.Exists(expectedDir) && File.Exists(Path.Combine(expectedDir, $"{expectedName}.json")))
                     return expectedName;
                 var newNeoforgeDirs = Directory.GetDirectories(versionsDir)
                     .Select(Path.GetFileName)
                     .Where(d => d != null &&
-                        d!.Contains("neoforge", StringComparison.OrdinalIgnoreCase) &&
+                        d!.Contains(marker, StringComparison.OrdinalIgnoreCase) &&
                         !existingNeoforgeDirs.Contains(d!) &&
                         File.Exists(Path.Combine(versionsDir, d!, $"{d}.json")))
                     .ToList();
                 if (newNeoforgeDirs.Count > 0)
                     return newNeoforgeDirs[0]!;
                 var anyValid = Directory.GetDirectories(versionsDir)
-                    .Where(d => Path.GetFileName(d)?.Contains("neoforge", StringComparison.OrdinalIgnoreCase) == true)
+                    .Where(d => Path.GetFileName(d)?.Contains(marker, StringComparison.OrdinalIgnoreCase) == true)
                     .Where(d => File.Exists(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
                     .OrderByDescending(d => Directory.GetLastWriteTime(d))
                     .Select(Path.GetFileName)
                     .FirstOrDefault();
                 if (anyValid != null) return anyValid;
             }
-            return $"neoforge-{neoforgeVersion}";
+            return expectedName;
         }
         private async Task<string> ManualInstallNeoForgeAsync(string installerPath, string neoforgeVersion, string minecraftDir)
         {
             var versionsDir = Path.Combine(minecraftDir, "versions");
             var librariesDir = Path.Combine(minecraftDir, "libraries");
-            var versionId = $"neoforge-{neoforgeVersion}";
+            var versionId = neoforgeVersion.StartsWith(NeoForgeVersionLoader.LegacyMcVersion + "-")
+                ? $"{NeoForgeVersionLoader.LegacyMcVersion}-forge-{neoforgeVersion[(NeoForgeVersionLoader.LegacyMcVersion.Length + 1)..]}"
+                : $"neoforge-{neoforgeVersion}";
             using var zip = ZipFile.OpenRead(installerPath);
             string? clientJsonText = null;
             var versionJsonEntry = zip.GetEntry("version.json");
@@ -892,22 +902,59 @@ namespace OrangLauncher.Backend
     }
     public class NeoForgeVersionLoader
     {
+        public const string LegacyMcVersion = "1.20.1";
+        private const string LegacyMavenApi = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge";
+        private const string NeoForgeMavenApi = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
         private readonly HttpClient _http;
         public NeoForgeVersionLoader(HttpClient? http = null)
         {
             _http = http ?? new HttpClient();
+        }
+        public static string? GetVersionPrefix(string mcVersion)
+        {
+            if (string.IsNullOrWhiteSpace(mcVersion)) return null;
+            var parts = mcVersion.Split('.');
+            // shifts how many components NeoForge encodes.
+            var isLegacyScheme = parts[0] == "1";
+            var comps = (isLegacyScheme ? parts.Skip(1) : parts).ToList();
+            var target = isLegacyScheme ? 2 : 3;
+            if (comps.Count == 0 || comps.Count > target) return null;
+            while (comps.Count < target) comps.Add("0");
+            if (comps.Any(c => !int.TryParse(c, out _))) return null;
+            return string.Join(".", comps) + ".";
         }
         public async Task<List<NeoForgeVersionInfo>> GetNeoForgeVersions(string mcVersion)
         {
             var versions = new List<NeoForgeVersionInfo>();
             try
             {
-                var mcParts = mcVersion.Split('.');
-                if (mcParts.Length < 2) return versions;
-                int minor = int.Parse(mcParts[1]);
-                int patch = mcParts.Length > 2 ? int.Parse(mcParts[2]) : 0;
-                var prefix = $"{minor}.{patch}";
-                var url = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
+                if (mcVersion == LegacyMcVersion)
+                {
+                    var legacyPrefix = $"{LegacyMcVersion}-";
+                    var legacyJson = await _http.GetStringAsync(LegacyMavenApi);
+                    using var legacyDoc = JsonDocument.Parse(legacyJson);
+                    if (legacyDoc.RootElement.TryGetProperty("versions", out var legacyArray))
+                    {
+                        foreach (var v in legacyArray.EnumerateArray())
+                        {
+                            var vStr = v.GetString();
+                            if (vStr != null && vStr.StartsWith(legacyPrefix))
+                            {
+                                versions.Add(new NeoForgeVersionInfo
+                                {
+                                    VersionName = vStr,
+                                    MinecraftVersion = mcVersion
+                                });
+                            }
+                        }
+                        versions.Reverse();
+                    }
+                    return versions;
+                }
+
+                var prefix = GetVersionPrefix(mcVersion);
+                if (prefix == null) return versions;
+                var url = NeoForgeMavenApi;
                 var json = await _http.GetStringAsync(url);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("versions", out var versionArray))
@@ -915,7 +962,7 @@ namespace OrangLauncher.Backend
                     foreach (var v in versionArray.EnumerateArray())
                     {
                         var vStr = v.GetString();
-                        if (vStr != null && vStr.StartsWith(prefix))
+                        if (vStr != null && vStr.StartsWith(prefix, StringComparison.Ordinal))
                         {
                             versions.Add(new NeoForgeVersionInfo
                             {

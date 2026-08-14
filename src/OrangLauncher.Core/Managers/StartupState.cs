@@ -2,13 +2,9 @@ using Microsoft.Win32;
 
 namespace OrangLauncher.Managers
 {
-    /// <summary>
-    /// Command-line state captured by the host before a UI starts, plus the
-    /// per-user .mrpack file association.
-    /// </summary>
     public static class StartupState
     {
-        /// <summary>A .mrpack file the launcher was opened with, waiting to be imported.</summary>
+
         public static string? PendingMrpackPath { get; set; }
 
         public static void CaptureArgs(string[] args)
@@ -23,10 +19,8 @@ namespace OrangLauncher.Managers
             }
         }
 
-        /// <summary>
-        /// Registers the .mrpack extension for the current user so double-clicking a
-        /// modpack opens it with the launcher. Safe to call on every startup.
-        /// </summary>
+        // register the .mrpack extension for the current user so double-clicking a file would open ts launcher not some called modrinth app :>>>
+
         public static void RegisterMrpackFileAssociation()
         {
             try

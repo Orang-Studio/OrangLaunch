@@ -1,12 +1,10 @@
+// I have to say to whoever reads this message that the wpf is more loved by me bc it works and it has less bugs + looks better
 using System.Diagnostics;
 using System.Text.Json;
 namespace OrangLauncher.Managers
 {
-    /// <summary>
-    /// Decides which UI (wpf | winui) the single OrangLauncher.exe boots.
-    /// First run auto-detects: Windows 11 (build 22000+) gets WinUI, older gets WPF.
-    /// A user choice made in settings is written to ui.json and always wins.
-    /// </summary>
+    // decides which UI wpf winui the single OrangLauncher.exe boots.
+    // choice made in settings is written to ui.json and always wins.
     public static class UiModeManager
     {
         public const string Wpf = "wpf";
@@ -51,8 +49,7 @@ namespace OrangLauncher.Managers
             }
             catch { }
         }
-
-        /// <summary>Saves the choice and restarts the launcher into the other UI.</summary>
+        // saves the choice and restarts the launcher to other UI.
         public static void SwitchTo(string ui)
         {
             Save(ui);
@@ -60,6 +57,4 @@ namespace OrangLauncher.Managers
             if (exe != null)
                 Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
             Environment.Exit(0);
-        }
-    }
-}
+}   }   }

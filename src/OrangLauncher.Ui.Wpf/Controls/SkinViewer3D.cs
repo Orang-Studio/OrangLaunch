@@ -7,10 +7,6 @@ using OrangLauncher.Rendering;
 
 namespace OrangLauncher.Controls
 {
-    /// <summary>
-    /// Interactive, fully native 3D skin preview (drag to rotate).
-    /// Rendering is done by Core's software rasterizer - no WebView, no network renders.
-    /// </summary>
     public class SkinViewer3D : Image
     {
         private byte[]? _rgba;
@@ -33,7 +29,7 @@ namespace OrangLauncher.Controls
             SizeChanged += (s, e) => Render();
         }
 
-        /// <summary>Loads a skin from raw PNG bytes and renders it.</summary>
+        // loads a skin from raw PNG bytes and renders it
         public bool LoadSkin(byte[] pngBytes, bool slimArms = false)
         {
             var decoded = SkinTextureLoader.DecodePng(pngBytes);
@@ -44,7 +40,7 @@ namespace OrangLauncher.Controls
             return true;
         }
 
-        /// <summary>Loads a cape from raw PNG bytes; pass null to remove it.</summary>
+        // loads a cape from raw PNG bytes btw pass null to remove it
         public bool LoadCape(byte[]? pngBytes)
         {
             if (pngBytes == null)

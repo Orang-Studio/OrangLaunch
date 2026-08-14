@@ -38,6 +38,8 @@ namespace OrangLauncher.Backend
         public string MainClass { get; set; } = "";
         [JsonPropertyName("inheritsFrom")]
         public string? InheritsFrom { get; set; }
+        [JsonPropertyName("jar")]
+        public string? Jar { get; set; }
         [JsonPropertyName("minecraftArguments")]
         public string? MinecraftArguments { get; set; }
         [JsonPropertyName("arguments")]

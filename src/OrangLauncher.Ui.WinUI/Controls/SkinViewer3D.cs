@@ -8,10 +8,6 @@ using OrangLauncher.Rendering;
 
 namespace OrangLauncher.Controls
 {
-    /// <summary>
-    /// Interactive, fully native 3D skin preview (drag to rotate).
-    /// Rendering is done by Core's software rasterizer - no WebView, no network renders.
-    /// </summary>
     public class SkinViewer3D : UserControl
     {
         private readonly Image _image = new() { Stretch = Stretch.Uniform };
@@ -28,7 +24,7 @@ namespace OrangLauncher.Controls
         public SkinViewer3D()
         {
             Content = _image;
-            // Transparent background so the whole control area is hit-testable for drag.
+            // transparent background so the whole control area is hit testable for drag.
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             PointerPressed += (s, e) =>
             {
@@ -41,7 +37,6 @@ namespace OrangLauncher.Controls
             SizeChanged += (s, e) => Render();
         }
 
-        /// <summary>Loads a skin from raw PNG bytes and renders it.</summary>
         public bool LoadSkin(byte[] pngBytes, bool slimArms = false)
         {
             var decoded = SkinTextureLoader.DecodePng(pngBytes);
@@ -52,7 +47,6 @@ namespace OrangLauncher.Controls
             return true;
         }
 
-        /// <summary>Loads a cape from raw PNG bytes; pass null to remove it.</summary>
         public bool LoadCape(byte[]? pngBytes)
         {
             if (pngBytes == null)

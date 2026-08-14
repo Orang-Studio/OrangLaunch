@@ -4,12 +4,6 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace OrangLauncher.Managers
 {
-    /// <summary>
-    /// Gives every WPF WebView2 control an explicit user data folder in LOCAL
-    /// AppData. Without it the control writes next to the exe, which fails for
-    /// installs under Program Files, and roaming profiles trigger
-    /// "Error in the DLL" (ERROR_DLL_INIT_FAILED) inside the WebView2 runtime.
-    /// </summary>
     public static class WebView2Helper
     {
         public static string UserDataFolder
@@ -24,7 +18,7 @@ namespace OrangLauncher.Managers
             }
         }
 
-        /// <summary>Call before the control initializes (right after InitializeComponent).</summary>
+        // call before the control initializes. 
         public static void Prepare(WebView2 webView)
         {
             try

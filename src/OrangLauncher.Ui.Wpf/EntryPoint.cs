@@ -21,8 +21,6 @@ namespace OrangLauncher.Ui.Wpf
             var app = new System.Windows.Application();
             app.DispatcherUnhandledException += (s, e) =>
             {
-                // Keep the launcher alive on recoverable UI errors (dialogs, update
-                // checks, network hiccups) instead of tearing the process down.
                 try
                 {
                     File.AppendAllText(Path.Combine(Path.GetTempPath(), "oranglauncher-wpf.log"),

@@ -2,7 +2,6 @@ using System.Text.Json;
 
 namespace OrangLauncher.Managers
 {
-    /// <summary>First-run flag for the welcome/setup wizard, stored in launcher_config.json.</summary>
     public static class SetupFlags
     {
         private static string ConfigPath => Path.Combine(PlatformPaths.GetDataDir(), "launcher_config.json");
@@ -34,6 +33,4 @@ namespace OrangLauncher.Managers
                 File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
-        }
-    }
-}
+}   }   }

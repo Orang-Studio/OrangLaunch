@@ -29,7 +29,7 @@ namespace OrangLauncher
             }
             catch (Exception ex)
             {
-                // WebView2 runtime missing/broken: fall back to the system browser and
+                // when WebView2 runtime missing/broken: fall back to the system browser and
                 // let the user paste the redirect URL that contains the auth code.
                 System.Diagnostics.Debug.WriteLine($"WebView2 init failed, using browser fallback: {ex.Message}");
                 await RunBrowserFallbackAsync();

@@ -219,8 +219,14 @@
                                         Background="Transparent" BorderThickness="0" Margin="0,0,0,10">
                                     <FontIcon Style="{StaticResource IconRemove}" FontSize="14" Foreground="{ThemeResource FgPrimaryBrush}"/>
                                 </Button>
-                                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,0,0,20">
+                                <!-- The scrolling field list reserves a 16px gutter on the right so
+                                     the scrollbar never sits on top of the combo boxes. The header and
+                                     the button row carry the same gutter so that everything in the
+                                     dialog is centred on the same axis as the fields. -->
+                                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,0,16,20">
                                     <Button x:Name="InstanceIconButton" Width="64" Height="64"
+                                            HorizontalAlignment="Center" Padding="0"
+                                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                             Background="Transparent" BorderThickness="0" Click="InstanceIconButton_Click">
                                         <Grid>
                                             <Image x:Name="InstanceIconImage" Width="48" Height="48"/>
@@ -232,7 +238,7 @@
                                                Foreground="{ThemeResource FgPrimaryBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"/>
                                 </StackPanel>
                                 <ScrollViewer Grid.Row="2" MaxHeight="400" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Margin="0,0,10,0">
+                                    <StackPanel Margin="0,0,16,0">
                                         <TextBlock x:Name="EditLblName" Text="Name" Foreground="{ThemeResource FgPrimaryBrush}" Margin="0,0,0,5"/>
                                         <TextBox x:Name="ProfileNameTextBox" Margin="0,0,0,15"/>
 
@@ -287,7 +293,7 @@
                                         <ComboBox x:Name="ProfileJavaVersionComboBox" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
                                     </StackPanel>
                                 </ScrollViewer>
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,16,0">
                                     <Button x:Name="SaveProfileButton" Margin="0,0,10,0" Padding="30,8" Click="SaveProfileButton_Click">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock x:Name="SaveProfileBtnText" Text="Save"/>
@@ -590,7 +596,6 @@
                             <NavigationViewItem x:Name="ContentTabDataPacks" Content="Data Packs" Tag="datapack"/>
                             <NavigationViewItem x:Name="ContentTabShaders" Content="Shaders" Tag="shader"/>
                             <NavigationViewItem x:Name="ContentTabModpacks" Content="Modpacks" Tag="modpack"/>
-                            <NavigationViewItem x:Name="ContentTabOrangLib" Content="OrangLib" Tag="oranglib"/>
                         </NavigationView.MenuItems>
                         <Grid Margin="0,10,0,0">
                             <Grid.RowDefinitions>
@@ -760,9 +765,9 @@
                                                             <TextBlock Text="{x:Bind Username}" FontWeight="SemiBold" FontSize="13"/>
                                                             <TextBlock Text="{x:Bind TypeDisplay}" FontSize="11" Opacity="0.6"/>
                                                         </StackPanel>
-                                                        <Button Grid.Column="2" Content="Select" Padding="12,4"
+                                                        <Button Grid.Column="2" Content="{x:Bind SelectButtonText}" Padding="12,4"
                                                                 Click="SelectAccount_Click" Tag="{x:Bind Profile}"/>
-                                                        <Button Grid.Column="3" Content="Remove" Padding="12,4"
+                                                        <Button Grid.Column="3" Content="{x:Bind RemoveButtonText}" Padding="12,4"
                                                                 Click="RemoveAccount_Click" Tag="{x:Bind Profile}">
                                                             <Button.Foreground>
                                                                 <SolidColorBrush Color="#FF5555"/>
@@ -881,6 +886,11 @@
                                         <TextBlock x:Name="JavaManagementTitle" Text="Java Management" FontSize="14" FontWeight="Bold" Foreground="{ThemeResource FgPrimaryBrush}" Margin="0,0,0,10"/>
                                         <TextBlock x:Name="JavaManagementDesc" Text="Install and manage Java runtimes used by the launcher."
                                                    FontSize="12" Foreground="{ThemeResource FgSecondaryBrush}" Margin="0,0,0,15"/>
+                                        <ToggleSwitch x:Name="JavaArchitectureToggle" OnContent="x86 (32-bit)" OffContent="x64 (64-bit)"
+                                                      HorizontalAlignment="Left" Margin="0,0,0,4"/>
+                                        <TextBlock x:Name="JavaArchitectureDesc"
+                                                   Text="For compatibility with older systems or graphics drivers. 32-bit builds are only available for Java 8 and 17 - other versions fall back to 64-bit automatically."
+                                                   FontSize="12" Foreground="{ThemeResource FgSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,15"/>
                                         <ListView x:Name="JavaListBox" Height="180" Margin="0,0,0,10" SelectionMode="None">
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="local:JavaListItem">

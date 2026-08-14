@@ -5,31 +5,24 @@ using OrangLauncher.Managers;
 
 namespace OrangLauncher
 {
-    /// <summary>
-    /// First-run welcome wizard (5 pages: greeting, account, Java, first profile,
-    /// settings), mirroring the Linux launcher's setup flow.
-    /// </summary>
     public class WelcomeWizard : Window
     {
         private const int PageCount = 5;
         private int _page;
         private readonly bool[] _completed = { true, false, false, false, true };
         private bool _profileCreated;
-
         private readonly MainWindow _main;
         private readonly StackPanel _dots = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(28, 6, 28, 4) };
         private readonly TextBlock _subtitle = new() { FontSize = 12, Margin = new Thickness(28, 2, 28, 0) };
         private readonly ContentControl _body = new() { Margin = new Thickness(28, 12, 28, 12) };
         private readonly Button _backBtn = new() { Padding = new Thickness(18, 8, 18, 8) };
         private readonly Button _nextBtn = new() { Padding = new Thickness(22, 8, 22, 8), FontWeight = FontWeights.Bold };
-
         private ComboBox? _javaCombo;
         private TextBox? _profileName = null;
         private ComboBox? _profileLoader, _profileVersion;
         private Slider? _profileRam;
         private CheckBox? _discordCheck, _telemetryCheck;
         private ComboBox? _themeCombo;
-
         private static string T(string key, string fallback) => LocalizationManager.GetString(key, fallback);
 
         public WelcomeWizard(MainWindow main)
@@ -42,14 +35,12 @@ namespace OrangLauncher
             ResizeMode = ResizeMode.NoResize;
             SetResourceReference(BackgroundProperty, "BgPrimaryBrush");
             _subtitle.SetResourceReference(TextBlock.ForegroundProperty, "FgSecondaryBrush");
-
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
             var title = new TextBlock
             {
                 Text = "OrangLauncher",
@@ -343,8 +334,6 @@ namespace OrangLauncher
                 MessageBox.Show(string.Format(T("WIZARD_PROFILE_NAME_TAKEN", "A profile called '{0}' already exists."), name), "OrangLauncher", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
-            // Same flow as the profile editor: install the mod loader first, then
-            // store the installed version id (e.g. fabric-loader-x.y.z-26.2).
             var installedVersionName = version;
             if (loader != "vanilla")
             {

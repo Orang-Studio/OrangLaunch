@@ -120,40 +120,19 @@ namespace OrangLauncher.Managers
             catch { }
             try
             {
-                var mcParts = minecraftVersion.Split('.');
-                if (mcParts.Length >= 2)
+                var neoforgeLoader = new NeoForgeVersionLoader(_httpClient);
+                var neoforgeVersions = await neoforgeLoader.GetNeoForgeVersions(minecraftVersion);
+                var latest = neoforgeVersions.FirstOrDefault();
+                if (latest != null)
                 {
-                    int minor = int.Parse(mcParts[1]);
-                    int patch = mcParts.Length > 2 ? int.Parse(mcParts[2]) : 0;
-                    if (minor >= 20 && (minor > 20 || patch >= 1))
+                    versions.Add(new ModLoaderVersion
                     {
-                        var neoforgePrefix = $"{minor}.{patch}";
-                        var response = await _httpClient.GetStringAsync("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge");
-                        var json = JsonDocument.Parse(response);
-                        if (json.RootElement.TryGetProperty("versions", out var versionArray))
-                        {
-                            var matchingVersions = versionArray.EnumerateArray()
-                                .Select(v => v.GetString())
-                                .Where(v => v != null && v.StartsWith(neoforgePrefix))
-                                .Reverse()
-                                .Take(1)
-                                .ToList();
-                            foreach (var vStr in matchingVersions)
-                            {
-                                if (vStr != null)
-                                {
-                                    versions.Add(new ModLoaderVersion
-                                    {
-                                        Name = $"NeoForge {vStr}",
-                                        LoaderType = "neoforge",
-                                        MinecraftVersion = minecraftVersion,
-                                        LoaderVersion = vStr,
-                                        IsRecommended = versions.All(v => v.LoaderType != "neoforge")
-                                    });
-                                }
-                            }
-                        }
-                    }
+                        Name = $"NeoForge {latest.VersionName}",
+                        LoaderType = "neoforge",
+                        MinecraftVersion = minecraftVersion,
+                        LoaderVersion = latest.VersionName,
+                        IsRecommended = versions.All(v => v.LoaderType != "neoforge")
+                    });
                 }
             }
             catch { }
@@ -253,7 +232,7 @@ namespace OrangLauncher.Managers
                 }
             }
             ReportProgressPercent(100);
-            // The installer creates versions/<mc>-OptiFine_<edition>; find it.
+            // the installer creates versions/<mc>-OptiFine_<edition>
             var expected = $"{mcVersion}-OptiFine_{build.Edition.Replace(' ', '_')}";
             var dir = Directory.Exists(path.Versions)
                 ? Directory.GetDirectories(path.Versions)
@@ -478,15 +457,11 @@ namespace OrangLauncher.Managers
                 return true;
             if (dirName.Equals(mcVersion, StringComparison.Ordinal))
                 return true;
-            var mcParts = mcVersion.Split('.');
-            if (mcParts.Length >= 2)
-            {
-                string neoPrefix = mcParts.Length >= 3
-                    ? $"{mcParts[1]}.{mcParts[2]}."
-                    : $"{mcParts[1]}.0.";
-                if (dirName.StartsWith($"neoforge-{neoPrefix}", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            // NeoForge names its version dirs "neoforge-<prefix><build>" and we also have to check if it's not forge but neo...
+            var neoPrefix = NeoForgeVersionLoader.GetVersionPrefix(mcVersion);
+            if (neoPrefix != null &&
+                dirName.StartsWith($"neoforge-{neoPrefix}", StringComparison.OrdinalIgnoreCase))
+                return true;
             return false;
         }
         public static bool IsLoaderInstalled(string minecraftPath, string mcVersion, string loaderType)

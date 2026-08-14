@@ -2,21 +2,12 @@ using System.Text.Json;
 
 namespace OrangLauncher.Managers
 {
-    /// <summary>Game version + loader detected from an existing .minecraft folder.</summary>
     public sealed class DetectedGameSetup
     {
         public string? GameVersion { get; init; }
-        /// <summary>fabric / forge / quilt / neoforge, or null for vanilla.</summary>
         public string? Loader { get; init; }
         public string? LoaderVersion { get; init; }
     }
-
-    /// <summary>
-    /// Detects what is actually installed in a .minecraft directory by reading
-    /// versions/*/*.json. Used by the Content store so that installs against the
-    /// default .minecraft target match the loader's game version instead of
-    /// silently taking the newest file (e.g. 26.3 when the loader runs 26.2).
-    /// </summary>
     public static class InstalledVersionDetector
     {
         public static DetectedGameSetup Detect(string minecraftDir)
@@ -35,8 +26,7 @@ namespace OrangLauncher.Managers
                     if (!File.Exists(jsonPath)) continue;
                     var parsed = ParseVersionJson(jsonPath, id);
                     if (parsed == null) continue;
-                    // Prefer the most recently touched modded profile; a plain vanilla
-                    // version only wins when no modded profile exists at all.
+                    // prefer the most recently touched modded profile; a plain vanilla
                     var t = File.GetLastWriteTimeUtc(jsonPath);
                     bool bestIsModded = best?.Loader != null;
                     bool thisIsModded = parsed.Loader != null;
@@ -53,6 +43,29 @@ namespace OrangLauncher.Managers
             {
                 return new DetectedGameSetup();
             }
+        }
+        public static string? ResolveGameVersion(string? versionId, params string?[] searchDirs)
+        {
+            if (string.IsNullOrWhiteSpace(versionId)) return null;
+            foreach (var dir in searchDirs)
+            {
+                if (string.IsNullOrEmpty(dir)) continue;
+                try
+                {
+                    var jsonPath = Path.Combine(dir, "versions", versionId, versionId + ".json");
+                    if (!File.Exists(jsonPath)) continue;
+                    using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath));
+                    if (doc.RootElement.TryGetProperty("inheritsFrom", out var inh))
+                    {
+                        var inherits = inh.GetString();
+                        if (!string.IsNullOrWhiteSpace(inherits)) return inherits;
+                    }
+                }
+                catch { }
+            }
+            var (loader, _, gameVersion) = ClassifyVersionId(versionId);
+            if (gameVersion != null) return gameVersion;
+            return loader == null ? versionId : null;
         }
 
         private static DetectedGameSetup? ParseVersionJson(string jsonPath, string id)
@@ -73,10 +86,6 @@ namespace OrangLauncher.Managers
             }
         }
 
-        /// <summary>
-        /// Recognizes loader version ids: fabric-loader-0.16.9-26.2,
-        /// quilt-loader-0.27.0-26.2, 26.2-forge-52.0.1, neoforge-21.4.33.
-        /// </summary>
         private static (string? Loader, string? LoaderVersion, string? GameVersion) ClassifyVersionId(string id)
         {
             var lower = id.ToLowerInvariant();
@@ -84,7 +93,7 @@ namespace OrangLauncher.Managers
             {
                 var loader = lower.StartsWith("fabric") ? "fabric" : "quilt";
                 var rest = id[(loader.Length + "-loader-".Length)..];
-                var dash = rest.IndexOf('-');
+                var dash = rest.LastIndexOf('-');
                 return dash > 0 ? (loader, rest[..dash], rest[(dash + 1)..]) : (loader, rest, null);
             }
             if (lower.Contains("-forge-"))

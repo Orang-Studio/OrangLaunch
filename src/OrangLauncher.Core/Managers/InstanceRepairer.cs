@@ -2,13 +2,6 @@ using OrangLauncher.Models;
 
 namespace OrangLauncher.Managers
 {
-    /// <summary>
-    /// Detects and repairs instances whose mod loader was never really installed
-    /// ("fake loaders"): the profile says fabric/forge/... but its Version is a bare
-    /// game version (e.g. "26.2") with no matching installed loader version.
-    /// Runs at startup; relinks to an already-installed loader version when one
-    /// exists, otherwise installs the loader.
-    /// </summary>
     public static class InstanceRepairer
     {
         private static readonly string[] LoaderMarkers = { "fabric", "forge", "neoforge", "quilt", "optifine", "liteloader" };
@@ -20,12 +13,9 @@ namespace OrangLauncher.Managers
             !string.IsNullOrEmpty(loader) &&
             !loader.Equals("vanilla", StringComparison.OrdinalIgnoreCase) &&
             !loader.Equals("none", StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>Base game version of an instance ("26.2" out of "fabric-loader-0.16.9-26.2" or "26.2").</summary>
         private static string ExtractBaseVersion(string version)
         {
             if (!LooksModded(version)) return version;
-            // Installed ids are usually "<loader>-...-<mc>" or "<mc>-<loader>-...".
             var parts = version.Split('-');
             foreach (var part in parts.Reverse())
                 if (System.Text.RegularExpressions.Regex.IsMatch(part, @"^\d+\.\d+(\.\d+)?$"))
@@ -41,8 +31,6 @@ namespace OrangLauncher.Managers
             var dir = Path.Combine(versionsDir, versionName);
             return Directory.Exists(dir) && Directory.GetFiles(dir, "*.json").Length > 0;
         }
-
-        /// <summary>Finds an already-installed modded version folder matching this game version and loader.</summary>
         private static string? FindInstalledLoaderVersion(string versionsDir, string mcVersion, string loader)
         {
             if (!Directory.Exists(versionsDir)) return null;
@@ -58,24 +46,18 @@ namespace OrangLauncher.Managers
             return null;
         }
 
-        /// <summary>True when the instance claims a loader that is not actually installed/linked.</summary>
         public static bool IsBroken(MinecraftInstance instance, string versionsDir)
         {
             if (!HasRealLoader(instance.ModLoader)) return false;
             var effective = !string.IsNullOrEmpty(instance.InstalledVersionName)
                 ? instance.InstalledVersionName!
                 : instance.Version;
-            // Bare game version recorded for a modded profile, or a modded version
-            // id whose files are gone.
+            // bare game version writed for a modded profile
+            // id whouse files are gone.
             if (!LooksModded(effective)) return true;
             return !VersionJsonExists(versionsDir, effective);
         }
 
-        /// <summary>
-        /// Scans all instances and repairs the broken ones. Relinks silently when the
-        /// loader is already installed; downloads the loader otherwise. Returns the
-        /// number of repaired instances.
-        /// </summary>
         public static async Task<int> RepairAllAsync(Action<string>? log = null, bool installMissing = true)
         {
             int repaired = 0;

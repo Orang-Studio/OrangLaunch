@@ -33,7 +33,6 @@ namespace OrangLauncher.Managers
     {
         private const string GITHUB_OWNER = "Orang-Studio";
         private const string GITHUB_REPO = "OrangLaunch";
-        // Windows releases are tagged "Win-x.y.z" (legacy "x.y.z-Win" also accepted).
         private const string TAG_PREFIX = "Win-";
         private const string LEGACY_TAG_SUFFIX = "-Win";
         private static readonly Version CurrentVersion = GetBuildVersion();
@@ -47,7 +46,6 @@ namespace OrangLauncher.Managers
             catch { }
             return new Version(0, 0, 0);
         }
-        /// <summary>Extracts "x.y.z" from a Windows release tag, or null if the tag is not a Windows release.</summary>
         private static string? VersionFromWindowsTag(string tag)
         {
             if (tag.StartsWith(TAG_PREFIX, StringComparison.OrdinalIgnoreCase))
@@ -89,8 +87,7 @@ namespace OrangLauncher.Managers
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/" + CurrentVersion);
                 client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-                // The repo hosts Windows AND Linux releases, so /releases/latest may point
-                // at a Linux tag. Scan the list for the newest Windows (Win-x.y.z) release.
+                // the repo hosts win and linux releases so /releases/latest may point at a linux tag.
                 var apiUrl = $"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=30";
                 var response = await client.GetStringAsync(apiUrl);
                 using var doc = JsonDocument.Parse(response);

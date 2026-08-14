@@ -59,8 +59,6 @@ namespace OrangLauncher.Managers
                         modLoader = "neoforge"; modLoaderVersion = nf.GetString();
                     }
                 }
-                // The dependencies block is authoritative. Only fall back to guessing the
-                // loader from file names when the index declared no loader at all.
                 if (modLoader == "vanilla" &&
                     root.TryGetProperty("files", out var filesElem) && filesElem.ValueKind == JsonValueKind.Array)
                 {

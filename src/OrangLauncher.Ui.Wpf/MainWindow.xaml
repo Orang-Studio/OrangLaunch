@@ -274,21 +274,19 @@
                                         <RowDefinition Height="*"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
-                                    <Button Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top" 
-                                            Style="{DynamicResource LinkButtonStyle}" Click="CancelProfileButton_Click"
+                                    <!-- Uses the shared IconButtonStyle and the real close icon, matching
+                                         the Cancel button below; it previously used a style that only
+                                         existed in one theme (falling back to unstyled system chrome
+                                         everywhere else) and faked the X by rotating the "add" icon. -->
+                                    <Button Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Style="{DynamicResource IconButtonStyle}" Click="CancelProfileButton_Click"
                                             Width="32" Height="32" Margin="0,-5,-5,0">
-                                        <Grid>
-                                            <Rectangle Width="20" Height="20" VerticalAlignment="Center" HorizontalAlignment="Center" 
-                                                       Fill="{DynamicResource FgPrimaryBrush}"
-                                                       RenderTransformOrigin="0.5,0.5">
-                                                <Rectangle.RenderTransform>
-                                                    <RotateTransform Angle="45"/>
-                                                </Rectangle.RenderTransform>
-                                                <Rectangle.OpacityMask>
-                                                    <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/add.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                </Rectangle.OpacityMask>
-                                            </Rectangle>
-                                        </Grid>
+                                        <Rectangle Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
+                                            <Rectangle.OpacityMask>
+                                                <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/close.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            </Rectangle.OpacityMask>
+                                        </Rectangle>
                                     </Button>
                                     <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,0,0,20">
                                         <Button x:Name="InstanceIconButton" Width="64" Height="64" Background="Transparent" BorderThickness="0" Click="InstanceIconButton_Click" Cursor="Hand">
@@ -784,8 +782,7 @@
                         <Button x:Name="ContentTabResourcePacks" Content="Resource Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="resourcepack"/>
                         <Button x:Name="ContentTabDataPacks" Content="Data Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="datapack"/>
                         <Button x:Name="ContentTabShaders" Content="Shaders" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="shader"/>
-                        <Button x:Name="ContentTabModpacks" Content="Modpacks" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="modpack"/>
-                        <Button x:Name="ContentTabOrangLib" Content="OrangLib" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Click="ContentTabButton_Click" Tag="oranglib"/>
+                        <Button x:Name="ContentTabModpacks" Content="Modpacks" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Click="ContentTabButton_Click" Tag="modpack"/>
                     </StackPanel>
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
@@ -1243,8 +1240,12 @@
                                                 </Rectangle>
                                                 <TextBlock Text="{Binding LocalizedJavaInstallation}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}"/>
                                             </StackPanel>
-                                            <TextBlock Text="{Binding LocalizedJavaInstallationDesc}" 
+                                            <TextBlock Text="{Binding LocalizedJavaInstallationDesc}"
                                                      FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" Margin="0,0,0,15" TextWrapping="Wrap"/>
+                                            <CheckBox x:Name="JavaArchitectureCheckBox" Content="Use 32-bit (x86) Java instead of 64-bit"
+                                                      Margin="0,0,0,4"/>
+                                            <TextBlock Text="For compatibility with older systems or graphics drivers. 32-bit builds are only available for Java 8 and 17 - other versions fall back to 64-bit automatically."
+                                                     FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,15"/>
                                             <ItemsControl x:Name="JavaVersionsItemsControl">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>

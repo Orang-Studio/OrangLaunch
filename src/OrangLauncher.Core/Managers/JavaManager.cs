@@ -2,6 +2,7 @@
 using System.IO.Compression;
 namespace OrangLauncher.Managers
 {
+    public enum JavaArchitecture { X86, X64 }
     public class JavaInstallation
     {
         public int MajorVersion { get; set; }
@@ -16,57 +17,95 @@ namespace OrangLauncher.Managers
         public static event Action<int>? OnProgressPercentChanged;
         private static void ReportProgress(string msg) => OnProgressChanged?.Invoke(msg);
         private static void ReportPercent(int pct) => OnProgressPercentChanged?.Invoke(pct);
-        private static readonly Dictionary<int, string> AdoptiumUrls = new()
+        private static readonly Dictionary<(int Major, JavaArchitecture Arch), string> AdoptiumUrls = new()
         {
-            [8] = "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u472-b08/OpenJDK8U-jre_x86-32_windows_hotspot_8u472b08.zip",
-            [17] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.17%2B10/OpenJDK17U-jre_x86-32_windows_hotspot_17.0.17_10.zip",
-            [21] = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.10%2B7/OpenJDK21U-jre_x64_windows_hotspot_21.0.10_7.zip",
-            [25] = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jre_x64_windows_hotspot_25.0.2_10.zip"
+            [(8, JavaArchitecture.X86)] = "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u472-b08/OpenJDK8U-jre_x86-32_windows_hotspot_8u472b08.zip",
+            [(8, JavaArchitecture.X64)] = "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u472-b08/OpenJDK8U-jre_x64_windows_hotspot_8u472b08.zip",
+            [(17, JavaArchitecture.X86)] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.17%2B10/OpenJDK17U-jre_x86-32_windows_hotspot_17.0.17_10.zip",
+            [(17, JavaArchitecture.X64)] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.17%2B10/OpenJDK17U-jre_x64_windows_hotspot_17.0.17_10.zip",
+            [(21, JavaArchitecture.X64)] = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.10%2B7/OpenJDK21U-jre_x64_windows_hotspot_21.0.10_7.zip",
+            [(25, JavaArchitecture.X64)] = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.2%2B10/OpenJDK25U-jre_x64_windows_hotspot_25.0.2_10.zip",
         };
+
+        public static JavaArchitecture PreferredArchitecture
+        {
+            get { LoadPreferenceIfNeeded(); return _preferredArchitecture; }
+            set { _preferredArchitecture = value; SavePreference(); }
+        }
+        private static JavaArchitecture _preferredArchitecture = JavaArchitecture.X64;
+        private static bool _preferenceLoaded;
+        private static string PreferenceFilePath => System.IO.Path.Combine(PlatformPaths.GetDataDir(), "java_architecture.txt");
+        private static void LoadPreferenceIfNeeded()
+        {
+            if (_preferenceLoaded) return;
+            _preferenceLoaded = true;
+            try
+            {
+                if (File.Exists(PreferenceFilePath) &&
+                    Enum.TryParse<JavaArchitecture>(File.ReadAllText(PreferenceFilePath).Trim(), true, out var arch))
+                    _preferredArchitecture = arch;
+            }
+            catch { }
+        }
+        private static void SavePreference()
+        {
+            try { File.WriteAllText(PreferenceFilePath, _preferredArchitecture.ToString()); }
+            catch { }
+        }
+        public static List<JavaArchitecture> GetAvailableArchitectures(int majorVersion)
+            => Enum.GetValues<JavaArchitecture>().Where(a => AdoptiumUrls.ContainsKey((majorVersion, a))).ToList();
+        public static JavaArchitecture ResolveArchitecture(int majorVersion, JavaArchitecture? requested = null)
+        {
+            var want = requested ?? PreferredArchitecture;
+            var available = GetAvailableArchitectures(majorVersion);
+            if (available.Contains(want)) return want;
+            return available.Contains(JavaArchitecture.X64) ? JavaArchitecture.X64 : available.FirstOrDefault();
+        }
+
         public static string GetJavaInstallDir()
         {
             var dir = System.IO.Path.Combine(PlatformPaths.GetDataDir(), "java");
             Directory.CreateDirectory(dir);
             return dir;
         }
-        public static string GetJavaDir(int majorVersion)
+        private static string ArchSuffix(JavaArchitecture arch) => arch == JavaArchitecture.X86 ? "x86" : "x64";
+        public static string GetJavaDir(int majorVersion, JavaArchitecture? architecture = null)
         {
-            return System.IO.Path.Combine(GetJavaInstallDir(), $"java-{majorVersion}");
+            var arch = ResolveArchitecture(majorVersion, architecture);
+            return System.IO.Path.Combine(GetJavaInstallDir(), $"java-{majorVersion}-{ArchSuffix(arch)}");
         }
-        public static bool IsJavaInstalled(int majorVersion)
+        private static string GetLegacyJavaDir(int majorVersion)
+            => System.IO.Path.Combine(GetJavaInstallDir(), $"java-{majorVersion}");
+        public static bool IsJavaInstalled(int majorVersion, JavaArchitecture? architecture = null)
+            => GetJavaPath(majorVersion, architecture) != null;
+        public static string? GetJavaPath(int majorVersion, JavaArchitecture? architecture = null)
         {
-            var dir = GetJavaDir(majorVersion);
-            if (!Directory.Exists(dir)) return false;
-            try
+            foreach (var dir in new[] { GetJavaDir(majorVersion, architecture), GetLegacyJavaDir(majorVersion) })
             {
-                var javaw = Directory.GetFiles(dir, "javaw.exe", SearchOption.AllDirectories).FirstOrDefault();
-                return javaw != null;
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    var javaw = Directory.GetFiles(dir, "javaw.exe", SearchOption.AllDirectories).FirstOrDefault();
+                    if (javaw != null) return javaw;
+                }
+                catch { }
             }
-            catch { return false; }
+            return null;
         }
-        public static string? GetJavaPath(int majorVersion)
+        public static async Task InstallJavaAsync(int majorVersion, JavaArchitecture? architecture = null)
         {
-            var dir = GetJavaDir(majorVersion);
-            if (!Directory.Exists(dir)) return null;
-            try
-            {
-                return Directory.GetFiles(dir, "javaw.exe", SearchOption.AllDirectories).FirstOrDefault();
-            }
-            catch { return null; }
-        }
-        public static async Task InstallJavaAsync(int majorVersion)
-        {
-            if (!AdoptiumUrls.TryGetValue(majorVersion, out var url))
-                throw new Exception($"No download URL configured for Java {majorVersion}");
-            var installDir = GetJavaDir(majorVersion);
+            var arch = ResolveArchitecture(majorVersion, architecture);
+            if (!AdoptiumUrls.TryGetValue((majorVersion, arch), out var url))
+                throw new Exception($"No download URL configured for Java {majorVersion} ({arch})");
+            var installDir = GetJavaDir(majorVersion, arch);
             if (Directory.Exists(installDir))
             {
                 try { Directory.Delete(installDir, true); } catch { }
             }
             Directory.CreateDirectory(installDir);
-            ReportProgress($"Downloading Java {majorVersion}...");
+            ReportProgress($"Downloading Java {majorVersion} ({ArchSuffix(arch)})...");
             ReportPercent(10);
-            var tempZip = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"oranglauncher_java{majorVersion}.zip");
+            var tempZip = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"oranglauncher_java{majorVersion}_{ArchSuffix(arch)}.zip");
             try
             {
                 using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
@@ -87,22 +126,22 @@ namespace OrangLauncher.Managers
                         ReportPercent(pct);
                     }
                 }
-                ReportProgress($"Extracting Java {majorVersion}...");
+                ReportProgress($"Extracting Java {majorVersion} ({ArchSuffix(arch)})...");
                 ReportPercent(75);
                 fileStream.Close();
                 ZipFile.ExtractToDirectory(tempZip, installDir, true);
-                ReportProgress($"Java {majorVersion} installed successfully!");
+                ReportProgress($"Java {majorVersion} ({ArchSuffix(arch)}) installed successfully!");
                 ReportPercent(100);
-                Debug.WriteLine($"[JavaManager] Java {majorVersion} installed to {installDir}");
+                Debug.WriteLine($"[JavaManager] Java {majorVersion} ({arch}) installed to {installDir}");
             }
             finally
             {
                 try { File.Delete(tempZip); } catch { }
             }
         }
-        public static void UninstallJava(int majorVersion)
+        public static void UninstallJava(int majorVersion, JavaArchitecture? architecture = null)
         {
-            var dir = GetJavaDir(majorVersion);
+            var dir = GetJavaDir(majorVersion, architecture);
             if (Directory.Exists(dir))
             {
                 Directory.Delete(dir, true);
@@ -114,16 +153,40 @@ namespace OrangLauncher.Managers
             var results = new List<JavaInstallation>();
             foreach (var version in new[] { 8, 17, 21, 25 })
             {
-                var path = GetJavaPath(version);
-                if (path != null)
+                foreach (var arch in GetAvailableArchitectures(version))
                 {
-                    results.Add(new JavaInstallation
+                    var dir = GetJavaDir(version, arch);
+                    if (!Directory.Exists(dir)) continue;
+                    var path = Directory.Exists(dir) ? Directory.GetFiles(dir, "javaw.exe", SearchOption.AllDirectories).FirstOrDefault() : null;
+                    if (path != null)
                     {
-                        MajorVersion = version,
-                        Path = path,
-                        DisplayName = $"Java {version} (Adoptium - Managed)",
-                        IsManaged = true
-                    });
+                        results.Add(new JavaInstallation
+                        {
+                            MajorVersion = version,
+                            Path = path,
+                            DisplayName = $"Java {version} ({ArchSuffix(arch)} - Adoptium - Managed)",
+                            IsManaged = true
+                        });
+                    }
+                }
+                var legacyDir = GetLegacyJavaDir(version);
+                if (Directory.Exists(legacyDir))
+                {
+                    try
+                    {
+                        var path = Directory.GetFiles(legacyDir, "javaw.exe", SearchOption.AllDirectories).FirstOrDefault();
+                        if (path != null && !results.Any(r => r.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            results.Add(new JavaInstallation
+                            {
+                                MajorVersion = version,
+                                Path = path,
+                                DisplayName = $"Java {version} (Adoptium - Managed)",
+                                IsManaged = true
+                            });
+                        }
+                    }
+                    catch { }
                 }
             }
             var mcRuntime = System.IO.Path.Combine(

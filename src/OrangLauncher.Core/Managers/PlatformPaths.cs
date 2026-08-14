@@ -62,7 +62,7 @@ namespace OrangLauncher.Managers
                         try { Directory.Move(oldMcDir, newMcDir); }
                         catch
                         {
-                            // Locked or on another volume; keep using it in place via a copy.
+                            // Locked, keep using it in place copy
                             CopyDirectory(oldMcDir, newMcDir);
                         }
                     }

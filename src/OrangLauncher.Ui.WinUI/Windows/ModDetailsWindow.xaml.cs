@@ -19,7 +19,6 @@ namespace OrangLauncher
         public string? DownloadUrl { get; set; }
         public string? FileName { get; set; }
         public string? VersionId { get; set; }
-        /// <summary>"fabric, quilt  |  MC 26.2, 26.3" line for the versions list.</summary>
         public string SupportLine
         {
             get
@@ -35,15 +34,22 @@ namespace OrangLauncher
     {
         private readonly string _projectId;
         private readonly string _projectType;
+        private readonly string _installPath;
+        private readonly string _gameVersion;
+        private readonly string _modLoader;
         private string _projectSlug;
         private string? _projectBody;
         private readonly List<ProjectVersion> _versions = [];
-        public ModDetailsWindow(string projectId, string title, string description, string? iconUrl, string projectType)
+        public ModDetailsWindow(string projectId, string title, string description, string? iconUrl, string projectType,
+            string installPath = "", string gameVersion = "", string modLoader = "")
         {
             this.InitializeComponent();
             _projectId = projectId;
             _projectSlug = projectId;
             _projectType = projectType;
+            _installPath = installPath;
+            _gameVersion = gameVersion;
+            _modLoader = modLoader;
             TitleText.Text = title;
             DescText.Text = description;
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -93,43 +99,42 @@ namespace OrangLauncher
                 var env = await Managers.WebView2Helper.GetEnvironmentAsync();
                 await AboutWebView.EnsureCoreWebView2Async(env);
                 var html = $@"<!DOCTYPE html>
-<html>
-<head>
-    <meta charset='UTF-8'>
-    <style>
-        * {{ box-sizing: border-box; }}
-        body {{ 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0a0a0a; color: #e8e8e8; padding: 20px; margin: 0;
-            line-height: 1.6; font-size: 14px;
-        }}
-        h1, h2, h3, h4, h5, h6 {{ color: #ffffff; margin-top: 1.5em; margin-bottom: 0.5em;
-            border-bottom: 1px solid #2a2a2a; padding-bottom: 0.3em; }}
-        h1 {{ font-size: 1.8em; }} h2 {{ font-size: 1.5em; }} h3 {{ font-size: 1.3em; }}
-        p {{ margin: 0.8em 0; }}
-        a {{ color: #ff8c00; text-decoration: none; }} a:hover {{ text-decoration: underline; }}
-        code {{ background-color: #1a1a1a; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 0.9em; }}
-        pre {{ background-color: #1a1a1a; padding: 15px; border-radius: 6px; overflow-x: auto; }}
-        pre code {{ padding: 0; background: none; }}
-        img {{ max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; }}
-        ul, ol {{ padding-left: 25px; margin: 0.8em 0; }}
-        li {{ margin: 0.3em 0; }}
-        blockquote {{ border-left: 4px solid #ff8c00; margin: 1em 0; padding: 0.5em 1em; background-color: #1a1a1a; border-radius: 0 6px 6px 0; }}
-        hr {{ border: none; border-top: 1px solid #2a2a2a; margin: 1.5em 0; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-        th, td {{ border: 1px solid #2a2a2a; padding: 8px 12px; text-align: left; }}
-        th {{ background-color: #1a1a1a; }}
-    </style>
-</head>
-<body>{ConvertMarkdownToHtml(markdown)}</body>
-</html>";
+                <html>
+                <head>
+                    <meta charset='UTF-8'>
+                    <style>
+                        * {{ box-sizing: border-box; }}
+                        body {{ 
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                            background-color: #0a0a0a; color: #e8e8e8; padding: 20px; margin: 0;
+                            line-height: 1.6; font-size: 14px;
+                        }}
+                        h1, h2, h3, h4, h5, h6 {{ color: #ffffff; margin-top: 1.5em; margin-bottom: 0.5em;
+                            border-bottom: 1px solid #2a2a2a; padding-bottom: 0.3em; }}
+                        h1 {{ font-size: 1.8em; }} h2 {{ font-size: 1.5em; }} h3 {{ font-size: 1.3em; }}
+                        p {{ margin: 0.8em 0; }}
+                        a {{ color: #ff8c00; text-decoration: none; }} a:hover {{ text-decoration: underline; }}
+                        code {{ background-color: #1a1a1a; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 0.9em; }}
+                        pre {{ background-color: #1a1a1a; padding: 15px; border-radius: 6px; overflow-x: auto; }}
+                        pre code {{ padding: 0; background: none; }}
+                        img {{ max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; }}
+                        ul, ol {{ padding-left: 25px; margin: 0.8em 0; }}
+                        li {{ margin: 0.3em 0; }}
+                        blockquote {{ border-left: 4px solid #ff8c00; margin: 1em 0; padding: 0.5em 1em; background-color: #1a1a1a; border-radius: 0 6px 6px 0; }}
+                        hr {{ border: none; border-top: 1px solid #2a2a2a; margin: 1.5em 0; }}
+                        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+                        th, td {{ border: 1px solid #2a2a2a; padding: 8px 12px; text-align: left; }}
+                        th {{ background-color: #1a1a1a; }}
+                    </style>
+                </head>
+                <body>{ConvertMarkdownToHtml(markdown)}</body>
+                </html>";
                 AboutWebView.NavigateToString(html);
                 AboutWebView.Visibility = Visibility.Visible;
                 AboutScrollViewer.Visibility = Visibility.Collapsed;
             }
             catch
             {
-                // No WebView2: show a readable plain-text rendering, not raw markdown.
                 AboutTextBlock.Text = StripMarkdown(markdown);
                 AboutScrollViewer.Visibility = Visibility.Visible;
                 AboutWebView.Visibility = Visibility.Collapsed;
@@ -186,13 +191,34 @@ namespace OrangLauncher
             if (inParagraph) result.Append("</p>");
             return result.ToString();
         }
+        private bool IsCompatibleWithTarget(List<string> gameVersions, List<string> loaders)
+        {
+            if (!string.IsNullOrEmpty(_gameVersion) && gameVersions.Count > 0 &&
+                !gameVersions.Any(g => string.Equals(g, _gameVersion, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            var target = _modLoader?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(target) || target is "vanilla" or "none" || loaders.Count == 0) return true;
+            var accepted = Managers.ModrinthClient.AcceptedLoaders(target);
+            return loaders.Any(l => accepted.Contains(l, StringComparer.OrdinalIgnoreCase));
+        }
+
         private async void LoadVersionsAsync()
         {
             try
             {
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0 (github.com/Orang-Studio/OrangLaunch)");
-                var response = await client.GetStringAsync($"https://api.modrinth.com/v2/project/{_projectId}/version");
+                var url = $"https://api.modrinth.com/v2/project/{_projectId}/version";
+                var queryParts = new List<string>();
+                if (!string.IsNullOrEmpty(_gameVersion))
+                    queryParts.Add("game_versions=" + Uri.EscapeDataString($"[\"{_gameVersion}\"]"));
+                if (!string.IsNullOrEmpty(_modLoader) && _modLoader.ToLower() is not ("vanilla" or "none"))
+                {
+                    var list = string.Join(",", Managers.ModrinthClient.AcceptedLoaders(_modLoader.ToLower()).Select(l => $"\"{l}\""));
+                    queryParts.Add("loaders=" + Uri.EscapeDataString($"[{list}]"));
+                }
+                if (queryParts.Count > 0) url += "?" + string.Join("&", queryParts);
+                var response = await client.GetStringAsync(url);
                 var versions = JsonSerializer.Deserialize<List<JsonElement>>(response);
                 _versions.Clear();
                 if (versions != null)
@@ -205,6 +231,7 @@ namespace OrangLauncher
                         var loaders = new List<string>();
                         if (v.TryGetProperty("loaders", out var ld))
                             foreach (var loader in ld.EnumerateArray()) loaders.Add(loader.GetString() ?? "");
+                        if (!IsCompatibleWithTarget(gameVersions, loaders)) continue;
                         string? downloadUrl = null; string? fileName = null;
                         if (v.TryGetProperty("files", out var files))
                         {
@@ -234,7 +261,7 @@ namespace OrangLauncher
                     }
                 }
                 VersionsListBox.ItemsSource = _versions;
-                // Prefill the changelog tab with the newest version so it is never blank.
+                // prefill the changelog tab with the newest version so it is never blank.
                 if (_versions.Count > 0) ShowChangelog(_versions[0], switchTab: false);
             }
             catch (Exception ex)
@@ -256,7 +283,7 @@ namespace OrangLauncher
             if (VersionsListBox.SelectedItem is ProjectVersion version)
                 ShowChangelog(version, switchTab: true);
         }
-        /// <summary>Reduces markdown to readable plain text for native fallback rendering.</summary>
+        // educes markdown to readable plain text
         internal static string StripMarkdown(string markdown)
         {
             if (string.IsNullOrEmpty(markdown)) return "";
@@ -308,6 +335,8 @@ namespace OrangLauncher
                 btn.IsEnabled = false; btn.Content = "...";
                 try
                 {
+                    // Install into the folder the Content page picked (the selected
+                    // instance), falling back to the default .minecraft folder.
                     var subDir = _projectType switch
                     {
                         "resourcepack" => "resourcepacks",
@@ -315,7 +344,9 @@ namespace OrangLauncher
                         "datapack" => "datapacks",
                         _ => "mods"
                     };
-                    var basePath = Path.Combine(Managers.PlatformPaths.GetMinecraftDir(), subDir);
+                    var basePath = string.IsNullOrEmpty(_installPath)
+                        ? Path.Combine(Managers.PlatformPaths.GetMinecraftDir(), subDir)
+                        : _installPath;
                     Directory.CreateDirectory(basePath);
                     using var client = new HttpClient();
                     client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0");

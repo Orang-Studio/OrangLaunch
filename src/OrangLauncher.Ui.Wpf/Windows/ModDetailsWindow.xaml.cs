@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -240,6 +241,17 @@ namespace OrangLauncher
             if (inParagraph) result.Append("</p>");
             return result.ToString();
         }
+        private bool IsCompatibleWithTarget(List<string> gameVersions, List<string> loaders)
+        {
+            if (!string.IsNullOrEmpty(_gameVersion) && gameVersions.Count > 0 &&
+                !gameVersions.Any(g => string.Equals(g, _gameVersion, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            var target = _modLoader?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(target) || target is "vanilla" or "none" || loaders.Count == 0) return true;
+            var accepted = Managers.ModrinthClient.AcceptedLoaders(target);
+            return loaders.Any(l => accepted.Contains(l, StringComparer.OrdinalIgnoreCase));
+        }
+
         private async void LoadVersionsAsync()
         {
             try
@@ -251,16 +263,14 @@ namespace OrangLauncher
                 if (!string.IsNullOrEmpty(_gameVersion))
                     queryParts.Add($"game_versions=[\"{Uri.EscapeDataString(_gameVersion)}\"]");
                 if (!string.IsNullOrEmpty(_modLoader) && _modLoader.ToLower() != "vanilla" && _modLoader.ToLower() != "none")
-                    queryParts.Add($"loaders=[\"{Uri.EscapeDataString(_modLoader.ToLower())}\"]");
+                {
+                    var list = string.Join(",", Managers.ModrinthClient.AcceptedLoaders(_modLoader.ToLower()).Select(l => $"\"{l}\""));
+                    queryParts.Add("loaders=" + Uri.EscapeDataString($"[{list}]"));
+                }
                 if (queryParts.Count > 0)
                     url += "?" + string.Join("&", queryParts);
                 var response = await client.GetStringAsync(url);
                 var versions = JsonSerializer.Deserialize<List<JsonElement>>(response);
-                if ((versions == null || versions.Count == 0) && queryParts.Count > 0)
-                {
-                    response = await client.GetStringAsync($"https://api.modrinth.com/v2/project/{_projectId}/version");
-                    versions = JsonSerializer.Deserialize<List<JsonElement>>(response);
-                }
                 _versions.Clear();
                 if (versions != null)
                 {
@@ -278,6 +288,8 @@ namespace OrangLauncher
                             foreach (var loader in ld.EnumerateArray())
                                 loaders.Add(loader.GetString() ?? "");
                         }
+                        // check locally and a NeoForge profile must never be offered a Forge-only file.
+                        if (!IsCompatibleWithTarget(gameVersions, loaders)) continue;
                         string? downloadUrl = null;
                         string? fileName = null;
                         if (v.TryGetProperty("files", out var files))
@@ -318,7 +330,6 @@ namespace OrangLauncher
                     }
                 }
                 VersionsListBox.ItemsSource = _versions;
-                // Prefill the changelog tab with the newest version so it is never blank.
                 if (_versions.Count > 0) ShowChangelog(_versions[0], switchTab: false);
             }
             catch (Exception ex)
@@ -340,7 +351,6 @@ namespace OrangLauncher
             if (VersionsListBox.SelectedItem is ProjectVersion version)
                 ShowChangelog(version, switchTab: true);
         }
-        /// <summary>Reduces markdown to readable plain text for native fallback rendering.</summary>
         internal static string StripMarkdown(string markdown)
         {
             if (string.IsNullOrEmpty(markdown)) return "";

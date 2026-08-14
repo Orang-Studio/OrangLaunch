@@ -182,9 +182,10 @@ namespace OrangLauncher
                 var url = $"https://api.modrinth.com/v2/project/{projectId}/version";
                 var response = await client.GetStringAsync(url);
                 var versions = JsonDocument.Parse(response);
+                var candidates = new List<JsonElement>();
                 foreach (var version in versions.RootElement.EnumerateArray())
                 {
-                    // Unknown target version: fall back to newest rather than matching nothing.
+                    // unknown target version fall back to newest rather than matching nothing.
                     bool gameVersionMatch = string.IsNullOrEmpty(_gameVersion);
                     foreach (var gv in version.GetProperty("game_versions").EnumerateArray())
                         if (gv.GetString() == _gameVersion) { gameVersionMatch = true; break; }
@@ -198,6 +199,11 @@ namespace OrangLauncher
                                 if (string.Equals(loader.GetString(), _modLoader, StringComparison.OrdinalIgnoreCase)) { loaderMatch = true; break; }
                         if (!loaderMatch) continue;
                     }
+                    candidates.Add(version);
+                }
+
+                foreach (var version in OrderByStability(candidates))
+                {
                     var files = version.GetProperty("files");
                     foreach (var file in files.EnumerateArray())
                         if (file.TryGetProperty("primary", out var primary) && primary.GetBoolean())
@@ -210,6 +216,17 @@ namespace OrangLauncher
             catch { }
             return null;
         }
+        private static IEnumerable<JsonElement> OrderByStability(IEnumerable<JsonElement> versions)
+            => versions
+                .OrderBy(v => (v.TryGetProperty("version_type", out var t) ? t.GetString() : "release")?.ToLowerInvariant() switch
+                {
+                    "release" => 0,
+                    "beta" => 1,
+                    "alpha" => 2,
+                    _ => 3,
+                })
+                .ThenByDescending(v => v.TryGetProperty("date_published", out var d) && d.TryGetDateTime(out var dt)
+                    ? dt : DateTime.MinValue);
         private static string ExtractModName(string fileName)
         {
             var name = Path.GetFileNameWithoutExtension(fileName);

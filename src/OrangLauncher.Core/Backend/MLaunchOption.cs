@@ -17,9 +17,7 @@ namespace OrangLauncher.Backend
         public bool Fullscreen { get; set; }
         public MArgument[]? ExtraJvmArguments { get; set; }
         public MArgument[]? ExtraGameArguments { get; set; }
-        /// <summary>Point the telemetry endpoint at an unreachable host so events never upload.</summary>
         public bool DisableTelemetry { get; set; }
-        /// <summary>Point the blocked-servers endpoint at an unreachable host so the client's server blacklist stays empty.</summary>
         public bool DisableServerBlacklist { get; set; }
     }
 }

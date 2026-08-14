@@ -6,19 +6,17 @@ namespace OrangLauncher.Managers
     public class OptiFineVersion
     {
         public string FileName { get; set; } = "";
-        /// <summary>Minecraft version the build targets, e.g. "1.21.11".</summary>
+        //Minecraft version the build targets, e.g. "1.21.11"
         public string McVersion { get; set; } = "";
-        /// <summary>Edition string, e.g. "HD U J9" or "HD U K1 pre2".</summary>
         public string Edition { get; set; } = "";
         public bool IsPreview { get; set; }
         public string DisplayName => $"OptiFine {McVersion} {Edition}{(IsPreview ? " (preview)" : "")}";
     }
 
-    /// <summary>
-    /// OptiFine download support. optifine.net has no API, so this scrapes the
-    /// downloads page for available builds and resolves the tokenized download link
-    /// from the ad page (adloadx?f=X → downloadx?f=X&x=TOKEN).
-    /// </summary>
+    // optifine.net has no API so this scrapes the
+    // downloads page for builds and gives the tokenized download link
+    // from the ad page adloadx?f=X > downloadx?f=X&x=TOKEN.
+
     public static class OptiFineClient
     {
         private const string DownloadsUrl = "https://optifine.net/downloads";
@@ -38,7 +36,7 @@ namespace OrangLauncher.Managers
         private static readonly Regex NameRegex = new(@"^(preview_)?OptiFine_([0-9][0-9.]*?)_(.+)\.jar$", RegexOptions.Compiled);
         private static readonly Regex TokenRegex = new(@"downloadx\?f=[^""'<> ]+", RegexOptions.Compiled);
 
-        /// <summary>All OptiFine builds listed on optifine.net, newest first (page order). Cached for 30 minutes.</summary>
+        // All OptiFine builds listed on optifine.net, newest first
         public static async Task<List<OptiFineVersion>> ListVersionsAsync(bool includePreviews = true)
         {
             if (_cache == null || DateTime.UtcNow - _cacheTime > TimeSpan.FromMinutes(30))
@@ -65,15 +63,13 @@ namespace OrangLauncher.Managers
             }
             return includePreviews ? _cache.ToList() : _cache.Where(v => !v.IsPreview).ToList();
         }
-
-        /// <summary>Builds for one Minecraft version, newest first.</summary>
         public static async Task<List<OptiFineVersion>> GetVersionsForAsync(string mcVersion, bool includePreviews = true)
         {
             var all = await ListVersionsAsync(includePreviews);
             return all.Where(v => v.McVersion == mcVersion).ToList();
         }
 
-        /// <summary>Resolves the real (tokenized) download URL for a build.</summary>
+        // Resolves the real tokenized download
         public static async Task<string?> GetDownloadUrlAsync(string fileName)
         {
             var html = await Http.GetStringAsync($"{SiteBase}adloadx?f={Uri.EscapeDataString(fileName)}");
@@ -81,7 +77,7 @@ namespace OrangLauncher.Managers
             return m.Success ? SiteBase + m.Value.Replace("&amp;", "&") : null;
         }
 
-        /// <summary>Downloads a build to destDir; returns the jar path.</summary>
+        // download a build to destDir; returns the jar path. All rights to optifine team
         public static async Task<string?> DownloadAsync(OptiFineVersion version, string destDir, IProgress<double>? progress = null)
         {
             var url = await GetDownloadUrlAsync(version.FileName);
@@ -126,7 +122,4 @@ namespace OrangLauncher.Managers
             catch
             {
                 return false;
-            }
-        }
-    }
-}
+}   }   }   }

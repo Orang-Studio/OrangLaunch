@@ -3,13 +3,7 @@
                     xmlns:system="clr-namespace:System;assembly=mscorlib">
     <system:Double x:Key="GlobalButtonHeight">30</system:Double>
     <system:Double x:Key="GlobalButtonWidth">150</system:Double>
-    
-    
     <system:Double x:Key="GlobalButtonIconSize">16</system:Double>
-    
-    
     <system:Double x:Key="GlobalButtonFontSize">12</system:Double>
-
-
     <system:Double x:Key="GlobalTabFontSize">12</system:Double>
 </ResourceDictionary>

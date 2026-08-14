@@ -5,11 +5,6 @@ using OrangLauncher.Managers;
 
 namespace OrangLauncher
 {
-    /// <summary>
-    /// First-run welcome wizard (5 pages: greeting, account, Java, first profile,
-    /// settings), mirroring the Linux launcher's setup flow. Shown as an overlay
-    /// on top of the main window.
-    /// </summary>
     public partial class MainWindow
     {
         private const int WizardPageCount = 5;
@@ -350,8 +345,7 @@ namespace OrangLauncher
                 await ShowMessageAsync(string.Format(TW("WIZARD_PROFILE_NAME_TAKEN", "A profile called '{0}' already exists."), name));
                 return false;
             }
-            // Same flow as the profile editor: install the mod loader first, then
-            // store the installed version id (e.g. fabric-loader-x.y.z-26.2).
+            // Same flow as the profile editor install the mod loader first, then store the installed version id
             var installedVersionName = version;
             if (loader != "vanilla")
             {

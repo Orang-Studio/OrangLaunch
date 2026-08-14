@@ -236,10 +236,11 @@ namespace OrangLauncher
                 var url = $"https://api.modrinth.com/v2/project/{projectId}/version";
                 var response = await client.GetStringAsync(url);
                 var versions = JsonDocument.Parse(response);
+                var candidates = new List<JsonElement>();
                 foreach (var version in versions.RootElement.EnumerateArray())
                 {
                     var gameVersions = version.GetProperty("game_versions");
-                    // Unknown target version: fall back to newest rather than matching nothing.
+                    // unknown target version fall back to newest
                     bool gameVersionMatch = string.IsNullOrEmpty(_gameVersion);
                     foreach (var gv in gameVersions.EnumerateArray())
                     {
@@ -267,6 +268,10 @@ namespace OrangLauncher
                         }
                         if (!loaderMatch) continue;
                     }
+                    candidates.Add(version);
+                }
+                foreach (var version in OrderByStability(candidates))
+                {
                     var files = version.GetProperty("files");
                     foreach (var file in files.EnumerateArray())
                     {
@@ -295,6 +300,17 @@ namespace OrangLauncher
             catch { }
             return null;
         }
+        private static IEnumerable<JsonElement> OrderByStability(IEnumerable<JsonElement> versions)
+            => versions
+                .OrderBy(v => (v.TryGetProperty("version_type", out var t) ? t.GetString() : "release")?.ToLowerInvariant() switch
+                {
+                    "release" => 0,
+                    "beta" => 1,
+                    "alpha" => 2,
+                    _ => 3,
+                })
+                .ThenByDescending(v => v.TryGetProperty("date_published", out var d) && d.TryGetDateTime(out var dt)
+                    ? dt : DateTime.MinValue);
         private string ExtractModName(string fileName)
         {
             var name = Path.GetFileNameWithoutExtension(fileName);

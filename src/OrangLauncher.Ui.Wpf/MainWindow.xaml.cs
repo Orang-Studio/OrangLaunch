@@ -39,46 +39,47 @@ namespace OrangLauncher
                      } 
                      catch {}
                 }
-                string iconName = "minecraft-green.png"; 
-                if (!string.IsNullOrEmpty(instance.ModLoader) && 
-                    !instance.ModLoader.Equals("vanilla", StringComparison.OrdinalIgnoreCase) && 
-                    !instance.ModLoader.Equals("none", StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrWhiteSpace(instance.ModLoader))
+                string loaderLower = instance.ModLoader?.Trim().ToLowerInvariant() ?? "";
+                bool isModded = loaderLower is not ("" or "vanilla" or "none");
+                // if we don't have art for that specific loader fall back to the generic modded block.
+                var candidateNames = isModded
+                    ? new[] { System.IO.Path.Combine("loaders", $"{loaderLower}.png"), "minecraft-blue.png" }
+                    : new[] { "minecraft-green.png" };
+                foreach (var iconName in candidateNames)
                 {
-                    iconName = "minecraft-blue.png";
-                }
-                string[] checkPaths =
-                [
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "oranglaunch", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "oranglaunch", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "oranglaunch", "images", iconName),
-                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "launcher", "OrangLauncher", "OrangLauncher", "Other", "images", iconName),
-                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "launcher", "oranglaunch", "images", iconName)
-                ];
-                foreach (var path in checkPaths)
-                {
-                     try 
-                     {
-                         var fullPath = System.IO.Path.GetFullPath(path);
-                         if (File.Exists(fullPath))
+                    string[] checkPaths =
+                    [
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "oranglaunch", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "oranglaunch", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "oranglaunch", "images", iconName),
+                        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "launcher", "OrangLauncher", "OrangLauncher", "Other", "images", iconName),
+                        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "launcher", "oranglaunch", "images", iconName)
+                    ];
+                    foreach (var path in checkPaths)
+                    {
+                         try
                          {
-                            BitmapImage bitmap = new();
-                            bitmap.BeginInit();
-                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmap.UriSource = new Uri(fullPath, UriKind.Absolute);
-                            bitmap.EndInit();
-                            return bitmap;
+                             var fullPath = System.IO.Path.GetFullPath(path);
+                             if (File.Exists(fullPath))
+                             {
+                                BitmapImage bitmap = new();
+                                bitmap.BeginInit();
+                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmap.UriSource = new Uri(fullPath, UriKind.Absolute);
+                                bitmap.EndInit();
+                                return bitmap;
+                             }
                          }
-                     }
-                     catch {}
+                         catch {}
+                    }
                 }
             }
-            return null; 
+            return null;
         }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
@@ -529,7 +530,7 @@ namespace OrangLauncher
                     StartupState.PendingMrpackPath = null;
                     await ImportMrpackFileAsync(mrpack);
                 }
-                // Repair profiles whose mod loader was never really installed.
+                // repair profiles whose mod loader was never really installed.
                 try
                 {
                     var repaired = await InstanceRepairer.RepairAllAsync(msg => LogMessage(msg));
@@ -1158,46 +1159,54 @@ namespace OrangLauncher
             }
         }
         private void LoadInstanceIcon(MinecraftInstance? instance)
+            => LoadLoaderIcon(instance?.ModLoader, instance?.Icon);
+        private void UpdateEditViewIcon()
+        {
+            var loader = (ProfileModLoaderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            LoadLoaderIcon(loader, _tempIconPath);
+        }
+        private void LoadLoaderIcon(string? modLoader, string? customIconPath)
         {
             try
             {
-                if (instance != null && !string.IsNullOrEmpty(instance.Icon) && File.Exists(instance.Icon))
+                if (!string.IsNullOrEmpty(customIconPath) && File.Exists(customIconPath))
                 {
                     var bitmap = new BitmapImage();
                     bitmap.BeginInit();
                     bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.UriSource = new Uri(instance.Icon, UriKind.Absolute);
+                    bitmap.UriSource = new Uri(customIconPath, UriKind.Absolute);
                     bitmap.EndInit();
                     InstanceIconImage.Source = bitmap;
                     return;
                 }
-                string iconName = "minecraft-green.png";
-                if (instance != null && !string.IsNullOrEmpty(instance.ModLoader) &&
-                    !instance.ModLoader.Equals("vanilla", StringComparison.OrdinalIgnoreCase) &&
-                    !instance.ModLoader.Equals("none", StringComparison.OrdinalIgnoreCase))
+                string loaderLower = modLoader?.Trim().ToLowerInvariant() ?? "";
+                bool isModded = loaderLower is not ("" or "vanilla" or "none");
+                string[] iconNames = isModded
+                    ? [System.IO.Path.Combine("loaders", $"{loaderLower}.png"), "minecraft-blue.png"]
+                    : ["minecraft-green.png"];
+                foreach (var iconName in iconNames)
                 {
-                    iconName = "minecraft-blue.png";
-                }
-                string[] checkPaths =
-                [
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Other", "images", iconName),
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Other", "images", iconName),
-                ];
-                foreach (var path in checkPaths)
-                {
-                    var fullPath = System.IO.Path.GetFullPath(path);
-                    if (File.Exists(fullPath))
+                    string[] checkPaths =
+                    [
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Other", "images", iconName),
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Other", "images", iconName),
+                    ];
+                    foreach (var path in checkPaths)
                     {
-                        var bitmap = new BitmapImage();
-                        bitmap.BeginInit();
-                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                        bitmap.UriSource = new Uri(fullPath, UriKind.Absolute);
-                        bitmap.EndInit();
-                        InstanceIconImage.Source = bitmap;
-                        return;
+                        var fullPath = System.IO.Path.GetFullPath(path);
+                        if (File.Exists(fullPath))
+                        {
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.UriSource = new Uri(fullPath, UriKind.Absolute);
+                            bitmap.EndInit();
+                            InstanceIconImage.Source = bitmap;
+                            return;
+                        }
                     }
                 }
                 InstanceIconImage.Source = null;
@@ -1356,7 +1365,7 @@ namespace OrangLauncher
             PlayButton.IsEnabled = false;
             try
             {
-                string version = "1.21.11";
+                string version = "26.2";
                 string ramStr = "2096";
                 string javaArgs = "";
                 string modLoader = "None";
@@ -1555,7 +1564,7 @@ namespace OrangLauncher
         private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (ProfileComboBox.SelectedItem is ComboBoxItem item && item.Tag is UserProfile profile) { ProfileManager.Instance.SetSelectedProfile(profile.Uuid); StatusText = $"Welcome {profile.Username}!"; } }
         private void ProfileVersionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // MC version drives which loader versions exist - re-run the loader cascade.
+            // mc version drives which loader versions exist
             if (ProfileModLoaderComboBox.SelectedItem == null)
                 ProfileModLoaderComboBox.SelectedIndex = 0; // fires the cascade itself
             else
@@ -1566,6 +1575,7 @@ namespace OrangLauncher
             if (ProfileModLoaderComboBox.SelectedItem is ComboBoxItem selected)
             {
                 var loaderType = selected.Tag?.ToString()?.ToLower() ?? "";
+                UpdateEditViewIcon();
                 var mcVersion = ProfileVersionComboBox.SelectedItem?.ToString() ?? ProfileVersionComboBox.Text;
                 if (string.IsNullOrEmpty(mcVersion) && _isEditingInstance && !string.IsNullOrEmpty(_editingVersion))
                     mcVersion = _editingVersion;
@@ -1692,8 +1702,7 @@ namespace OrangLauncher
             }
             if (string.IsNullOrWhiteSpace(version))
             {
-                // Default .minecraft profile: read what is actually installed instead
-                // of assuming a version, so update checks match the loader's version.
+                // default .minecraft profile read what actually installed instead
                 var detected = InstalledVersionDetector.Detect(PlatformPaths.GetMinecraftDir());
                 version = detected.GameVersion ?? "";
                 loader = detected.Loader ?? "vanilla";
@@ -1728,8 +1737,6 @@ namespace OrangLauncher
         }
         private void LogMessage(string message)
         {
-            // BeginInvoke keeps game-output threads from stalling on a busy UI, and
-            // the cap keeps the TextBox from choking on very long sessions.
             Dispatcher.BeginInvoke(() =>
             {
                 if (LogTextBox.Text.Length > 400_000)
@@ -1750,7 +1757,7 @@ namespace OrangLauncher
             ProfileNameTextBox.Text = name;
             ProfileModLoaderComboBox.SelectedIndex = 0;
             ProfileRamSlider.Value = 4096;
-            LoadInstanceIcon(null);
+            UpdateEditViewIcon();
             EditProfileTitle.Text = "Create Profile";
             SaveProfileButton.Content = "Create";
             ShowEditView();
@@ -2053,7 +2060,6 @@ namespace OrangLauncher
         {
             try
             {
-                // Local modded version folders (fabric/forge/optifine installs) are launch
                 // details resolved by LaunchGame, not selectable base versions.
                 var versions = await GameProfileManager.Instance.GetVersions();
                 var versionIds = versions.Select(v => v.Id).Distinct().ToList();
@@ -2107,6 +2113,9 @@ namespace OrangLauncher
                 UseDiscreteGpuCheckBox.Checked += (s, e) => SaveSettings();
                 UseDiscreteGpuCheckBox.Unchecked += (s, e) => SaveSettings();
                 AddPluginButton.Click += AddPluginButton_Click;
+                JavaArchitectureCheckBox.IsChecked = JavaManager.PreferredArchitecture == JavaArchitecture.X86;
+                JavaArchitectureCheckBox.Checked += (s, e) => { JavaManager.PreferredArchitecture = JavaArchitecture.X86; RefreshJavaVersionsList(); };
+                JavaArchitectureCheckBox.Unchecked += (s, e) => { JavaManager.PreferredArchitecture = JavaArchitecture.X64; RefreshJavaVersionsList(); };
                 RefreshPluginsButton.Click += RefreshPluginsButton_Click;
                 CheckUpdatesButton.Click += CheckUpdatesButton_Click;
                 OpenGitHubButton.Click += OpenGitHubButton_Click;
@@ -2133,10 +2142,15 @@ namespace OrangLauncher
             foreach (var ver in JavaManager.GetAvailableVersions())
             {
                 bool installed = JavaManager.IsJavaInstalled(ver);
+                var arch = JavaManager.ResolveArchitecture(ver);
+                var fellBack = arch != JavaManager.PreferredArchitecture;
+                var archLabel = arch == JavaArchitecture.X86 ? "x86" : "x64";
                 items.Add(new JavaVersionViewModel
                 {
                     Version = ver,
-                    Label = $"Java {ver} (Adoptium)",
+                    Label = fellBack
+                        ? $"Java {ver} (Adoptium, {archLabel} - no 32-bit build available)"
+                        : $"Java {ver} (Adoptium, {archLabel})",
                     Status = installed ? installedText : notInstalledText,
                     InstallButtonText = installText,
                     UninstallButtonText = uninstallText,
@@ -2259,9 +2273,6 @@ namespace OrangLauncher
                         if (config.TryGetValue("theme", out var theme))
                         {
                             var themeName = theme.GetString() ?? "arc";
-                            // Config may hold a WinUI theme key (dark/light/system) after an
-                            // interface-style switch; map it to this UI's keys so the selector
-                            // never ends up blank.
                             themeName = themeName switch
                             {
                                 "arc" or "dark_prism" or "light" => themeName,
@@ -2357,8 +2368,6 @@ namespace OrangLauncher
             {
                 var configPath = System.IO.Path.Combine(PlatformPaths.GetDataDir(), "launcher_config.json");
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(configPath)!);
-                // Merge over the existing file so keys owned by others (setupDone,
-                // the WinUI UI's settings, ...) survive a save from this UI.
                 var config = new Dictionary<string, object>();
                 try
                 {
@@ -2564,9 +2573,6 @@ namespace OrangLauncher
                     }
                     catch (Exception ex)
                     {
-                        // Log only: the control can still initialize itself from its
-                        // Source, and a transient failure must not hijack the user's
-                        // saved renderer choice (config is shared with the WinUI build).
                         LogMessage($"WebView2 initialization failed: {ex.Message}");
                     }
                 }
@@ -2672,7 +2678,7 @@ namespace OrangLauncher
             Margin = new Thickness(0, 2, 0, 2),
             Foreground = (System.Windows.Media.Brush)FindResource("FgPrimaryBrush")
         };
-        /// <summary>Turns the news HTML into styled blocks: headings, paragraphs and bullets.</summary>
+        // turns the news HTML into styled blocks
         private IEnumerable<UIElement> BuildNewsBlocks(string html)
         {
             var blocks = new List<UIElement>();
@@ -2815,7 +2821,7 @@ namespace OrangLauncher
                 }
                 if (skinInfo != null)
                 {
-                    // Native 3D preview from the raw skin texture (no web renders).
+                    // native 3D preview from the raw skin.
                     byte[]? skinBytes = string.IsNullOrEmpty(skinInfo.SkinUrl) ? null : await SkinManager.GetSkinBytesAsync(skinInfo.SkinUrl);
                     byte[]? capeBytes = string.IsNullOrEmpty(skinInfo.CapeUrl) ? null : await SkinManager.GetSkinBytesAsync(skinInfo.CapeUrl);
                     await Dispatcher.InvokeAsync(() =>

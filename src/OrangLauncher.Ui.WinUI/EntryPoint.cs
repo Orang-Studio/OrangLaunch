@@ -21,10 +21,6 @@ namespace OrangLauncher.Ui.WinUI
             };
             Application.Start(_ =>
             {
-                // Route await continuations back to the UI thread. Without this,
-                // every async handler resumes on the thread pool and the first UI
-                // access after an await throws (content store, skin preview, play
-                // button and update check all broke this way).
                 var dq = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
                 System.Threading.SynchronizationContext.SetSynchronizationContext(
                     new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(dq));

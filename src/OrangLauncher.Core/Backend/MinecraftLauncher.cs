@@ -265,6 +265,8 @@ namespace OrangLauncher.Backend
             if (meta.Libraries != null) merged.AddRange(meta.Libraries);
             if (parent.Libraries != null) merged.AddRange(parent.Libraries);
             meta.Libraries = merged;
+            if (string.IsNullOrEmpty(meta.Jar))
+                meta.Jar = !string.IsNullOrEmpty(parent.Jar) ? parent.Jar : meta.InheritsFrom;
             meta.InheritsFrom = null;
             return meta;
         }
@@ -402,6 +404,10 @@ namespace OrangLauncher.Backend
             }
             return nativesDir;
         }
+        private static string GetJarVersionId(VersionMeta meta, string versionId)
+            => !string.IsNullOrEmpty(meta.Jar) ? meta.Jar
+             : !string.IsNullOrEmpty(meta.InheritsFrom) ? meta.InheritsFrom
+             : versionId;
         private string BuildClasspath(VersionMeta meta, string versionId)
         {
             var separator = Path.PathSeparator.ToString();
@@ -427,38 +433,10 @@ namespace OrangLauncher.Backend
                     }
                 }
             }
-            var versionJsonPath = _path.GetVersionJsonPath(versionId);
-            if (!File.Exists(versionJsonPath))
-            {
-                var versionDir = _path.GetVersionDir(versionId);
-                var jsonFiles = Directory.Exists(versionDir) ? Directory.GetFiles(versionDir, "*.json") : Array.Empty<string>();
-                if (jsonFiles.Length > 0) versionJsonPath = jsonFiles[0];
-            }
-            string? inheritsFrom = null;
-            if (File.Exists(versionJsonPath))
-            {
-                try
-                {
-                    var raw = File.ReadAllText(versionJsonPath);
-                    var rawMeta = JsonSerializer.Deserialize<VersionMeta>(raw);
-                    inheritsFrom = rawMeta?.InheritsFrom;
-                }
-                catch { }
-            }
-            if (!string.IsNullOrEmpty(inheritsFrom))
-            {
-                var parentJar = _path.GetVersionJarPath(inheritsFrom);
-                if (File.Exists(parentJar) && !entries.Contains(parentJar))
-                    entries.Add(parentJar);
-            }
-            else
-            {
-                var clientJar = _path.GetVersionJarPath(versionId);
-                if (File.Exists(clientJar))
-                {
-                    entries.Add(clientJar);
-                }
-            }
+            // must agree with GetJarVersionId
+            var clientJar = _path.GetVersionJarPath(GetJarVersionId(meta, versionId));
+            if (File.Exists(clientJar) && !entries.Contains(clientJar))
+                entries.Add(clientJar);
             return string.Join(separator, entries);
         }
         private string? ResolveLibraryPath(string mavenName)
@@ -563,7 +541,7 @@ namespace OrangLauncher.Backend
                 {"${classpath}", classpath},
                 {"${classpath_separator}", Path.PathSeparator.ToString()},
                 {"${library_directory}", _path.Libraries},
-                {"${version_name}", versionId},
+                {"${version_name}", GetJarVersionId(meta, versionId)},
             };
             if (meta.Arguments?.Jvm != null)
             {
@@ -716,8 +694,10 @@ namespace OrangLauncher.Backend
                     var installedVersions = Directory.GetDirectories(javaInstallDir)
                         .Select(d => Path.GetFileName(d))
                         .Where(n => n != null && n.StartsWith("java-"))
-                        .Select(n => { var s = n!["java-".Length..]; return int.TryParse(s, out var v) ? v : 0; })
+                        .Select(n => new string(n!["java-".Length..].TakeWhile(char.IsDigit).ToArray()))
+                        .Select(s => int.TryParse(s, out var v) ? v : 0)
                         .Where(v => v >= majorVersion)
+                        .Distinct()
                         .OrderBy(v => v);
                     foreach (var ver in installedVersions)
                     {

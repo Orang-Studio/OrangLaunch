@@ -20,8 +20,7 @@ namespace OrangLauncher
         public string ProjectType { get; set; } = "";
         public string? IconUrl { get; set; }
         public string DetailsLabel { get; set; } = "Details";
-        /// <summary>Modrinth projects have a detail page; OrangLib packs do not.</summary>
-        public Visibility DetailsVisibility => ProjectType == "oranglib" ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility DetailsVisibility => Visibility.Visible;
         private string _installLabel = "Install";
         public string InstallLabel { get => _installLabel; set { _installLabel = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InstallLabel))); } }
         private System.Windows.Media.ImageSource? _icon;
@@ -41,21 +40,21 @@ namespace OrangLauncher
         private DetectedGameSetup? _contentDefaultSetup;
         private bool _suppressContentSearch;
 
-        /// <summary>
-        /// Game version + loader the install should match. For the default .minecraft
-        /// target this is detected from the installed versions folder, so a Fabric
-        /// 26.2 setup gets 26.2 files instead of the newest release.
-        /// </summary>
         private (string? Version, string? Loader) GetContentTargetSetup(MinecraftInstance? instance)
         {
-            if (instance != null) return (instance.Version, NormalizedLoader(instance));
+            if (instance != null)
+            {
+                var gameVersion = InstalledVersionDetector.ResolveGameVersion(
+                    instance.InstalledVersionName ?? instance.Version,
+                    instance.MinecraftDir, PlatformPaths.GetMinecraftDir());
+                return (gameVersion, NormalizedLoader(instance));
+            }
             _contentDefaultSetup ??= InstalledVersionDetector.Detect(PlatformPaths.GetMinecraftDir());
             var loader = _contentDefaultSetup.Loader;
             if (loader is not ("fabric" or "forge" or "quilt" or "neoforge")) loader = null;
             return (_contentDefaultSetup.GameVersion, loader);
         }
 
-        /// <summary>Localizes UI added in 7.0 (Content page, UI style toggle, skin viewer hint).</summary>
         private void ApplyNewUiLocalization()
         {
             try
@@ -66,7 +65,6 @@ namespace OrangLauncher
                 ContentTabDataPacks.Content = LocalizationManager.GetString("CONTENT_DATA_PACKS", "Data Packs");
                 ContentTabShaders.Content = LocalizationManager.GetString("CONTENT_SHADERS", "Shaders");
                 ContentTabModpacks.Content = LocalizationManager.GetString("CONTENT_MODPACKS", "Modpacks");
-                ContentTabOrangLib.Content = LocalizationManager.GetString("CONTENT_ORANGLIB", "OrangLib");
                 ContentSearchButton.Content = LocalizationManager.GetString("CONTENT_SEARCH", "Search");
                 if (ContentSortComboBox.Items.Count > 3)
                 {
@@ -107,7 +105,10 @@ namespace OrangLauncher
             var selected = ContentInstanceComboBox.SelectedIndex;
             _contentDefaultSetup = null; // re-detect .minecraft on next use
             _contentInstances = InstanceManager.Instance.GetInstances();
-            var names = new List<string> { LocalizationManager.GetString("CONTENT_DEFAULT_TARGET", "Default (.minecraft)") };
+            var (defaultVersion, defaultLoader) = GetContentTargetSetup(null);
+            var defaultName = LocalizationManager.GetString("CONTENT_DEFAULT_TARGET", "Default (.minecraft)");
+            if (defaultVersion != null) defaultName += $" - {defaultLoader ?? "vanilla"} {defaultVersion}";
+            var names = new List<string> { defaultName };
             names.AddRange(_contentInstances.Select(i => $"{i.Name} ({i.ModLoader} {i.Version})"));
             ContentInstanceComboBox.ItemsSource = names;
             ContentInstanceComboBox.SelectedIndex = selected >= 0 && selected < names.Count ? selected : 0;
@@ -176,18 +177,11 @@ namespace OrangLauncher
                 UpdateContentPaging();
                 return;
             }
-            if (_contentType == "oranglib")
-            {
-                await RunOrangLibSearchAsync();
-                return;
-            }
             try
             {
                 ContentInfoText.Text = LocalizationManager.GetString("CONTENT_SEARCHING", "Searching Modrinth...");
                 var sort = (ContentSortComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "relevance";
                 var (targetVersion, targetLoader) = GetContentTargetSetup(instance);
-                // Modpacks install into their own new instance, so the current
-                // instance's game version/loader must not restrict them.
                 var mcVersion = _contentType == "modpack" ? null : targetVersion;
                 var loader = _contentType == "mod" ? targetLoader : null;
                 var result = await ModrinthClient.SearchAsync(ContentSearchBox.Text, _contentType,
@@ -221,49 +215,11 @@ namespace OrangLauncher
             UpdateContentPaging();
         }
 
-        private async Task RunOrangLibSearchAsync()
-        {
-            try
-            {
-                ContentInfoText.Text = LocalizationManager.GetString("CONTENT_SEARCHING_ORANGLIB", "Loading OrangLib modpacks...");
-                var packs = await OrangLibClient.GetModpacksAsync();
-                var query = ContentSearchBox.Text?.Trim() ?? "";
-                if (query.Length > 0)
-                    packs = packs.Where(p => p.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                                          || p.Description.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
-                _contentTotal = packs.Count;
-                foreach (var pack in packs.Skip(_contentOffset).Take(ContentPageSize))
-                {
-                    var vm = new ContentItemVm
-                    {
-                        Title = pack.Name,
-                        Author = string.IsNullOrEmpty(pack.Author) ? "" : $"by {pack.Author}",
-                        Description = pack.Description,
-                        Meta = $"{pack.Downloads:N0} downloads{(string.IsNullOrEmpty(pack.GameVersion) ? "" : $"  |  MC {pack.GameVersion}")}  |  OrangLib",
-                        Slug = pack.Id.ToString(),
-                        ProjectType = "oranglib",
-                        IconUrl = pack.AbsoluteIconUrl,
-                        InstallLabel = LocalizationManager.GetString("CONTENT_INSTALL", "Install")
-                    };
-                    _contentItems.Add(vm);
-                    _ = LoadContentIconAsync(vm, pack.AbsoluteIconUrl);
-                }
-                ContentInfoText.Text = _contentTotal == 0
-                    ? LocalizationManager.GetString("CONTENT_NO_RESULTS", "No results.")
-                    : $"{_contentTotal:N0} OrangLib modpacks";
-            }
-            catch (Exception ex)
-            {
-                ContentInfoText.Text = $"OrangLib load failed: {ex.Message}";
-            }
-            UpdateContentPaging();
-        }
-
         private async Task LoadContentIconAsync(ContentItemVm vm, string? iconUrl)
         {
             var bytes = await ModrinthClient.GetIconAsync(iconUrl);
             if (bytes == null) return;
-            // Decode in Core via SkiaSharp - handles WebP icons that WIC/WPF cannot.
+            // Decode in Core via SkiaSharp handles WebP
             var decoded = Rendering.SkinTextureLoader.DecodeToBgra(bytes);
             if (decoded == null) return;
             await Dispatcher.InvokeAsync(() =>
@@ -288,10 +244,6 @@ namespace OrangLauncher
         }
 
 
-        /// <summary>
-        /// Makes a freshly imported modpack instance visible everywhere without the
-        /// combo refresh kicking off a new search that would clobber the status text.
-        /// </summary>
         private void RefreshInstancesAfterModpackInstall()
         {
             _suppressContentSearch = true;
@@ -305,7 +257,7 @@ namespace OrangLauncher
         }
         private void ContentDetailsButton_Click(object sender, RoutedEventArgs e)
         {
-            if ((sender as FrameworkElement)?.Tag is not ContentItemVm vm || vm.ProjectType == "oranglib") return;
+            if ((sender as FrameworkElement)?.Tag is not ContentItemVm vm) return;
             try
             {
                 var instance = GetContentTargetInstance();
@@ -351,41 +303,6 @@ namespace OrangLauncher
             ContentInfoText.Text = message;
         }
 
-        private async Task InstallOrangLibPackAsync(ContentItemVm vm)
-        {
-            ContentInfoText.Text = $"Loading versions of {vm.Title}...";
-            var versions = await OrangLibClient.GetVersionsAsync(vm.Slug);
-            var version = versions.FirstOrDefault();
-            if (version == null)
-            {
-                vm.InstallLabel = LocalizationManager.GetString("CONTENT_NO_FILE", "No file");
-                ContentInfoText.Text = $"{vm.Title} has no downloadable versions.";
-                return;
-            }
-            bool isMrpack = version.FileName.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase);
-            var destDir = isMrpack
-                ? Path.Combine(Path.GetTempPath(), "OrangLauncher", "modpacks")
-                : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            ContentInfoText.Text = $"Downloading {version.FileName}...";
-            var file = await OrangLibClient.DownloadVersionAsync(vm.Slug, version, destDir);
-            if (isMrpack)
-            {
-                ContentInfoText.Text = $"Installing modpack {vm.Title}...";
-                var importer = new ModpackImporter();
-                var (success, message, _) = await importer.ImportMrPackAsync(file);
-                vm.InstallLabel = success
-                    ? LocalizationManager.GetString("CONTENT_INSTALLED", "Installed")
-                    : LocalizationManager.GetString("CONTENT_FAILED", "Failed");
-                if (success) RefreshInstancesAfterModpackInstall();
-                ContentInfoText.Text = message;
-            }
-            else
-            {
-                vm.InstallLabel = LocalizationManager.GetString("CONTENT_INSTALLED", "Installed");
-                ContentInfoText.Text = $"Downloaded to {file}";
-            }
-        }
-
         private async void ContentInstallButton_Click(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.Tag is not ContentItemVm vm) return;
@@ -394,7 +311,6 @@ namespace OrangLauncher
             try
             {
                 if (vm.ProjectType == "modpack") { await InstallModrinthModpackAsync(vm); return; }
-                if (vm.ProjectType == "oranglib") { await InstallOrangLibPackAsync(vm); return; }
                 if (vm.ProjectType == "mod" && instance != null && IsVanillaInstance(instance))
                 {
                     ContentInfoText.Text = LocalizationManager.GetString("CONTENT_VANILLA_BLOCKED", "Vanilla profiles cannot use mods.");

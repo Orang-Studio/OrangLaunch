@@ -105,15 +105,10 @@ namespace OrangLauncher.Managers
                 return true;
             if (dirName.Equals(mcVersion, StringComparison.Ordinal))
                 return true;
-            var mcParts = mcVersion.Split('.');
-            if (mcParts.Length >= 2)
-            {
-                string neoPrefix = mcParts.Length >= 3
-                    ? $"{mcParts[1]}.{mcParts[2]}."
-                    : $"{mcParts[1]}.0.";
-                if (dirName.StartsWith($"neoforge-{neoPrefix}", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            var neoPrefix = OrangLauncher.Backend.NeoForgeVersionLoader.GetVersionPrefix(mcVersion);
+            if (neoPrefix != null &&
+                dirName.StartsWith($"neoforge-{neoPrefix}", StringComparison.OrdinalIgnoreCase))
+                return true;
             return false;
         }
         private List<GameProfile> _profiles = new();
@@ -157,12 +152,6 @@ namespace OrangLauncher.Managers
                 return Path.Combine(profile.GameDir, "mods");
             return Path.Combine(PlatformPaths.GetMinecraftDir(), "mods");
         }
-        /// <summary>
-        /// Vanilla versions from the Mojang manifest, newest first (manifest order).
-        /// Includes snapshots, april-fools builds and historic beta/alpha versions;
-        /// local modded version folders are never listed (those are launch details,
-        /// not selectable base versions).
-        /// </summary>
         public async Task<List<VersionInfo>> GetVersions(bool releasesOnly = false)
         {
             var versions = new List<VersionInfo>();
@@ -233,8 +222,8 @@ namespace OrangLauncher.Managers
                 bool isVanilla = modLoaderLower == "vanilla" || modLoaderLower == "none";
                 if (!isVanilla)
                 {
-                    // The profile references a modded version that was never installed
-                    // (e.g. created before loader install existed). Install it now.
+                    // the profile references a modded version that was never installed
+                    // install it now.
                     try
                     {
                         Debug.WriteLine($"[Launch] {versionToLaunch} not installed - installing {modLoaderLower} for {version}...");
