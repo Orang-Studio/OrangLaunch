@@ -14,7 +14,6 @@ TAB_PROFILE_EDITOR=Profila redaktors
 TAB_NEWS=Jaunumi
 TAB_SKIN_CAPE=Āda & Apmetnis
 NEWS_TITLE=Minecraft Jaunumi
-ORANGLIB_REFRESH=Atsvaidzināt
 NEWS_LOADING=Notiek ziņu ielāde...
 PROFILE_EDITOR_LABEL=Profila redaktors
 PROFILE_EDITOR_DESC=Šeit būtu profila pārvaldības funkcionalitāte
@@ -216,7 +215,6 @@ UPDATE_NOTES=Jaunumi
 LOADING_NEWS=Ielādē jaunumus...
 FAILED_LOAD_NEWS=Neizdevās ielādēt jaunumus
 LAUNCHER_LOG=Launcher žurnāls
-ORANGLIB=OrangLib
 SERVERS=Serveri
 SERVERS_TITLE=Daudzspēlētāju serveri
 SERVERS_REFRESH=Atjaunināt
@@ -416,14 +414,6 @@ SETTINGS_ACCOUNTS_TITLE=Konti
 SETTINGS_ACCOUNTS_DESC=Pārvaldiet savus Minecraft kontus.
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=OrangLib Modpack
-ORANGLIB_AVAILABLE_MODPACKS=Pieejamie Modpack
-ORANGLIB_VERSIONS=Versijas
-ORANGLIB_DOWNLOAD_INSTALL=Lejupielādēt / Instalēt
-ORANGLIB_OPEN_DESKTOP=Atvērt darbvirsmu
-ORANGLIB_LOADED_COUNT=Ielādēti {count} modpack no OrangLib.
-ORANGLIB_READY_MODPACK=Gatavs
-ORANGLIB_SEARCH_PLACEHOLDER=Meklēt modpack...
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Ierakstiet, lai filtrētu žurnālus...

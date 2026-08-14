@@ -36,7 +36,6 @@ MC_RUNNING=Minecraft {version} läuft als {username}.
 LOADING_NEWS=Neuigkeiten werden geladen...
 FAILED_LOAD_NEWS=Neuigkeiten konnten nicht geladen werden
 LAUNCHER_LOG=Launcher-Log
-ORANGLIB=OrangLib
 SERVERS=Server
 SERVERS_TITLE=Mehrspieler-Server
 SERVERS_REFRESH=Aktualisieren
@@ -408,15 +407,6 @@ SETTINGS_DEBUG_SHOW_SPAWN_LOG=Protokolle anzeigen
 SETTINGS_ACCOUNTS_DESC=Verwalten Sie alle Ihre Konten hinzufügen/entfernen. Offline bedeutet, dass Sie einen Benutzernamen wählen.
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=OrangLib Modpacks
-ORANGLIB_AVAILABLE_MODPACKS=Verfügbare Modpacks
-ORANGLIB_VERSIONS=Versionen
-ORANGLIB_DOWNLOAD_INSTALL=Herunterladen / Installieren
-ORANGLIB_OPEN_DESKTOP=Desktop öffnen
-ORANGLIB_LOADED_COUNT={count} Modpacks aus OrangLib geladen.
-ORANGLIB_READY_MODPACK=Bereit
-ORANGLIB_REFRESH=Aktualisieren
-ORANGLIB_SEARCH_PLACEHOLDER=Modpacks durchsuchen...
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Zum Filtern eingeben...

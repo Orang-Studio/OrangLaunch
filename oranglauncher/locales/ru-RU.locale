@@ -9,7 +9,6 @@ STOP_MUSIC=Остановить музыку
 PROFILE=Профиль
 NEW_PROFILE=Новый профиль
 WELCOME=Добро пожаловать!
-ORANGLIB_REFRESH=Обновить
 WELCOME_USER=Добро пожаловать, {username}!\nГотовы играть
 SETTINGS=Настройки
 LANGUAGE=Язык:
@@ -39,7 +38,6 @@ NEWS_TITLE=Новости Minecraft
 LOADING_NEWS=Загрузка новостей...
 FAILED_LOAD_NEWS=Не удалось загрузить новости
 LAUNCHER_LOG=Журнал запуска
-ORANGLIB=OrangLib
 SERVERS=Серверы
 SERVERS_TITLE=Многопользовательские серверы
 SERVERS_REFRESH=Обновить
@@ -410,14 +408,6 @@ SETTINGS_DEBUG_SHOW_SPAWN_LOG=Показать журналы
 SETTINGS_ACCOUNTS_DESC=Управляйте всеми своими аккаунтами. Офлайн означает выбор имени пользователя.
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=МодПаки OrangLib
-ORANGLIB_AVAILABLE_MODPACKS=Доступные МодПаки
-ORANGLIB_VERSIONS=Версии
-ORANGLIB_DOWNLOAD_INSTALL=Загрузить / Установить
-ORANGLIB_OPEN_DESKTOP=Открыть рабочий стол
-ORANGLIB_LOADED_COUNT=Загружено {count} модпаков из OrangLib.
-ORANGLIB_READY_MODPACK=Готов
-ORANGLIB_SEARCH_PLACEHOLDER=Поиск модпаков...
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Введите для фильтрации журналов...

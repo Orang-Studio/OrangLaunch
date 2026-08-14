@@ -28,7 +28,6 @@ FAILED_LOAD_VERSIONS=Nepavyko įkelti versijų
 VERSION_OLDS=Alfa/Beta/Infdev/Indev (senos)
 VERSION_SNAPSHOTS=Instantinės versijos
 VERSION_CUSTOM=Pasirinktinis
-ORANGLIB_REFRESH=Atnaujinti
 VERSION_CURRENT=1.1+
 LAUNCHING_PROGRESS=Paleidžiama {version}...\nRuošiami žaidimo failai, {percent:.1f}% atlikta.
 MC_RUNNING=Minecraft {version} paleistas nuo {username}.
@@ -38,7 +37,6 @@ NEWS_TITLE=Minecraft naujienos
 LOADING_NEWS=Įkeliamos naujienos...
 FAILED_LOAD_NEWS=Nepavyko įkelti naujienų
 LAUNCHER_LOG=Žurnalas
-ORANGLIB=OrangLib
 SERVERS=Serveriai
 SERVERS_TITLE=Minecraft serveriai
 SERVERS_REFRESH=Atnaujinti
@@ -405,14 +403,6 @@ SETTINGS_DEBUG_SHOW_SPAWN_LOG=Duoti žurnalą
 SETTINGS_ACCOUNTS_DESC=Tvarkyti visas savo paskyras.
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=OrangLib Modpackai
-ORANGLIB_AVAILABLE_MODPACKS=Galimi Modpackai
-ORANGLIB_VERSIONS=Versijos
-ORANGLIB_DOWNLOAD_INSTALL=Atsisiųsti / Įdiegti
-ORANGLIB_OPEN_DESKTOP=Atidaryti darbalaukį
-ORANGLIB_LOADED_COUNT=Įkelta {count} modpackų iš OrangLib.
-ORANGLIB_READY_MODPACK=Paruošta
-ORANGLIB_SEARCH_PLACEHOLDER=Ieškoti modpackų...
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Įveskite norėdami filtruoti žurnalus...

@@ -8,7 +8,6 @@ PLAY_MUSIC=Odtwórz muzykę
 STOP_MUSIC=Zatrzymaj muzykę
 PROFILE=Profil
 NEW_PROFILE=Nowy profil
-ORANGLIB_REFRESH=Odśwież
 WELCOME=Witaj!
 WELCOME_USER=Witaj, {username}!\nGotowy do gry
 SETTINGS=Ustawienia
@@ -39,7 +38,6 @@ NEWS_TITLE=Nowości Minecraft
 LOADING_NEWS=Ładowanie nowości...
 FAILED_LOAD_NEWS=Nie udało się załadować nowości
 LAUNCHER_LOG=Dziennik
-ORANGLIB=OrangLib
 SERVERS=Serwery
 SERVERS_TITLE=Serwery wieloosobowe
 SERVERS_REFRESH=Odśwież
@@ -410,14 +408,6 @@ SETTINGS_DEBUG_SHOW_SPAWN_LOG=Pokaż dzienniki
 SETTINGS_ACCOUNTS_DESC=Zarządzaj wszystkimi swoimi kontami. Offline oznacza wybranie nazwy użytkownika.
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=Modpacki OrangLib
-ORANGLIB_AVAILABLE_MODPACKS=Dostępne Modpacki
-ORANGLIB_VERSIONS=Wersje
-ORANGLIB_DOWNLOAD_INSTALL=Pobierz / Zainstaluj
-ORANGLIB_OPEN_DESKTOP=Otwórz Pulpit
-ORANGLIB_LOADED_COUNT=Załadowano {count} modpacków z OrangLib.
-ORANGLIB_READY_MODPACK=Gotowe
-ORANGLIB_SEARCH_PLACEHOLDER=Szukaj modpacków...
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Wpisz, aby filtrować dzienniki...

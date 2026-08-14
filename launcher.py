@@ -84,6 +84,77 @@ from minecraft_launcher_lib.mod_loader import Neoforge
 import subprocess as _sp
 import re as _re
 
+class _NeoforgeCompat(Neoforge):
+    """
+    Fixes two bugs in minecraft_launcher_lib's built-in NeoForge support
+    """
+    _LEGACY_MC_VERSION = "1.20.1"
+    _LEGACY_API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge"
+    _API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
+
+    @staticmethod
+    def _version_prefix(minecraft_version):
+        """
+        NeoForge prefix (with trailing dot) identifying builds for this
+        Minecraft version, or None if NeoForge cannot target it.
+
+        A NeoForge version encodes the full Minecraft version it targets,
+        minus the legacy "1." prefix, padded with a patch of 0, then a
+        build number. Verified against the installers' "inheritsFrom":
+            MC 1.21.1 -> 21.1.248        (old scheme: "1." dropped, 2 parts)
+            MC 1.21   -> 21.0.x          (patch padded to 0)
+            MC 26.1   -> 26.1.0.19-beta  (new scheme: no "1.", 3 parts)
+            MC 26.1.2 -> 26.1.2.95
+        Padding matters: MC 26.1 must not pick up 26.1.2.x builds, which
+        target Minecraft 26.1.2 instead.
+        """
+        if not minecraft_version:
+            return None
+        parts = minecraft_version.split(".")
+        legacy_scheme = parts[0] == "1"
+        comps = parts[1:] if legacy_scheme else parts[:]
+        target = 2 if legacy_scheme else 3
+        if not comps or len(comps) > target:
+            return None
+        comps += ["0"] * (target - len(comps))
+        # Snapshots and April Fools' names have no build under this scheme.
+        if not all(c.isdigit() for c in comps):
+            return None
+        return ".".join(comps) + "."
+
+    def get_loader_versions(self, minecraft_version, stable_only):
+        if minecraft_version == self._LEGACY_MC_VERSION:
+            url, prefix = self._LEGACY_API_URL, f"{self._LEGACY_MC_VERSION}-"
+        else:
+            url, prefix = self._API_URL, self._version_prefix(minecraft_version)
+            if prefix is None:
+                return []
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            versions = [v for v in resp.json().get("versions", []) if v.startswith(prefix)]
+        except Exception as e:
+            print(f"[DEBUG] Failed to fetch NeoForge versions: {e}")
+            return []
+        if stable_only:
+            stable = [v for v in versions if "beta" not in v and "alpha" not in v]
+            if stable:
+                versions = stable
+        versions.reverse()
+        return versions
+
+    def get_installer_url(self, minecraft_version, loader_version):
+        if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
+            return (f"https://maven.neoforged.net/releases/net/neoforged/forge/"
+                    f"{loader_version}/forge-{loader_version}-installer.jar")
+        return super().get_installer_url(minecraft_version, loader_version)
+
+    def get_installed_version(self, minecraft_version, loader_version):
+        if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
+            suffix = loader_version[len(self._LEGACY_MC_VERSION) + 1:]
+            return f"{self._LEGACY_MC_VERSION}-forge-{suffix}"
+        return super().get_installed_version(minecraft_version, loader_version)
+
 pygame = None
 pygame_available = False
 pygame_mixer_initialized = False
@@ -212,13 +283,10 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 
-CURRENT_VERSION = "7.0.0"
+CURRENT_VERSION = "7.1.0"
 REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
-ORANGLIB_API_URL = os.environ.get("ORANGLIB_API_URL", "https://api.oranges.lt")
-ORANGLIB_DESKTOP_DIR = Path.home() / "Desktop"
-ORANGLIB_TEMP_DIR = Path(tempfile.gettempdir()) / "oranglauncher" / "oranglib_downloads"
 def check_for_updates():
     def _parse_version(v):
         clean = v.split("-")[0].lstrip("v")
@@ -2776,9 +2844,10 @@ class ModrinthPackImporter:
             if not compatible_versions:
                 print(f"[MRPACK] No compatible version found for {mod_name}")
                 return False
-            latest_version = compatible_versions[0]
+            latest_version = pick_modrinth_version(compatible_versions)
             version_number = latest_version.get("version_number", "unknown")
-            print(f"[MRPACK] Found compatible version: {version_number}")
+            print(f"[MRPACK] Found compatible version: {version_number} "
+                  f"({latest_version.get('version_type', 'release')})")
             files = latest_version.get("files", [])
             if not files:
                 print(f"[MRPACK] No files found for {mod_name}")
@@ -2973,6 +3042,34 @@ def import_curseforge_pack(zip_path, launcher=None):
     return importer.import_zip(zip_path)
 
 MODRINTH_API_BASE = "https://api.modrinth.com/v2"
+
+# release < beta < alpha: lower sorts first, i.e. is preferred.
+_MODRINTH_CHANNEL_RANK = {"release": 0, "beta": 1, "alpha": 2}
+
+
+def order_modrinth_versions(versions):
+    """
+    Order Modrinth versions by preference: stable releases first, then beta,
+    then alpha, and newest first within each channel.
+
+    Preferring the newest build regardless of channel silently pulls in
+    prereleases whose internals other mods have not caught up with. Real
+    example: for MC 26.2, Iris ships only 1.11.2, built against the Sodium
+    0.9.1 release; grabbing the newer Sodium 0.9.2-alpha.4 makes Iris's
+    compatibility mixin fail to inject and the game crashes on world load.
+    """
+    # Two stable sorts: newest first, then group by channel, which keeps the
+    # newest build within whichever channel wins.
+    ordered = sorted(versions or [], key=lambda v: v.get("date_published") or "", reverse=True)
+    ordered.sort(key=lambda v: _MODRINTH_CHANNEL_RANK.get(
+        (v.get("version_type") or "release").lower(), 3))
+    return ordered
+
+
+def pick_modrinth_version(versions):
+    """Best version to install from an already game-version/loader-filtered list."""
+    ordered = order_modrinth_versions(versions)
+    return ordered[0] if ordered else None
 
 
 def _normalize_query_from_filename(filename: str) -> str:
@@ -3190,15 +3287,15 @@ class ModrinthUpdater:
         if aggressive:
             loader_matches = [v for v in versions if loader_l in [l.lower() for l in v.get('loaders', [])] and _is_version_compatible(v, game_version)]
             if loader_matches:
-                loader_matches.sort(key=lambda x: x.get('date_published') or '', reverse=True)
-                self._log(f"[Modrinth] Aggressive mode: selected {loader_matches[0].get('version_number')}")
-                return loader_matches[0]
+                # Stable channel first, newest within it - see pick_modrinth_version.
+                best = pick_modrinth_version(loader_matches)
+                self._log(f"[Modrinth] Aggressive mode: selected {best.get('version_number')}")
+                return best
 
         for bucket in (exact_matches, newer_or_equal_patch, older_patch, fallback_matches):
             compat = [v for v in bucket if _is_version_compatible(v, game_version)]
             if compat:
-                compat.sort(key=lambda x: x.get('date_published') or '', reverse=True)
-                return compat[0]
+                return pick_modrinth_version(compat)
         return None
 
     def _download_url_to_path(self, url: str, dest_path: Path) -> bool:
@@ -5385,12 +5482,15 @@ class GameProfilesTab:
         self._refresh_profiles_list()
     def _load_icons(self):
         base = find_resource("oranglauncher/images")
+        loaders = ("forge", "fabric", "quilt", "neoforge", "optifine")
         if not base or not base.exists():
             print("Warning: images directory not found")
             def _load_icon(filename):
                 return None
             self.icons["vanilla"] = _load_icon('minecraft-green.png')
             self.icons["modded"] = _load_icon('minecraft-blue.png')
+            for loader in loaders:
+                self.icons[loader] = None
             return
         def _load_icon(filename):
             try:
@@ -5408,6 +5508,10 @@ class GameProfilesTab:
                 return None
         self.icons["vanilla"] = _load_icon('minecraft-green.png')
         self.icons["modded"] = _load_icon('minecraft-blue.png')
+        # Modded instances show their mod loader's icon instead of the generic
+        # modded block; fall back to that generic block if a loader has no art.
+        for loader in loaders:
+            self.icons[loader] = _load_icon(f'loaders/{loader}.png')
     def _load_versions(self):
         try:
             versions = get_available_versions()
@@ -5573,8 +5677,11 @@ class GameProfilesTab:
             except Exception as e:
                 print(f"Failed to read icon file: {e}")
         if not icon:
-            icon_key = 'vanilla' if instance.mod_loader.lower() == 'vanilla' else 'modded'
-            icon = self.icons.get(icon_key)
+            loader_lower = (instance.mod_loader or '').lower()
+            if loader_lower in ('vanilla', 'none', ''):
+                icon = self.icons.get('vanilla')
+            else:
+                icon = self.icons.get(loader_lower) or self.icons.get('modded')
         icon_label = tk.Label(frame, bg=self._get_card_bg())
         if icon:
             icon_label.configure(image=icon)
@@ -5808,8 +5915,14 @@ class GameProfilesTab:
         self.form_title_var = tk.StringVar(value=self.parent._t("GAME_PROFILES_CREATE_TITLE"))
         tk.Label(self.form_view, textvariable=self.form_title_var, font=("Segoe UI", 16, "bold"), 
                  fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).pack(pady=(10, 20))
-        self.form_icon_label = tk.Label(self.form_view, bg=self._get_card_bg())
-        self.form_icon_label.pack()
+        form_icon_wrap = tk.Frame(self.form_view, bg=self._get_card_bg(), height=72)
+        form_icon_wrap.pack(fill="x")
+        form_icon_wrap.pack_propagate(False)
+        self.form_icon_label = tk.Label(form_icon_wrap, bg=self._get_card_bg())
+        # place() centers using the wrapper's real on-screen pixel width at
+        # render time, so the logo lands dead-center regardless of platform
+        # DPI/theme quirks that can throw off pack()'s default centering.
+        self.form_icon_label.place(relx=0.5, rely=0.5, anchor="center")
         form_container = tk.Frame(self.form_view, bg=self._get_card_bg())
         form_container.pack(pady=20, fill="x")
         form_container.columnconfigure(0, weight=1)
@@ -5871,8 +5984,11 @@ class GameProfilesTab:
         back_btn.bind("<Button-1>", lambda e: self._show_list_view())
         tk.Label(self.settings_view, text=self.parent._t("GAME_PROFILES_EDIT_TITLE"), font=("Segoe UI", 16, "bold"),
                  fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).pack(pady=(10, 20))
-        self.settings_icon_label = tk.Label(self.settings_view, bg=self._get_card_bg())
-        self.settings_icon_label.pack()
+        settings_icon_wrap = tk.Frame(self.settings_view, bg=self._get_card_bg(), height=72)
+        settings_icon_wrap.pack(fill="x")
+        settings_icon_wrap.pack_propagate(False)
+        self.settings_icon_label = tk.Label(settings_icon_wrap, bg=self._get_card_bg())
+        self.settings_icon_label.place(relx=0.5, rely=0.5, anchor="center")
         settings_container = tk.Frame(self.settings_view, bg=self._get_card_bg())
         settings_container.pack(pady=20, fill="x")
         settings_container.columnconfigure(0, weight=1)
@@ -6009,8 +6125,10 @@ class GameProfilesTab:
         discard_btn.pack(side="left", padx=6)
     def _on_loader_change(self):
         loader = self.loader_var.get().lower()
-        icon_key = "vanilla" if loader == "vanilla" else "modded"
-        icon = self.icons.get(icon_key)
+        if loader in ('vanilla', 'none', ''):
+            icon = self.icons.get('vanilla')
+        else:
+            icon = self.icons.get(loader) or self.icons.get('modded')
         self.form_icon_label.configure(image=icon)
         self.form_icon_label.image = icon  # type: ignore
         self.loader_version_combo.configure(state="disabled" if loader == "vanilla" else "readonly")
@@ -6048,8 +6166,7 @@ class GameProfilesTab:
                 forge_versions = minecraft_launcher_lib.forge.list_forge_versions()
                 return [v for v in reversed(forge_versions) if v.startswith(f"{mc_version}-")]
             if loader == "neoforge":
-                from minecraft_launcher_lib.mod_loader import Neoforge
-                nf = Neoforge()
+                nf = _NeoforgeCompat()
                 versions = nf.get_loader_versions(mc_version, True)
                 if not versions:
                     versions = nf.get_loader_versions(mc_version, False)
@@ -6136,8 +6253,11 @@ class GameProfilesTab:
             except Exception as e:
                 print(f"Failed to load custom icon: {e}")
         if not icon:
-            icon_key = 'vanilla' if instance.mod_loader.lower() == 'vanilla' else 'modded'
-            icon = self.icons.get(icon_key)
+            loader_lower = (instance.mod_loader or '').lower()
+            if loader_lower in ('vanilla', 'none', ''):
+                icon = self.icons.get('vanilla')
+            else:
+                icon = self.icons.get(loader_lower) or self.icons.get('modded')
         if icon:
             self.settings_icon_label.configure(image=icon)
             self.settings_icon_label.image = icon  # type: ignore
@@ -7871,8 +7991,7 @@ class ContentStoreTab:
                            ("resourcepack", self.parent._t('CONTENT_TYPE_RESOURCEPACKS')),
                            ("datapack", self.parent._t('CONTENT_TYPE_DATAPACKS')),
                            ("shader", self.parent._t('CONTENT_TYPE_SHADERS')),
-                           ("modpack", self.parent._t('CONTENT_TYPE_MODPACKS')),
-                           ("oranglib", self.parent._t('ORANGLIB'))):
+                           ("modpack", self.parent._t('CONTENT_TYPE_MODPACKS'))):
             btn = tk.Button(types_row, text=label, relief="flat", padx=14, pady=6,
                             bg=self._color('bg_secondary'), fg=self._color('fg_primary'),
                             activebackground=self._color('accent_primary'),
@@ -7926,27 +8045,13 @@ class ContentStoreTab:
         self.page_label.pack(side="left", padx=10)
         self.next_btn = ttk.Button(paging, text=self._t('CONTENT_NEXT'), command=self._next_page, state="disabled")
         self.next_btn.pack(side="left")
-        self.oranglib_section = tk.Frame(self.container, bg=bg)
-        self._oranglib_tab = None
         self._highlight_type_button()
         self.refresh_instances()
         self._update_sections()
         self._run_search()
 
-    def _ensure_oranglib(self):
-        if self._oranglib_tab is None:
-            self._oranglib_tab = OrangLibTab(self.parent)
-            self._oranglib_tab.build_tab(self.oranglib_section)
-            self.parent.oranglib_tab = self._oranglib_tab
-
     def _update_sections(self):
-        if self.content_type == "oranglib":
-            self.modrinth_section.pack_forget()
-            self.oranglib_section.pack(fill="both", expand=True)
-            self._ensure_oranglib()
-        else:
-            self.oranglib_section.pack_forget()
-            self.modrinth_section.pack(fill="both", expand=True)
+        self.modrinth_section.pack(fill="both", expand=True)
         if self.content_type == "modpack":
             self.import_mrpack_btn.pack(side="right")
             try:
@@ -7955,11 +8060,10 @@ class ContentStoreTab:
                 pass
         else:
             self.import_mrpack_btn.pack_forget()
-            if self.content_type != "oranglib":
-                try:
-                    self.instance_combo.pack(side="left", padx=(8, 0))
-                except Exception:
-                    pass
+            try:
+                self.instance_combo.pack(side="left", padx=(8, 0))
+            except Exception:
+                pass
 
     def _import_local_mrpack(self):
         path = filedialog.askopenfilename(
@@ -8015,8 +8119,7 @@ class ContentStoreTab:
         self.offset = 0
         self._highlight_type_button()
         self._update_sections()
-        if tag != "oranglib":
-            self._run_search()
+        self._run_search()
 
     def _on_search(self):
         self.offset = 0
@@ -8169,8 +8272,7 @@ class ContentStoreTab:
                                              params=params, timeout=25)
                 response.raise_for_status()
                 versions = response.json() or []
-                versions.sort(key=lambda v: v.get("date_published", ""), reverse=True)
-                chosen = versions[0] if versions else None
+                chosen = pick_modrinth_version(versions)
                 files = (chosen or {}).get("files", [])
                 file_info = next((f for f in files if f.get("primary")), files[0] if files else None)
                 if not file_info:
@@ -8211,8 +8313,7 @@ class ContentStoreTab:
             try:
                 response = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version", timeout=25)
                 response.raise_for_status()
-                versions = response.json() or []
-                versions.sort(key=lambda v: v.get("date_published", ""), reverse=True)
+                versions = order_modrinth_versions(response.json() or [])
                 file_info = None
                 for v in versions:
                     files = v.get("files", [])
@@ -8465,373 +8566,6 @@ class ChromiumWidget(tk.Frame):
                 pass
         self.browser = None
         super().destroy()
-
-
-class OrangLibTab:
-    def __init__(self, parent):
-        self.parent = parent
-        self.theme_manager = parent.theme_manager
-        self.modpacks = []
-        self.versions = []
-        self.selected_modpack = None
-        self.search_var = tk.StringVar()
-    def build_tab(self, parent):
-        # parent is either a notebook (own tab) or a plain frame (embedded in Content tab)
-        if isinstance(parent, (ttk.Notebook, tk.ttk.Notebook)):
-            tab_frame = ttk.Frame(parent)
-            parent.add(tab_frame, text=self.parent._t('ORANGLIB'))
-        else:
-            tab_frame = parent
-        container = tk.Frame(tab_frame, bg=self.theme_manager.get_color('bg_primary'))
-        container.pack(fill="both", expand=True, padx=14, pady=14)
-        header = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
-        header.pack(fill="x", pady=(0, 10))
-        title = tk.Label(
-            header,
-            text=self.parent._t("ORANGLIB_MODPACKS_TITLE"),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 14, "bold")
-        )
-        title.pack(side="left")
-        refresh_btn = tk.Button(
-            header,
-            text=self.parent._t("ORANGLIB_REFRESH"),
-            command=self.refresh_modpacks,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        refresh_btn.pack(side="right")
-        body = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
-        body.pack(fill="both", expand=True)
-        left_panel = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
-        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        left_header = tk.Frame(left_panel, bg=self.theme_manager.get_color('bg_primary'))
-        left_header.pack(fill="x", padx=10, pady=(10, 6))
-        tk.Label(
-            left_header,
-            text=self.parent._t("ORANGLIB_AVAILABLE_MODPACKS"),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 10, "bold")
-        ).pack(side="left")
-
-        search_entry = tk.Entry(
-            left_panel,
-            textvariable=self.search_var,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            insertbackground=self.theme_manager.get_color('fg_primary'),
-            relief="flat",
-            font=("Segoe UI", 10)
-        )
-        search_entry.pack(fill="x", padx=10, pady=(0, 8), ipady=6)
-        search_entry.insert(0, self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"))
-        search_entry.config(fg=self.theme_manager.get_color('fg_secondary'))
-        def _on_search_focus_in(e):
-            if search_entry.get() == self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"):
-                search_entry.delete(0, tk.END)
-                search_entry.config(fg=self.theme_manager.get_color('fg_primary'))
-        def _on_search_focus_out(e):
-            if not search_entry.get():
-                search_entry.insert(0, self.parent._t("ORANGLIB_SEARCH_PLACEHOLDER"))
-                search_entry.config(fg=self.theme_manager.get_color('fg_secondary'))
-        search_entry.bind("<FocusIn>", _on_search_focus_in)
-        search_entry.bind("<FocusOut>", _on_search_focus_out)
-        self.search_var.trace_add('write', lambda *_: self._render_modpacks())
-        modpacks_list_wrap = tk.Frame(left_panel, bg=self.theme_manager.get_color('bg_primary'))
-        modpacks_list_wrap.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.modpacks_listbox = tk.Listbox(
-            modpacks_list_wrap,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            selectbackground=self.theme_manager.get_color('bg_hover'),
-            selectforeground=self.theme_manager.get_color('fg_primary'),
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            font=("Segoe UI", 10)
-        )
-        modpacks_scroll = ttk.Scrollbar(modpacks_list_wrap, orient="vertical", command=self.modpacks_listbox.yview)
-        self.modpacks_listbox.configure(yscrollcommand=modpacks_scroll.set)
-        self.modpacks_listbox.pack(side="left", fill="both", expand=True)
-        modpacks_scroll.pack(side="right", fill="y")
-        self.modpacks_listbox.bind("<<ListboxSelect>>", lambda _e: self._on_select_modpack())
-        right_panel = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
-        right_panel.pack(side="right", fill="both", expand=True, padx=(8, 0))
-
-        tk.Label(
-            right_panel,
-            text=self.parent._t("ORANGLIB_VERSIONS"),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 10, "bold")
-        ).pack(anchor="w", padx=10, pady=(10, 6))
-
-        versions_wrap = tk.Frame(right_panel, bg=self.theme_manager.get_color('bg_primary'))
-        versions_wrap.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.versions_listbox = tk.Listbox(
-            versions_wrap,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            selectbackground=self.theme_manager.get_color('bg_hover'),
-            selectforeground=self.theme_manager.get_color('fg_primary'),
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            font=("Segoe UI", 10)
-        )
-        versions_scroll = ttk.Scrollbar(versions_wrap, orient="vertical", command=self.versions_listbox.yview)
-        self.versions_listbox.configure(yscrollcommand=versions_scroll.set)
-        self.versions_listbox.pack(side="left", fill="both", expand=True)
-        versions_scroll.pack(side="right", fill="y")
-        action_bar = tk.Frame(right_panel, bg=self.theme_manager.get_color('bg_primary'))
-        action_bar.pack(fill="x", padx=10, pady=(0, 10))
-        self.download_btn = tk.Button(
-            action_bar,
-            text=self.parent._t("ORANGLIB_DOWNLOAD_INSTALL"),
-            command=self.download_selected,
-            bg=self.theme_manager.get_color('accent_primary'),
-            fg="#ffffff",
-            font=("Segoe UI", 9, "bold"),
-            bd=0,
-            padx=14,
-            pady=8,
-            cursor="hand2",
-            relief="flat",
-            state="disabled"
-        )
-        self.download_btn.pack(side="left", padx=(0, 8))
-        open_desktop_btn = tk.Button(
-            action_bar,
-            text=self.parent._t("ORANGLIB_OPEN_DESKTOP"),
-            command=self.open_desktop,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-            relief="flat"
-        )
-        open_desktop_btn.pack(side="left")
-        self.info_label = tk.Label(
-            right_panel,
-            text=self.parent._t("ORANGLIB_READY_MODPACK"),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_secondary'),
-            font=("Segoe UI", 9),
-            anchor="w",
-            justify="left"
-        )
-        self.info_label.pack(fill="x", padx=10, pady=(0, 10))
-        self.status_label = tk.Label(
-            container,
-            text=self.parent._t("ORANGLIB_READY_MODPACK"),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_secondary'),
-            font=("Segoe UI", 9),
-            anchor="w"
-        )
-        self.status_label.pack(fill="x")
-
-        self.versions_listbox.bind("<<ListboxSelect>>", lambda _e: self._on_select_version())
-        self.refresh_modpacks()
-
-    def _set_status(self, text):
-        self.status_label.config(text=text)
-
-    def _api_get(self, path, params=None):
-        return _http_session.get(f"{ORANGLIB_API_URL}{path}", params=params, timeout=25)
-
-    def refresh_modpacks(self):
-        self._set_status("Loading OrangLib modpacks...")
-
-        def worker():
-            try:
-                response = self._api_get("/modpacks", params={"page": 1, "page_size": 100, "sort_by": "updated"})
-                response.raise_for_status()
-                payload = response.json()
-                items = payload.get("items", []) if isinstance(payload, dict) else []
-                try:
-                    self.parent.after(0, lambda: self._apply_modpacks(items))
-                except RuntimeError:
-                    pass
-            except Exception as exc:
-                try:
-                    self.parent.after(0, lambda: self._set_status(f"Failed to load modpacks: {exc}"))
-                except RuntimeError:
-                    pass
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_modpacks(self, items):
-        self.modpacks = items or []
-        self.selected_modpack = None
-        self.versions = []
-        self._render_modpacks()
-        self._render_versions()
-        self.download_btn.config(state="disabled")
-        self.info_label.config(text=self.parent._t("ORANGLIB_LOADED_COUNT").format(count=len(self.modpacks)))
-        self._set_status(self.parent._t("ORANGLIB_READY_MODPACK"))
-
-    def _render_modpacks(self):
-        query = self.search_var.get().strip().lower()
-        self.modpacks_listbox.delete(0, tk.END)
-        self._filtered_modpacks = [
-            m for m in self.modpacks
-            if not query or query in (m.get("name", "").lower()) or query in (m.get("owner_username", "").lower())
-        ]
-        for item in self._filtered_modpacks:
-            name = item.get("name", "Unnamed")
-            owner = item.get("owner_username", "Unknown")
-            game_version = item.get("game_version", "?")
-            self.modpacks_listbox.insert(tk.END, f"{name}  •  {owner}  •  MC {game_version}")
-
-    def _on_select_modpack(self):
-        idxs = self.modpacks_listbox.curselection()
-        if not idxs:
-            return
-        idx = idxs[0]
-        if idx >= len(getattr(self, '_filtered_modpacks', [])):
-            return
-        self.selected_modpack = self._filtered_modpacks[idx]
-        modpack_id = self.selected_modpack.get("id")
-        self.versions = []
-        self._render_versions()
-        self.download_btn.config(state="disabled")
-        self._set_status("Loading versions...")
-
-        def worker():
-            try:
-                response = self._api_get(f"/modpacks/{modpack_id}")
-                response.raise_for_status()
-                payload = response.json()
-                versions = payload.get("versions", []) if isinstance(payload, dict) else []
-                self.parent.after(0, lambda: self._apply_versions(versions))
-            except Exception as exc:
-                self.parent.after(0, lambda: self._set_status(f"Failed to load versions: {exc}"))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_versions(self, versions):
-        self.versions = versions or []
-        self._render_versions()
-        self._set_status(f"Loaded {len(self.versions)} versions")
-
-    def _render_versions(self):
-        self.versions_listbox.delete(0, tk.END)
-        for version in self.versions:
-            version_no = version.get("version_number", "?")
-            file_name = version.get("file_name", "")
-            file_size = version.get("file_size", 0)
-            size_mb = file_size / (1024 * 1024) if file_size else 0
-            verdict = version.get("scan_verdict")
-            verdict_txt = f"[{verdict}]" if verdict else ""
-            self.versions_listbox.insert(tk.END, f"v{version_no}  •  {file_name}  •  {size_mb:.2f} MB {verdict_txt}".strip())
-
-    def _on_select_version(self):
-        version = self.get_selected_version()
-        if not version:
-            self.download_btn.config(state="disabled")
-            return
-        self.download_btn.config(state="normal")
-        file_name = (version.get("file_name") or "").lower()
-        if file_name.endswith('.mrpack'):
-            action = "Will download to temp and install into launcher profiles"
-        elif file_name.endswith('.zip'):
-            action = "Will download to Desktop"
-        elif '.tar.' in file_name:
-            action = "Will download to Desktop"
-        else:
-            action = "Unknown file extension"
-        self.info_label.config(text=action)
-
-    def get_selected_version(self):
-        idxs = self.versions_listbox.curselection()
-        if not idxs:
-            return None
-        idx = idxs[0]
-        if idx >= len(self.versions):
-            return None
-        return self.versions[idx]
-
-    def download_selected(self):
-        version = self.get_selected_version()
-        modpack = self.selected_modpack
-        if not version or not modpack:
-            return
-
-        modpack_id = modpack.get("id")
-        version_id = version.get("id")
-        file_name = version.get("file_name") or f"modpack_{modpack_id}_{version_id}"
-        download_url = f"{ORANGLIB_API_URL}/modpacks/{modpack_id}/versions/{version_id}/download"
-        lower_file = file_name.lower()
-
-        if lower_file.endswith('.mrpack'):
-            target_dir = ORANGLIB_TEMP_DIR
-        else:
-            target_dir = ORANGLIB_DESKTOP_DIR
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-        destination = target_dir / file_name
-
-        def worker():
-            try:
-                self.parent.after(0, lambda: self._set_status(f"Downloading {file_name}..."))
-                with _http_session.get(download_url, stream=True, timeout=60) as response:
-                    response.raise_for_status()
-                    total = int(response.headers.get('content-length', 0) or 0)
-                    downloaded = 0
-                    with open(destination, 'wb') as out:
-                        for chunk in response.iter_content(chunk_size=1024 * 128):
-                            if not chunk:
-                                continue
-                            out.write(chunk)
-                            downloaded += len(chunk)
-                            if total > 0:
-                                pct = int((downloaded / total) * 100)
-                                self.parent.after(0, lambda p=pct: self._set_status(f"Downloading {file_name}... {p}%"))
-
-                if lower_file.endswith('.mrpack'):
-                    self.parent.after(0, lambda: self._set_status("Installing .mrpack in launcher..."))
-                    success, message, profile_name = import_modpack(str(destination), self.parent)
-                    if success:
-                        self.parent.after(0, lambda: messagebox.showinfo("OrangLib", f"Installed MRPACK successfully.\n\nProfile: {profile_name}\n{message}"))
-                        if hasattr(self.parent, '_refresh_game_profiles'):
-                            self.parent.after(0, self.parent._refresh_game_profiles)
-                        self.parent.after(0, lambda: self._set_status("MRPACK installed successfully"))
-                    else:
-                        self.parent.after(0, lambda: messagebox.showerror("OrangLib", f"MRPACK install failed:\n{message}"))
-                        self.parent.after(0, lambda: self._set_status("MRPACK install failed"))
-                else:
-                    self.parent.after(0, lambda: self._set_status(f"Downloaded to {destination}"))
-                    self.parent.after(0, lambda: messagebox.showinfo("OrangLib", f"Downloaded:\n{destination}"))
-            except Exception as exc:
-                self.parent.after(0, lambda: self._set_status(f"Download failed: {exc}"))
-                self.parent.after(0, lambda: messagebox.showerror("OrangLib", f"Download failed:\n{exc}"))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def open_desktop(self):
-        try:
-            ORANGLIB_DESKTOP_DIR.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["xdg-open", str(ORANGLIB_DESKTOP_DIR)])
-        except Exception as exc:
-            messagebox.showerror("OrangLib", f"Could not open Desktop:\n{exc}")
-
-
-def build_oranglib_tab(launcher, notebook):
-    oranglib_tab = OrangLibTab(launcher)
-    oranglib_tab.build_tab(notebook)
-    launcher.oranglib_tab = oranglib_tab
 
 
 # minecraft server list ping thingy
@@ -9759,7 +9493,6 @@ def build_launcher_log_tab(launcher, notebook):
         if not getattr(launcher, '_log_buffer', None):
             messagebox.showinfo("mclo.gs", launcher._t("LOGS_NO_ENTRIES"))
             return
-        # keep the newest lines within the mclo.gs limits (25000 lines / 10 MiB)
         lines = [msg for msg, _ in launcher._log_buffer][-25000:]
         content = "\n".join(lines)
         if len(content.encode("utf-8")) > 10 * 1024 * 1024:
@@ -10237,8 +9970,6 @@ def ms_token_flow_interactive():
         msg = str(e).lower()
         if 'cancelled' in msg:
             raise Exception(f"Embedded browser login failed: {e}")
-        # Webview itself is broken/unavailable: let the user finish the login
-        # in their normal browser and paste the redirect URL back.
         print(f"[DEBUG] Webview login failed ({e}); falling back to system browser")
         return _ms_token_flow_browser()
 
@@ -10788,8 +10519,7 @@ def _wizard_loader_versions(loader, mc_version):
             fv = minecraft_launcher_lib.forge.list_forge_versions()
             return [v for v in reversed(fv) if v.startswith(f"{mc_version}-")]
         if loader == "neoforge":
-            
-            nf = Neoforge()
+            nf = _NeoforgeCompat()
             return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
         if loader == "fabric" and hasattr(minecraft_launcher_lib, "fabric"):
             return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
@@ -12478,7 +12208,7 @@ class MinecraftLauncher(tk.Tk):
                     elif mod_loader.lower() == "neoforge":
                         self._safe_append_log(f"[Launcher] Installing NeoForge...")
                         try:
-                            nf = Neoforge()
+                            nf = _NeoforgeCompat()
                             stored_nf = getattr(current_instance, 'loader_version', '') or ''
                             nf_versions = [stored_nf] if stored_nf else (nf.get_loader_versions(version, True) or nf.get_loader_versions(version, False))
                             if nf_versions:
@@ -13027,7 +12757,7 @@ class MinecraftLauncher(tk.Tk):
                     except Exception:
                         installed_id = None
                 elif loader.lower() == "neoforge":
-                    nf = Neoforge()
+                    nf = _NeoforgeCompat()
                     nf_loader_ver = loader_version
                     if not nf_loader_ver:
                         nf_versions = nf.get_loader_versions(instance.version, True) or nf.get_loader_versions(instance.version, False)

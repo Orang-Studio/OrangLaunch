@@ -40,7 +40,6 @@ UPDATE_NOTES=News
 LOADING_NEWS=Loading news...
 FAILED_LOAD_NEWS=Failed to load news
 LAUNCHER_LOG=Launcher Log
-ORANGLIB=OrangLib
 SERVERS=Servers
 SERVERS_TITLE=Multiplayer Servers
 SERVERS_REFRESH=Refresh
@@ -401,15 +400,6 @@ SETTINGS_ACCOUNTS_ADD_MS=Add Microsoft Account
 SETTINGS_ACCOUNTS_ADD_OFFLINE=Add Offline Account
 
 # OrangLib Tab Translations
-ORANGLIB_MODPACKS_TITLE=OrangLib Modpacks
-ORANGLIB_AVAILABLE_MODPACKS=Available Modpacks
-ORANGLIB_VERSIONS=Versions
-ORANGLIB_DOWNLOAD_INSTALL=Download / Install
-ORANGLIB_OPEN_DESKTOP=Open Desktop
-ORANGLIB_LOADED_COUNT=Loaded {count} modpacks from OrangLib.
-ORANGLIB_READY_MODPACK=Ready
-ORANGLIB_SEARCH_PLACEHOLDER=Search modpacks...
-ORANGLIB_REFRESH=Refresh
 
 # Logs Tab Translations
 LOGS_SEARCH_PLACEHOLDER=Type to filter logs...
