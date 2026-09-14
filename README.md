@@ -1,7 +1,7 @@
 
 <h1 align="center">Orange Launcher Linux</h1>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+  <img src="https://github.com/user-attachments/assets/7e9f1973-604e-4178-8c44-bca93e69c5df" alt="orange">
 </p>
 
 <h1 align="center">Orange Launcher Win10</h1>
