@@ -1,167 +1,164 @@
+# Welcome to main version of Orange Launcher! 
+# Here is the code for the launcher, written in Python 3.14 pi version in jokes. Rewrtitten to PySide6.
+# Recently edited by Adasjusk, 2024-06-05
+
+# imports
 import os
 import sys
-os.environ["GDK_BACKEND"] = "x11"
-if sys.platform.startswith("linux") and os.environ.get("ORANG_FC_PRELOAD") != "1":
-    try:
-        _exe = os.readlink("/proc/self/exe")
-    except OSError:
-        _exe = ""
-    if _exe and not os.path.basename(_exe).startswith("python"):
-        _fc = next((p for p in ("/usr/lib/libfontconfig.so.1", "/usr/lib64/libfontconfig.so.1",
-                                "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1") if os.path.exists(p)), None)
-        if _fc:
-            os.environ["ORANG_FC_PRELOAD"] = "1"
-            _pre = os.environ.get("LD_PRELOAD", "")
-            os.environ["LD_PRELOAD"] = _fc + (":" + _pre if _pre else "")
-            try:
-                os.execv(_exe, sys.argv)
-            except Exception:
-                pass
-os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-import builtins
-import tkinter as tk
-import platform
-import asyncio
 import atexit
-import weakref
-import threading
-import queue
-import time
-import glob
-import subprocess
-import traceback as tb
-import json
 import base64
-import urllib.parse
+import builtins
+import copy
+import glob
 import hashlib
+import importlib
 import importlib.util
-import os
-import minecraft_launcher_lib
-import requests
-import uuid as uuid_module
+import io
+import json
+import math
+import platform
+import queue
+import random
 import re
 import shutil
-import zipfile
+import socket
+import stat
+import struct
+import subprocess
 import tarfile
 import tempfile
+import threading
+import time
 import traceback
-import copy
-import tkinterweb
+import urllib.parse
+import uuid as uuid_module
+import weakref
 import webbrowser
-import gi
-gi.require_version("Gtk", "3.0")
-try:
-    gi.require_version("WebKit2", "4.1")
-except ValueError:
-    gi.require_version("WebKit2", "4.0")
-from gi.repository import Gtk, WebKit2, GdkX11
-try:
-    import webview
-except Exception:  # pywebview or its GTK/Qt backend can be missing
-    webview = None
-import random
-from tkinter import ttk, messagebox, scrolledtext, filedialog, simpledialog
-from datetime import datetime, timedelta
-from PIL import Image, ImageTk, ImageDraw, ImageOps
-import io
-import math
-from typing import List, Dict, Any, Optional, Union, Callable, Tuple
-try:
-    from pypresence.presence import Presence
-except ImportError:
-    Presence = None
+import zipfile
 from collections import deque
+from datetime import datetime, timedelta
 from pathlib import Path
-import pygame as _pygame
-import pygame as _pg
-import platform as _platform
-import uuid as _uuid
-import gi
-import socket, json, struct
-import re as _re_ansi
-import stat
-from minecraft_launcher_lib.mod_loader import Neoforge
-import subprocess as _sp
-import re as _re
+from typing import List, Dict, Any, Optional, Union, Callable, Tuple
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
-class _NeoforgeCompat(Neoforge):
-    """
-    Fixes two bugs in minecraft_launcher_lib's built-in NeoForge support
-    """
-    _LEGACY_MC_VERSION = "1.20.1"
-    _LEGACY_API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge"
-    _API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
 
-    @staticmethod
-    def _version_prefix(minecraft_version):
-        """
-        NeoForge prefix (with trailing dot) identifying builds for this
-        Minecraft version, or None if NeoForge cannot target it.
 
-        A NeoForge version encodes the full Minecraft version it targets,
-        minus the legacy "1." prefix, padded with a patch of 0, then a
-        build number. Verified against the installers' "inheritsFrom":
-            MC 1.21.1 -> 21.1.248        (old scheme: "1." dropped, 2 parts)
-            MC 1.21   -> 21.0.x          (patch padded to 0)
-            MC 26.1   -> 26.1.0.19-beta  (new scheme: no "1.", 3 parts)
-            MC 26.1.2 -> 26.1.2.95
-        Padding matters: MC 26.1 must not pick up 26.1.2.x builds, which
-        target Minecraft 26.1.2 instead.
-        """
-        if not minecraft_version:
-            return None
-        parts = minecraft_version.split(".")
-        legacy_scheme = parts[0] == "1"
-        comps = parts[1:] if legacy_scheme else parts[:]
-        target = 2 if legacy_scheme else 3
-        if not comps or len(comps) > target:
-            return None
-        comps += ["0"] * (target - len(comps))
-        # Snapshots and April Fools' names have no build under this scheme.
-        if not all(c.isdigit() for c in comps):
-            return None
-        return ".".join(comps) + "."
 
-    def get_loader_versions(self, minecraft_version, stable_only):
-        if minecraft_version == self._LEGACY_MC_VERSION:
-            url, prefix = self._LEGACY_API_URL, f"{self._LEGACY_MC_VERSION}-"
-        else:
-            url, prefix = self._API_URL, self._version_prefix(minecraft_version)
-            if prefix is None:
-                return []
-        try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            versions = [v for v in resp.json().get("versions", []) if v.startswith(prefix)]
-        except Exception as e:
-            print(f"[DEBUG] Failed to fetch NeoForge versions: {e}")
-            return []
-        if stable_only:
-            stable = [v for v in versions if "beta" not in v and "alpha" not in v]
-            if stable:
-                versions = stable
-        versions.reverse()
-        return versions
+class _LazyModule:
+    def __init__(self, name):
+        object.__setattr__(self, "_lazy_name", name)
+        object.__setattr__(self, "_lazy_mod", None)
+    def _lazy_load(self):
+        mod = object.__getattribute__(self, "_lazy_mod")
+        if mod is None:
+            mod = importlib.import_module(object.__getattribute__(self, "_lazy_name"))
+            object.__setattr__(self, "_lazy_mod", mod)
+        return mod
+    def __getattr__(self, name):
+        return getattr(self._lazy_load(), name)
+    def __setattr__(self, name, value):
+        setattr(self._lazy_load(), name, value)
+    def __bool__(self):
+        return True
 
-    def get_installer_url(self, minecraft_version, loader_version):
-        if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
-            return (f"https://maven.neoforged.net/releases/net/neoforged/forge/"
-                    f"{loader_version}/forge-{loader_version}-installer.jar")
-        return super().get_installer_url(minecraft_version, loader_version)
 
-    def get_installed_version(self, minecraft_version, loader_version):
-        if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
-            suffix = loader_version[len(self._LEGACY_MC_VERSION) + 1:]
-            return f"{self._LEGACY_MC_VERSION}-forge-{suffix}"
-        return super().get_installed_version(minecraft_version, loader_version)
+minecraft_launcher_lib = _LazyModule("minecraft_launcher_lib")
+requests = _LazyModule("requests")
+_NEOFORGE_COMPAT = [None]
 
-pygame = None
-pygame_available = False
-pygame_mixer_initialized = False
-pygame = _pygame
-pygame_available = True
-_http_session = requests.Session()
-_http_session.headers.update({"User-Agent": "Orang-Studio/OrangLaunch/7.0 (github.com/Orang-Studio/OrangLaunch)"})
+
+def _NeoforgeCompat():
+    if _NEOFORGE_COMPAT[0] is None:
+        from minecraft_launcher_lib.mod_loader import Neoforge
+        class _NeoforgeCompatImpl(Neoforge):
+            _LEGACY_MC_VERSION = "1.20.1"
+            _LEGACY_API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge"
+            _API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
+
+            @staticmethod
+            def _version_prefix(minecraft_version):
+                if not minecraft_version:
+                    return None
+                parts = minecraft_version.split(".")
+                legacy_scheme = parts[0] == "1"
+                comps = parts[1:] if legacy_scheme else parts[:]
+                target = 2 if legacy_scheme else 3
+                if not comps or len(comps) > target:
+                    return None
+                comps += ["0"] * (target - len(comps))
+                if not all(c.isdigit() for c in comps):
+                    return None
+                return ".".join(comps) + "."
+
+            def get_loader_versions(self, minecraft_version, stable_only):
+                if minecraft_version == self._LEGACY_MC_VERSION:
+                    url, prefix = self._LEGACY_API_URL, f"{self._LEGACY_MC_VERSION}-"
+                else:
+                    url, prefix = self._API_URL, self._version_prefix(minecraft_version)
+                    if prefix is None:
+                        return []
+                try:
+                    resp = requests.get(url, timeout=15)
+                    resp.raise_for_status()
+                    versions = [v for v in resp.json().get("versions", []) if v.startswith(prefix)]
+                except Exception as e:
+                    print(f"[DEBUG] Failed to fetch NeoForge versions: {e}")
+                    return []
+                if stable_only:
+                    stable = [v for v in versions if "beta" not in v and "alpha" not in v]
+                    if stable:
+                        versions = stable
+                versions.reverse()
+                return versions
+
+            def get_installer_url(self, minecraft_version, loader_version):
+                if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
+                    return (f"https://maven.neoforged.net/releases/net/neoforged/forge/"
+                            f"{loader_version}/forge-{loader_version}-installer.jar")
+                return super().get_installer_url(minecraft_version, loader_version)
+
+            def get_installed_version(self, minecraft_version, loader_version):
+                if loader_version.startswith(f"{self._LEGACY_MC_VERSION}-"):
+                    suffix = loader_version[len(self._LEGACY_MC_VERSION) + 1:]
+                    return f"{self._LEGACY_MC_VERSION}-forge-{suffix}"
+                return super().get_installed_version(minecraft_version, loader_version)
+
+        _NEOFORGE_COMPAT[0] = _NeoforgeCompatImpl
+    return _NEOFORGE_COMPAT[0]()
+
+def _qimage_rgba(source):
+    img = QtGui.QImage()
+    if isinstance(source, (bytes, bytearray)):
+        img.loadFromData(bytes(source))
+    else:
+        img.load(str(source))
+    if img.isNull():
+        raise ValueError("could not decode image")
+    return img.convertToFormat(QtGui.QImage.Format_RGBA8888)
+
+
+def _qimage_thumbnail(source, max_size):
+    img = _qimage_rgba(source)
+    if img.width() > max_size or img.height() > max_size:
+        img = img.scaled(max_size, max_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    return img
+
+class _LazySession:
+    def __init__(self):
+        object.__setattr__(self, "_session", None)
+    def _get(self):
+        session = object.__getattribute__(self, "_session")
+        if session is None:
+            session = requests.Session()
+            session.headers.update({"User-Agent": "Orang-Studio/OrangLaunch/7.0 (github.com/Orang-Studio/OrangLaunch)"})
+            object.__setattr__(self, "_session", session)
+        return session
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+    def __setattr__(self, name, value):
+        setattr(self._get(), name, value)
+
+_http_session = _LazySession()
 _image_cache: Dict[str, bytes] = {}
 _image_cache_lock = threading.Lock()
 
@@ -216,12 +213,14 @@ class MinecraftInstance:
         self.play_time = 0
         self.installed_version_id = installed_version_id
         self.env_vars = ""
+        self.opts = {}
         self.base_path = InstanceManager.get_instances_dir() / self.instance_id
         self.minecraft_dir = self.base_path / ".minecraft"
         self.mods_dir = self.minecraft_dir / "mods"
         self.saves_dir = self.minecraft_dir / "saves"
         self.resourcepacks_dir = self.minecraft_dir / "resourcepacks"
         self.shaderpacks_dir = self.minecraft_dir / "shaderpacks"
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -237,9 +236,18 @@ class MinecraftInstance:
             "play_time": self.play_time,
             "installed_version_id": self.installed_version_id,
             "env_vars": self.env_vars,
+            "opts": dict(self.opts),
             "base_path": str(self.base_path),
             "minecraft_dir": str(self.minecraft_dir)
         }
+    def opt(self, key, default=None):
+        value = self.opts.get(key)
+        return default if value in (None, "") else value
+    def set_opt(self, key, value):
+        if value is None or value == "" or value is False or value == 0:
+            self.opts.pop(key, None)
+        else:
+            self.opts[key] = value
     @classmethod
     def from_dict(cls, data: dict) -> 'MinecraftInstance':
         instance = cls(
@@ -258,6 +266,8 @@ class MinecraftInstance:
         instance.installed_version_id = data.get("installed_version_id")
         instance.env_vars = data.get("env_vars", "")
         instance.java_path = data.get("java_path", "")
+        opts = data.get("opts")
+        instance.opts = dict(opts) if isinstance(opts, dict) else {}
         return instance
     def create_directories(self):
         directories = [
@@ -282,10 +292,14 @@ class MinecraftInstance:
             return 0
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
-
-CURRENT_VERSION = "7.1.0"
+# Change this to the current version
+CURRENT_VERSION = "8.0.0"
+# If you fork, at least leave some credit in the code, thanks.
+# I'm not getting paid for this. Please don't sell this or use it for profit. 
+# I worked hard on this and I want to keep it free for everyone.
 REPO_OWNER = "Orang-Studio"
 REPO_NAME = "OrangLaunch"
+# Remember that changes to this will break the updater.
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 def check_for_updates():
     def _parse_version(v):
@@ -297,6 +311,7 @@ def check_for_updates():
 
     if shutil.which("yay") and (Path("/etc/arch-release").exists() or Path("/etc/manjaro-release").exists()):
         try:
+            # the aur api for the oranglauncher-bin package not the source package, as the source package is not maintained that well.
             response = _http_session.get("https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=oranglauncher-bin", timeout=5)
             if response.status_code == 200:
                 data = response.json()
@@ -346,6 +361,8 @@ def check_for_updates():
     except Exception as e:
         print(f"Update check failed: {e}")
         return False, CURRENT_VERSION, None, None
+
+    # the logic for the update
 def perform_update(download_url, launcher_root):
     if download_url == "AUR":
         terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "xterm", "kitty", "alacritty"]
@@ -382,7 +399,7 @@ def perform_update(download_url, launcher_root):
             with open(update_file, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-                
+                # temp directory for extraction
         extract_path = Path.home() / ".cache" / "oranglauncher" / "update_temp"
         if extract_path.exists():
             shutil.rmtree(extract_path)
@@ -405,6 +422,7 @@ def perform_update(download_url, launcher_root):
         update_script = Path.home() / ".cache" / "oranglauncher" / "apply_update.sh"
         python_exe = sys.executable
         main_script = Path(launcher_root) / "launcher.py"
+        # this is brittle
         script_content = f"""#!/bin/bash
         sleep 2
         echo "Updating OrangLauncher..."
@@ -429,542 +447,9 @@ def perform_update(download_url, launcher_root):
                 shutil.rmtree(extract_path)
         except:
             pass
-def show_update_dialog(parent, launcher):
-    def _check():
-        result = check_for_updates()
-        parent.after(0, lambda: _show_result(result))
-    def _show_result(result):
-        available, version, url, notes = result
-        if available:
-            if url == "AUR":
-                msg = f"A new version ({version}) is available via AUR.\\nDo you want to run 'yay -S oranglauncher-bin'?"
-            else:
-                msg = f"A new version ({version}) is available!\\n\\nRelease Notes:\\n{notes}\\n\\nDo you want to update now?"
-            if messagebox.askyesno("Update Available", msg, parent=parent):
-                launcher_root = Path(__file__).parent
-                threading.Thread(target=perform_update, args=(url, str(launcher_root)), daemon=True).start()
-        else:
-            messagebox.showinfo("No Updates", f"You are using the latest version ({CURRENT_VERSION}).", parent=parent)
-    threading.Thread(target=_check, daemon=True).start()
 
 # ui components
-class ToggleSwitch(tk.Canvas):
-    def __init__(self, parent, variable, command=None, width=44, height=24, **kwargs):
-        self.variable = variable
-        self.command = command
-        self.width = width
-        self.height = height
-        if 'bg' not in kwargs:
-            try:
-                kwargs['bg'] = parent['bg']
-            except:
-                kwargs['bg'] = parent.cget('bg')
-        super().__init__(parent, width=width, height=height, highlightthickness=0, bd=0, **kwargs)
-        
-        self.bind("<Button-1>", self._on_click)
-        self.bind("<Button-4>", lambda e: "break")
-        self.bind("<Button-5>", lambda e: "break")
-        self.bind("<MouseWheel>", lambda e: "break")
-        self.bind("<Destroy>", self._on_destroy)
-        self._trace_name = self.variable.trace_add("write", self._update_graphics)
-        self.after(10, self._update_graphics)
 
-    def _on_destroy(self, event):
-        try:
-            self.variable.trace_remove("write", self._trace_name)
-        except Exception:
-            pass
-
-    def _on_click(self, event):
-        self.variable.set(not self.variable.get())
-        if self.command:
-            self.command()
-
-    def _update_graphics(self, *args):
-        try:
-            self.delete("all")
-        except Exception:
-            return
-        val = self.variable.get()
-        tm = get_theme_manager()
-        bg_color = "#F8961E" if val else "#4B4B4B"
-        handle_color = "#ffffff"
-        if tm:
-            bg_color = "#F8961E" if val else "#4B4B4B"
-            handle_color = "#ffffff"
-
-        radius = self.height / 2
-        
-        self.create_oval(0, 0, self.height, self.height, fill=bg_color, outline=bg_color)
-        self.create_oval(self.width-self.height, 0, self.width, self.height, fill=bg_color, outline=bg_color)
-        self.create_rectangle(radius, 0, self.width-radius, self.height, fill=bg_color, outline=bg_color)
-        
-        handle_pad = 4
-        handle_size = self.height - (handle_pad * 2)
-        if val:
-            x = self.width - handle_size - handle_pad
-        else:
-            x = handle_pad
-        y = handle_pad
-        self.create_oval(x, y, x+handle_size, y+handle_size, fill=handle_color, outline=handle_color)
-
-def build_settings_tab(launcher, notebook):
-    tab = ttk.Frame(notebook)
-    notebook.add(tab, text=launcher._t('SETTINGS'))
-    launcher.settings_frame = tab
-    _configure_modern_styles(launcher.style)
-
-    _load_settings(launcher)
-    bg_primary = launcher._get_theme_color('bg_primary')
-    
-    main_container = tk.Frame(tab, bg=bg_primary)
-    main_container.pack(fill="both", expand=True)
-    
-    sidebar = tk.Frame(main_container, bg=bg_primary, width=240)
-    sidebar.pack(side="left", fill="y", padx=0, pady=0)
-    sidebar.pack_propagate(False)
-
-    header_frame = tk.Frame(sidebar, bg=bg_primary)
-    header_frame.pack(fill="x", padx=24, pady=(32, 24))
-    
-    title_label = tk.Label(header_frame, text="Settings", font=("Segoe UI", 18, "bold"),
-                           bg=bg_primary, fg=launcher._get_theme_color('fg_primary'))
-    title_label.pack(side="left", anchor="center")
-
-    nav_buttons_frame = tk.Frame(sidebar, bg=bg_primary)
-    nav_buttons_frame.pack(fill="x", padx=12)
-
-    content_container = tk.Frame(main_container, bg=bg_primary)
-    content_container.pack(side="left", fill="both", expand=True)
-
-    launcher._settings_current_content = None
-    launcher._settings_nav_buttons = []
-    launcher._settings_nav_buttons_data = []
-    
-    def show_content(content_func, tab_name):
-        if hasattr(launcher, '_settings_canvas') and launcher._settings_canvas.winfo_exists():
-            launcher._settings_canvas.destroy()
-        if hasattr(launcher, '_settings_scrollbar') and launcher._settings_scrollbar.winfo_exists():
-            launcher._settings_scrollbar.destroy()
-            
-        launcher._settings_canvas = tk.Canvas(content_container, bg=bg_primary, highlightthickness=0, bd=0)
-        launcher._settings_scrollbar = ttk.Scrollbar(content_container, orient="vertical", command=launcher._settings_canvas.yview, style="Modern.Vertical.TScrollbar")
-        
-        launcher._settings_current_content = tk.Frame(launcher._settings_canvas, bg=bg_primary)
-        launcher._settings_current_content.bind(
-            "<Configure>",
-            lambda e: launcher._settings_canvas.configure(scrollregion=launcher._settings_canvas.bbox("all"))
-        )
-        
-        launcher._settings_canvas.create_window((0, 0), window=launcher._settings_current_content, anchor="nw")
-        launcher._settings_canvas.configure(yscrollcommand=launcher._settings_scrollbar.set)
-        
-        def on_mousewheel(event):
-            launcher._settings_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        def on_enter(event):
-            launcher._settings_canvas.focus_set()
-            launcher._settings_canvas.bind_all("<MouseWheel>", on_mousewheel)
-
-        def on_leave(event):
-            try:
-                launcher._settings_canvas.unbind_all("<MouseWheel>")
-            except: pass
-
-        launcher._settings_canvas.bind("<Enter>", on_enter)
-        launcher._settings_canvas.bind("<Leave>", on_leave)
-        
-        launcher._settings_canvas.pack(side="left", fill="both", expand=True)
-        launcher._settings_scrollbar.pack(side="right", fill="y", padx=(0, 4), pady=4)
-
-        padded_content = tk.Frame(launcher._settings_current_content, bg=bg_primary)
-        padded_content.pack(fill="both", expand=True, padx=40, pady=30)
-        
-        content_func(padded_content, launcher)
-        launcher._settings_current_content.update_idletasks()
-        launcher._settings_canvas.configure(scrollregion=launcher._settings_canvas.bbox("all"))
-
-    def show_content_no_scroll(content_func, tab_name):
-        show_content(content_func, tab_name)
-
-    def create_modern_nav_button(parent, text_key, command, icon_name=""):
-        text = launcher._t(text_key)
-        btn = tk.Button(parent, text=f"  {text}", anchor="w",
-                       bg=bg_primary,
-                       fg=launcher._get_theme_color('fg_secondary'),
-                       activebackground=launcher._get_theme_color('bg_hover'),
-                       activeforeground=launcher._get_theme_color('fg_primary'),
-                       relief="flat", font=("Segoe UI", 11),
-                       padx=16, pady=10, cursor="hand2", bd=0)
-        
-        if icon_name:
-             try:
-                 icon_img = launcher._load_themed_icon(icon_name)
-                 if icon_img:
-                     btn.config(image=icon_img, compound="left")  # type: ignore
-                     btn._icon_ref = icon_img  # type: ignore
-             except Exception as e:
-                 print(f"Error loading icon {icon_name}: {e}")
-
-        def on_click():
-            command()
-            highlight_modern_button(btn)
-            
-        btn.config(command=on_click)
-        btn.pack(fill="x", pady=1)
-        launcher._settings_nav_buttons.append(btn)
-        launcher._settings_nav_buttons_data.append((btn, icon_name, text_key))
-        return btn
-
-    def highlight_modern_button(active_btn):
-        for btn in launcher._settings_nav_buttons:
-            if btn == active_btn:
-                btn.config(bg=launcher._get_theme_color('bg_hover'),
-                          fg=launcher._get_theme_color('fg_primary'),
-                          font=("Segoe UI", 11, "bold"))
-            else:
-                btn.config(bg=bg_primary,
-                          fg=launcher._get_theme_color('fg_secondary'),
-                          font=("Segoe UI", 11, "normal"))
-    
-    general_btn = create_modern_nav_button(nav_buttons_frame, "SETTINGS_NAV_GENERAL", 
-                                          lambda: show_content(_build_general_page, "general"), "general")
-    accounts_btn = create_modern_nav_button(nav_buttons_frame, "SETTINGS_NAV_ACCOUNTS", 
-                                           lambda: show_content(_build_accounts_page, "accounts"), "accounts")
-    advanced_btn = create_modern_nav_button(nav_buttons_frame, "SETTINGS_NAV_ADVANCED", 
-                                           lambda: show_content(_build_advanced_page, "advanced"), "advanced")
-    about_btn = create_modern_nav_button(nav_buttons_frame, "SETTINGS_NAV_ABOUT", 
-                                        lambda: show_content(_build_about_page, "about"), "about")
-    
-    show_content(_build_general_page, "general")
-    highlight_modern_button(general_btn)
-
-def _build_general_page(parent, launcher):
-    bg_primary = launcher._get_theme_color('bg_primary')
-    
-    lang_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_LANGUAGE"), launcher)
-    lang_label = tk.Label(lang_card, text=launcher._t("SETTINGS_LANG_LABEL"),
-                         bg=bg_primary, 
-                         fg=launcher._get_theme_color('fg_secondary'), 
-                         font=("Segoe UI", 10, "bold"))
-    lang_label.pack(anchor="w", pady=(0, 8))
-    launcher.language_var = tk.StringVar(value=launcher.current_locale)
-    lang_cb = ttk.Combobox(lang_card,
-                          textvariable=launcher.language_var,
-                          state="readonly",
-                          width=40,
-                          style="Modern.TCombobox",
-                          font=("Segoe UI", 10))
-    lang_names = {
-        'en-US': 'English (United States)',
-        'lt-LT': 'Lietuvių (Lithuania)', 
-        'ru-RU': 'Русский (Russia)',
-        'pl-PL': 'Polski (Poland)',
-        'de-DE': 'Deutsch (Germany)',
-        'lv-LV': 'Latviešu (Latvia)',
-        'na-NA': 'For Translators'
-    }
-    display_values = []
-    launcher._lang_code_map = {}
-    for code in launcher.locales:
-        display_name = lang_names.get(code, code)
-        display_values.append(display_name)
-        launcher._lang_code_map[display_name] = code
-    lang_cb['values'] = display_values
-    current_display = lang_names.get(launcher.current_locale, launcher.current_locale)
-    lang_cb.set(current_display)
-    lang_cb.pack(anchor="w", pady=(0, 8))
-    def on_lang_change(event=None):
-        selected_display = lang_cb.get()
-        selected_code = launcher._lang_code_map.get(selected_display)
-        if selected_code and selected_code != launcher.current_locale:
-            try:
-                _save_language_preference(selected_code)
-                messagebox.showinfo(
-                    launcher._t("LANGUAGE_CHANGED_TITLE"),
-                    "Language preference saved. Restart the launcher to apply the change."
-                )
-            except Exception as e:
-                messagebox.showerror(launcher._t("ERROR"), str(e))
-    lang_cb.bind("<<ComboboxSelected>>", on_lang_change)
-    warning = tk.Label(lang_card,
-                      text=launcher._t("SETTINGS_LANG_WARNING"),
-                      bg=bg_primary,
-                      fg=launcher._get_theme_color('accent_primary'),
-                      font=("Segoe UI", 9, "italic"))
-    warning.pack(anchor="w", pady=(0, 16))
-    theme_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_THEME"), launcher)
-    theme_desc = tk.Label(theme_card, text=launcher._t("SETTINGS_THEME_DESC"),
-                         bg=bg_primary, 
-                         fg=launcher._get_theme_color('fg_secondary'), 
-                         font=("Segoe UI", 10))
-    theme_desc.pack(anchor="w", pady=(0, 16))
-    if not hasattr(launcher, 'selected_theme'):
-        launcher.selected_theme = tk.StringVar(value=_load_theme_preference())
-    themes_grid = tk.Frame(theme_card, bg=bg_primary)
-    themes_grid.pack(fill="x", pady=(0, 16))
-    themes = [
-        ("Arc", launcher._t("THEME_ARC"), "#363636"),
-        ("Dark Prism", launcher._t("THEME_DARK_PRISM"), "#000000"),
-        ("Light Mode", launcher._t("THEME_LIGHT"), "#f0f0f0")
-    ]
-    for i, (theme_name, description, bg_color) in enumerate(themes):
-        _create_modern_theme_button(themes_grid, launcher, theme_name, description, bg_color)
-
-    gpu_card = _create_modern_card(parent, launcher._t("SETTINGS_GPU_SECTION"), launcher)
-    gpu_row = tk.Frame(gpu_card, bg=bg_primary)
-    gpu_row.pack(fill="x", pady=(0, 16))
-    gpu_info = tk.Frame(gpu_row, bg=bg_primary)
-    gpu_info.pack(side="left", fill="both", expand=True, padx=(0, 16))
-    tk.Label(gpu_info, text=launcher._t("SETTINGS_GPU_DRI_PRIME"), bg=bg_primary,
-             fg=launcher._get_theme_color('fg_primary'),
-             font=("Segoe UI", 11, "bold"), anchor="w").pack(anchor="w")
-    tk.Label(gpu_info, text=launcher._t("SETTINGS_GPU_DRI_PRIME_DESC"),
-             bg=bg_primary, fg=launcher._get_theme_color('fg_secondary'),
-             font=("Segoe UI", 9), anchor="w", wraplength=450, justify="left").pack(anchor="w", pady=(2, 0))
-    if not hasattr(launcher, 'use_dri_prime'):
-        launcher.use_dri_prime = tk.BooleanVar(value=False)
-    ToggleSwitch(gpu_row, variable=launcher.use_dri_prime,
-                 command=lambda: _save_settings(launcher), bg=bg_primary).pack(side="right", anchor="center")
-
-    sharing_card = _create_modern_card(parent, launcher._t("SETTINGS_SHARED_FILES"), launcher)
-    tk.Label(sharing_card,
-             text=launcher._t("SETTINGS_SHARED_FILES_DESC"),
-             bg=bg_primary, fg=launcher._get_theme_color('fg_secondary'),
-             font=("Segoe UI", 9), justify="left", wraplength=500).pack(anchor="w", pady=(0, 12))
-
-    _share_rows = [
-        ("share_options",       launcher._t("SETTINGS_SHARED_OPTIONS_TXT"),       launcher._t("SETTINGS_SHARED_OPTIONS_DESC")),
-        ("share_resourcepacks", launcher._t("SETTINGS_SHARED_RESOURCEPACKS"),    launcher._t("SETTINGS_SHARED_RESOURCEPACKS_DESC")),
-        ("share_shaderpacks",   launcher._t("SETTINGS_SHARED_SHADERPACKS"),      launcher._t("SETTINGS_SHARED_SHADERPACKS_DESC")),
-        ("share_servers",       launcher._t("SETTINGS_SHARED_SERVERS"),          launcher._t("SETTINGS_SHARED_SERVERS_DESC")),
-    ]
-    for attr, title, desc in _share_rows:
-        if not hasattr(launcher, attr):
-            setattr(launcher, attr, tk.BooleanVar(value=False))
-        row = tk.Frame(sharing_card, bg=bg_primary)
-        row.pack(fill="x", pady=(0, 8))
-        info = tk.Frame(row, bg=bg_primary)
-        info.pack(side="left", fill="both", expand=True, padx=(0, 16))
-        tk.Label(info, text=title, bg=bg_primary,
-                 fg=launcher._get_theme_color('fg_primary'),
-                 font=("Segoe UI", 10, "bold"), anchor="w").pack(anchor="w")
-        tk.Label(info, text=desc, bg=bg_primary,
-                 fg=launcher._get_theme_color('fg_secondary'),
-                 font=("Segoe UI", 9), anchor="w").pack(anchor="w", pady=(2, 0))
-        ToggleSwitch(row, variable=getattr(launcher, attr),
-                     command=lambda: _on_share_toggle(launcher),
-                     bg=bg_primary).pack(side="right", anchor="center")
-
-    apply_btn = tk.Button(sharing_card, text=launcher._t("SETTINGS_SHARED_APPLY_ALL"),
-                          bg=launcher._get_theme_color('bg_tertiary'),
-                          fg=launcher._get_theme_color('fg_primary'),
-                          font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat",
-                          command=lambda: threading.Thread(
-                              target=lambda: (launcher._apply_sharing_all(),
-                                              launcher.after(0, lambda: messagebox.showinfo(launcher._t("SETTINGS_SHARED_FILES"), launcher._t("SETTINGS_SHARED_UPDATED")))),
-                              daemon=True).start())
-    apply_btn.pack(anchor="w", pady=(8, 0))
-
-def _build_advanced_page(parent, launcher):
-    bg_color = launcher._get_theme_color('bg_primary')
-    
-    def create_setting_row(parent_card, title, description, variable, command=None):
-        row = tk.Frame(parent_card, bg=bg_color)
-        row.pack(fill="x", pady=(0, 16))
-        
-        info_col = tk.Frame(row, bg=bg_color)
-        info_col.pack(side="left", fill="both", expand=True, padx=(0, 16))
-        
-        lbl = tk.Label(info_col, text=title, bg=bg_color, fg=launcher._get_theme_color('fg_primary'),
-                      font=("Segoe UI", 11, "bold"), anchor="w")
-        lbl.pack(anchor="w")
-        
-        if description:
-            desc = tk.Label(info_col, text=description, bg=bg_color, fg=launcher._get_theme_color('fg_secondary'),
-                           font=("Segoe UI", 9), anchor="w", justify="left", wraplength=450)
-            desc.pack(anchor="w", pady=(2, 0))
-            
-        switch_col = tk.Frame(row, bg=bg_color)
-        switch_col.pack(side="right", anchor="center")
-        
-        def on_toggle():
-            if command: command()
-            
-        switch = ToggleSwitch(switch_col, variable=variable, command=on_toggle, bg=bg_color)
-        switch.pack()
-        return row
-
-    discord_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_DISCORD"), launcher)
-    if not hasattr(launcher, 'discord_rpc_enabled'):
-        launcher.discord_rpc_enabled = tk.BooleanVar(value=True)
-        
-    create_setting_row(discord_card, 
-                      launcher._t("SETTINGS_DISCORD_ENABLE"),
-                      launcher._t("SETTINGS_DISCORD_DESC"),
-                      launcher.discord_rpc_enabled,
-                      lambda: _save_and_apply(launcher, lambda: _toggle_discord_rpc(launcher)))
-
-    telemetry_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_TELEMETRY"), launcher)
-    if not hasattr(launcher, 'delete_telemetry_on_startup'):
-        launcher.delete_telemetry_on_startup = tk.BooleanVar(value=False)
-        
-    create_setting_row(telemetry_card,
-                      launcher._t("SETTINGS_TELEMETRY_DELETE"),
-                      launcher._t("SETTINGS_TELEMETRY_DESC"),
-                      launcher.delete_telemetry_on_startup,
-                      lambda: _save_settings(launcher))
-
-    plugins_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_PLUGINS"), launcher)
-    plugins_desc = tk.Label(plugins_card,
-                           text=launcher._t("SETTINGS_PLUGINS_DESC"),
-                           bg=bg_color,
-                           fg=launcher._get_theme_color('fg_secondary'),
-                           font=("Segoe UI", 10))
-    plugins_desc.pack(anchor="w", pady=(0, 12))
-    
-    plugins_container = tk.Frame(plugins_card, 
-                                bg=launcher._get_theme_color('bg_secondary'),
-                                relief="flat", bd=1)
-    plugins_container.pack(fill="x", pady=(0, 12))
-    
-    plugins_canvas = tk.Canvas(plugins_container, height=120, 
-                              bg=launcher._get_theme_color('bg_secondary'), highlightthickness=0)
-    plugins_scrollbar = ttk.Scrollbar(plugins_container, orient="vertical", command=plugins_canvas.yview, style="Modern.Vertical.TScrollbar")
-    
-    launcher._plugins_list_frame = tk.Frame(plugins_canvas, bg=launcher._get_theme_color('bg_secondary'))
-    launcher._plugins_list_frame.bind("<Configure>", lambda e: plugins_canvas.configure(scrollregion=plugins_canvas.bbox("all")))
-    
-    plugins_canvas.create_window((0, 0), window=launcher._plugins_list_frame, anchor="nw")
-    plugins_canvas.configure(yscrollcommand=plugins_scrollbar.set)
-    plugins_canvas.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-    
-    plugin_buttons = tk.Frame(plugins_container, bg=launcher._get_theme_color('bg_secondary'))
-    plugin_buttons.pack(fill="x", padx=8, pady=(0, 8))
-
-    add_plugin_icon = launcher._load_themed_icon("plus", size=(16, 16))
-    add_plugin_btn = tk.Button(plugin_buttons, 
-                               text=f"  {launcher._t('SETTINGS_PLUGIN_ADD')}", 
-                               image=add_plugin_icon,
-                               compound="left",
-                               bg=launcher._get_theme_color('accent_primary'),
-                               fg=launcher._get_theme_color('fg_primary'),
-                               activebackground=launcher._get_theme_color('accent_hover'),
-                               activeforeground=launcher._get_theme_color('fg_primary'),
-                               font=("Segoe UI", 10), relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
-                               command=lambda: _add_plugin_file(launcher))
-    add_plugin_btn.image = add_plugin_icon  # type: ignore
-    add_plugin_btn.pack(side="left", padx=(0, 8))
-    
-    refresh_plugin_icon = launcher._load_themed_icon("refresh", size=(16, 16))
-    refresh_plugins_btn = tk.Button(plugin_buttons, 
-                                    text=f"  {launcher._t('SETTINGS_PLUGIN_REFRESH')}", 
-                                    image=refresh_plugin_icon,
-                                    compound="left",
-                                    bg=launcher._get_theme_color('bg_hover'),
-                                    fg=launcher._get_theme_color('fg_primary'),
-                                    activebackground=launcher._get_theme_color('bg_pressed'),
-                                    activeforeground=launcher._get_theme_color('fg_primary'),
-                                    font=("Segoe UI", 9), relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
-                                    command=lambda: _refresh_plugins_runtime(launcher))
-    refresh_plugins_btn.image = refresh_plugin_icon  # type: ignore
-    refresh_plugins_btn.pack(side="left")
-    _refresh_plugins_list(launcher)
-
-    progress_card = _create_modern_card(parent, launcher._t("SETTINGS_PROGRESS_BAR"), launcher)
-    if not hasattr(launcher, 'show_progress_bar'):
-        launcher.show_progress_bar = tk.BooleanVar(value=False)
-    
-    def toggle_progress_bar():
-        _save_settings(launcher)
-        if hasattr(launcher, 'status_bar_frame') and launcher.status_bar_frame is not None:
-            if launcher.show_progress_bar.get():
-                launcher.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
-            else:
-                launcher.status_bar_frame.pack_forget()
-            
-    create_setting_row(progress_card,
-                      launcher._t("SETTINGS_SHOW_PROGRESS_BAR"),
-                      launcher._t("SETTINGS_SHOW_PROGRESS_BAR_DESC"),
-                      launcher.show_progress_bar,
-                      toggle_progress_bar)
-
-    debug_card = _create_modern_card(parent, launcher._t("SETTINGS_CARD_DEBUG"), launcher)
-    if not hasattr(launcher, 'debug_mode_enabled'):
-        launcher.debug_mode_enabled = tk.BooleanVar(value=False)
-        
-    create_setting_row(debug_card,
-                      launcher._t("SETTINGS_DEBUG_ENABLE"),
-                      launcher._t("SETTINGS_DEBUG_DESC"),
-                      launcher.debug_mode_enabled,
-                      lambda: _toggle_debug_mode(launcher))
-                      
-    debug_info_frame = tk.Frame(debug_card, bg=bg_color)
-    debug_info_frame.pack(fill="x")
-    
-    if launcher.debug_mode_enabled.get():
-        debug_info = tk.Text(debug_info_frame, 
-                           height=8, 
-                           bg=launcher._get_theme_color('bg_secondary'),
-                           fg=launcher._get_theme_color('fg_primary'),
-                           font=("Consolas", 8),
-                           wrap=tk.WORD,
-                           state=tk.DISABLED,
-                           bd=0, highlightthickness=0)
-        debug_info.pack(fill="x", pady=(0, 8))
-        launcher._debug_text_widget = debug_info
-        
-        refresh_btn = ttk.Button(debug_info_frame, 
-                               text=launcher._t("SETTINGS_DEBUG_REFRESH"), 
-                               style="Secondary.TButton",
-                               command=lambda: _update_debug_info(launcher))
-        refresh_btn.pack(anchor="w", pady=(0, 8))
-        
-        show_spawn_btn = ttk.Button(debug_info_frame,
-                       text=launcher._t("SETTINGS_DEBUG_SHOW_SPAWN_LOG"),
-                       style="Secondary.TButton",
-                       command=lambda: _show_spawn_log(launcher))
-        show_spawn_btn.pack(anchor="w", pady=(0, 4))
-        
-        _update_debug_info(launcher)
-    
-    def _show_spawn_log(launcher):
-        try:
-            if not hasattr(launcher, "debug_mode_enabled"):
-                launcher.debug_mode_enabled = tk.BooleanVar(value=False)
-
-            debug_capture_active = isinstance(sys.stdout, StreamCapture) and hasattr(launcher, "_current_log_file")
-            if not debug_capture_active:
-                launcher.debug_mode_enabled.set(True)
-                _toggle_debug_mode(launcher)
-
-            log_path = Path(getattr(launcher, "_current_log_file", "") or "")
-            if not log_path:
-                log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
-                log_dir.mkdir(parents=True, exist_ok=True)
-                log_path = log_dir / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-                launcher._current_log_file = str(log_path)
-
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"\n=== DEBUG SNAPSHOT {datetime.now().isoformat()} ===\n")
-                if getattr(launcher, "_log_buffer", None):
-                    for msg, _ in launcher._log_buffer:
-                        f.write(msg.rstrip("\n") + "\n")
-                else:
-                    f.write("No buffered log entries available.\n")
-
-            if not _open_terminal_tailing_file(log_path):
-                messagebox.showerror(
-                    launcher._t("ERROR"),
-                    f"Could not open a terminal to show debug logs.\n{log_path}"
-                )
-        except Exception as e:
-
-            messagebox.showerror(launcher._t("ERROR"), f"Failed to read spawn log: {e}")
-            pass
-
-    java_card = _create_modern_card(parent, "Java Runtimes", launcher)
-    _build_java_management(java_card, launcher)
 
 def _install_java_pm_or_download(major: int, status_fn, done_fn):
     def work():
@@ -977,7 +462,7 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
             if r.returncode == 0:
                 done_fn(True, f"Installed via pacman ({pkg})")
                 return
-        # check apt
+        # check apt, ubuntu ui is not good but i may release the linux version for ubuntu.
         if shutil.which("apt-get"):
             pkg = "default-jre" if major == 8 else f"openjdk-{major}-jre"
             status_fn(f"Trying apt-get install {pkg}…")
@@ -986,7 +471,7 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
             if r.returncode == 0:
                 done_fn(True, f"Installed via apt ({pkg})")
                 return
-        # Adoptium download
+        # Adoptium download, i didn't find better provider
         status_fn(f"Downloading Java {major} from Adoptium…")
         path = download_java_runtime(major, progress_callback=lambda p, m: status_fn(m))
         if path:
@@ -995,62 +480,12 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
             done_fn(False, f"Failed - check your internet connection")
     threading.Thread(target=work, daemon=True).start()
 
-def _build_java_management(card, launcher):
-    bg = launcher._get_theme_color('bg_primary')
-    acc = launcher._get_theme_color('accent_primary')
-    fg = launcher._get_theme_color('fg_primary')
-    fgs = launcher._get_theme_color('fg_secondary')
-
-    tk.Label(card, text="Install or update Java runtimes. The launcher checks pacman / apt first,\n"
-             "then downloads directly from Adoptium if needed.",
-             bg=bg, fg=fgs, font=("Segoe UI", 9), justify="left").pack(anchor="w", pady=(0, 12))
-
-    rows_frame = tk.Frame(card, bg=bg)
-    rows_frame.pack(fill="x")
-
-    versions = [8, 17, 21, 25]
-    for major in versions:
-        row = tk.Frame(rows_frame, bg=bg)
-        row.pack(fill="x", pady=5)
-
-        # detect status
-        path = find_java_executable(major)
-        if path:
-            status_text = f"Java {major}  ✓  {path}"
-            status_color = acc
-        else:
-            status_text = f"Java {major}  -  not found"
-            status_color = fgs
-
-        status_lbl = tk.Label(row, text=status_text, bg=bg, fg=status_color,
-                              font=("Segoe UI", 10), anchor="w")
-        status_lbl.pack(side="left", fill="x", expand=True)
-
-        def make_install(m, lbl):
-            def on_install():
-                lbl.config(text=f"Java {m}  …  working", fg=fgs)
-                def set_status(msg):
-                    try: lbl.config(text=f"Java {m}  -  {msg}")
-                    except Exception: pass
-                def on_done(ok, msg):
-                    color = acc if ok else launcher._get_theme_color('fg_disabled')
-                    try:
-                        p = find_java_executable(m)
-                        lbl.config(text=f"Java {m}  {'✓' if ok else '✗'}  {p or msg}", fg=color)
-                    except Exception: pass
-                _install_java_pm_or_download(m, set_status, on_done)
-            return on_install
-
-        tk.Button(row, text="Install / Update", command=make_install(major, status_lbl),
-                  bg=launcher._get_theme_color('bg_tertiary'), fg=fg,
-                  font=("Segoe UI", 9), bd=0, relief="flat", padx=12, pady=4,
-                  cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
-                  activeforeground=fg).pack(side="right")
 
 def _fetch_skin_texture(acc):
     token = acc.get('minecraft_token')
     if token and token != "0":
         try:
+            # still i hate the skin whole thing
             r = _http_session.get("https://api.minecraftservices.com/minecraft/profile",
                                   headers={"Authorization": f"Bearer {token}"}, timeout=10)
             if r.ok:
@@ -1061,10 +496,10 @@ def _fetch_skin_texture(acc):
                 active_cape = next((c for c in capes if c.get("state") == "ACTIVE"), None)
                 if active and active.get("url"):
                     slim = (active.get("variant", "").upper() == "SLIM")
-                    skin_img = Image.open(io.BytesIO(_cached_image_get(active["url"]))).convert("RGBA")
+                    skin_img = _qimage_rgba(_cached_image_get(active["url"]))
                     cape_img = None
                     if active_cape and active_cape.get("url"):
-                        cape_img = Image.open(io.BytesIO(_cached_image_get(active_cape["url"]))).convert("RGBA")
+                        cape_img = _qimage_rgba(_cached_image_get(active_cape["url"]))
                     return skin_img, slim, cape_img
         except Exception:
             pass
@@ -1094,20 +529,19 @@ def _fetch_skin_texture(acc):
         if not skin_url:
             return None, False, None
         slim = skin_info.get("metadata", {}).get("model") == "slim"
-        skin_img = Image.open(io.BytesIO(_cached_image_get(skin_url))).convert("RGBA")
+        skin_img = _qimage_rgba(_cached_image_get(skin_url))
         cape_img = None
         cape_url = textures.get("CAPE", {}).get("url")
         if cape_url:
             try:
-                cape_img = Image.open(io.BytesIO(_cached_image_get(cape_url))).convert("RGBA")
+                cape_img = _qimage_rgba(_cached_image_get(cape_url))
             except Exception:
                 cape_img = None
         return skin_img, slim, cape_img
     except Exception:
         return None, False, None
 
-
-
+    # this was a pain in the ass
 def _skin_add_box(faces, center, w, h, d, texU, texV, boxW, boxH, boxD, mirror, inflate):
     hw = w / 2 + inflate; hh = h / 2 + inflate; hd = d / 2 + inflate
     cx, cy, cz = center
@@ -1124,6 +558,7 @@ def _skin_add_box(faces, center, w, h, d, texU, texV, boxW, boxH, boxD, mirror, 
     faces.append((p001, p101, p100, p000, u + bd + bw, v, bw, bd, mirror, (0, -1, 0)))
 
 
+    # 6 hours later.
 def _skin_build_model(slim, overlay, legacy):
     f = []
     arm_w = 3 if slim else 4
@@ -1131,6 +566,7 @@ def _skin_build_model(slim, overlay, legacy):
     _skin_add_box(f, (0, 10, 0), 8, 8, 8, 0, 0, 8, 8, 8, False, 0)           # head
     _skin_add_box(f, (0, 0, 0), 8, 12, 4, 16, 16, 8, 12, 4, False, 0)        # body
     _skin_add_box(f, (-arm_x, 0, 0), arm_w, 12, 4, 40, 16, arm_w, 12, 4, False, 0)  # right arm
+    # legacy for the notch based format
     if legacy:
         _skin_add_box(f, (arm_x, 0, 0), arm_w, 12, 4, 40, 16, arm_w, 12, 4, True, 0)
     else:
@@ -1150,7 +586,7 @@ def _skin_build_model(slim, overlay, legacy):
             _skin_add_box(f, (2, -12, 0), 4, 12, 4, 0, 48, 4, 12, 4, False, 0.25)          # left leg overlay
     return f
 
-
+    # capes nowdays are dumb. The minecon were best ones.
 def _skin_build_cape():
     raw = []
     _skin_add_box(raw, (0, 0, 0), 10, 16, 1, 0, 0, 10, 16, 1, False, 0)
@@ -1230,31 +666,35 @@ def _skin_raster_tri(pix, zbuf, width, height, a, b, c, ta, tb, tc,
             pix[pi + 3] = 255
 
 
-def _render_skin_3d(skin, width, height, yaw_deg=25.0, pitch_deg=10.0, slim=False,
-                    overlay=True, cape=None):
-    """Renders a full-body 3D view of a skin (PIL RGBA). yaw/pitch in degrees,
-    0/0 = facing the viewer. Pure Python software rasterizer (~40ms at 180x280)."""
-    W, H = skin.width, skin.height
-    tex = skin.tobytes()
+    # This is the native 3D skin renderer. It is a bit slow, but it works without any external dependencies. this may be 30 fps.
+def _render_skin_3d(skin, width, height, yaw_deg=25.0, pitch_deg=10.0, slim=False, overlay=True, cape=None):
+    
+    W, H = skin.width(), skin.height()
+    tex = bytes(skin.constBits())
     legacy = H == 32
     faces = _skin_build_model(slim, overlay, legacy)
     yaw = math.radians(yaw_deg); pitch = math.radians(pitch_deg)
     cyr, syr = math.cos(yaw), math.sin(yaw)
     cxr, sxr = math.cos(pitch), math.sin(pitch)
 
+    # rotate
     def rot(p):
         x, y, z = p
         x1 = x * cyr + z * syr
         z1 = -x * syr + z * cyr
         return (x1, y * cxr - z1 * sxr, y * sxr + z1 * cxr)
 
+    # increased is funny ngl.
     scale = height / 40.0
     cx = width / 2.0; cy = height / 2.0
     zbuf = [float("-inf")] * (width * height)
     pix = bytearray(width * height * 4)
     lx, ly, lz = -0.3, 0.9, 0.6
     ll = math.sqrt(lx * lx + ly * ly + lz * lz); lx /= ll; ly /= ll; lz /= ll
+    # please learn python and math to do this 
 
+
+    # plz work
     def render_faces(face_list, texture, tw, th):
         for face in face_list:
             A, B, C, D, fU, fV, fUw, fVh, mirror, normal = face
@@ -1274,571 +714,14 @@ def _render_skin_3d(skin, width, height, yaw_deg=25.0, pitch_deg=10.0, slim=Fals
 
     render_faces(faces, tex, W, H)
     if cape is not None:
-        render_faces(_skin_build_cape(), cape.tobytes(), cape.width, cape.height)
-    return Image.frombuffer("RGBA", (width, height), bytes(pix), "raw", "RGBA", 0, 1)
-
-
-def _compose_skin_front(skin, slim=False):
-    """Builds a front-facing 2D render (PIL Image) from a raw skin texture,
-    including the outer overlay layers. Handles legacy 64x32 skins."""
-    legacy = skin.height == 32
-    arm_w = 3 if slim else 4
-    out = Image.new("RGBA", (16, 32), (0, 0, 0, 0))
-
-    def part(x, y, w, h):
-        return skin.crop((x, y, x + w, y + h))
-
-    def mirrored(img):
-        return ImageOps.mirror(img)
-
-    # base layer
-    out.paste(part(8, 8, 8, 8), (4, 0))                       # head
-    out.paste(part(20, 20, 8, 12), (4, 8))                    # body
-    right_arm = part(44, 20, arm_w, 12)
-    out.paste(right_arm, (4 - arm_w, 8))                      # right arm (viewer left)
-    left_arm = part(36, 52, arm_w, 12) if not legacy else mirrored(right_arm)
-    out.paste(left_arm, (12, 8))                              # left arm
-    right_leg = part(4, 20, 4, 12)
-    out.paste(right_leg, (4, 20))                             # right leg
-    left_leg = part(20, 52, 4, 12) if not legacy else mirrored(right_leg)
-    out.paste(left_leg, (8, 20))                              # left leg
-
-    def overlay(x, y, w, h, dest):
-        piece = part(x, y, w, h)
-        out.paste(piece, dest, piece)
-
-    overlay(40, 8, 8, 8, (4, 0))                              # hat
-    if not legacy:
-        overlay(20, 36, 8, 12, (4, 8))                        # jacket
-        overlay(44, 36, arm_w, 12, (4 - arm_w, 8))            # right sleeve
-        overlay(52, 52, arm_w, 12, (12, 8))                   # left sleeve
-        overlay(4, 36, 4, 12, (4, 20))                        # right leg overlay
-        overlay(4, 52, 4, 12, (8, 20))                        # left leg overlay
-
-    scale = 5
-    return out.resize((out.width * scale, out.height * scale), Image.NEAREST)
+        render_faces(_skin_build_cape(), bytes(cape.constBits()), cape.width(), cape.height())
+    return QtGui.QImage(bytes(pix), width, height, width * 4, QtGui.QImage.Format_RGBA8888).copy()
 
 
 _SKIN_PREVIEW_W = 180
 _SKIN_PREVIEW_H = 280
 
-
-def _skin_preview_render(launcher):
-    """(Re)renders the current skin at the stored yaw/pitch onto the preview label."""
-    st = getattr(launcher, '_skin_preview_state', None)
-    label = getattr(launcher, '_skin_preview_label', None)
-    if not st or label is None or st.get('skin') is None:
-        return
-    try:
-        img = _render_skin_3d(st['skin'], _SKIN_PREVIEW_W, _SKIN_PREVIEW_H,
-                              yaw_deg=st['yaw'], pitch_deg=st['pitch'],
-                              slim=st['slim'], cape=st.get('cape'))
-        photo = ImageTk.PhotoImage(img)
-        label.config(image=photo, text="")
-        label.image = photo  # keep a reference
-    except Exception:
-        pass
-
-
-def _skin_preview_bind_drag(launcher):
-    """Wires drag-to-rotate on the preview label (once)."""
-    label = getattr(launcher, '_skin_preview_label', None)
-    if label is None or getattr(launcher, '_skin_preview_drag_bound', False):
-        return
-
-    def on_press(e):
-        st = getattr(launcher, '_skin_preview_state', None)
-        if st:
-            st['last'] = (e.x, e.y)
-
-    def on_drag(e):
-        st = getattr(launcher, '_skin_preview_state', None)
-        if not st or st.get('skin') is None or st.get('last') is None:
-            return
-        lx, ly = st['last']
-        st['yaw'] += (e.x - lx) * 0.8
-        st['pitch'] = max(-60.0, min(60.0, st['pitch'] + (e.y - ly) * 0.4))
-        st['last'] = (e.x, e.y)
-        _skin_preview_render(launcher)
-
-    label.bind("<Button-1>", on_press, add="+")
-    label.bind("<B1-Motion>", on_drag, add="+")
-    label.config(cursor="fleur")
-    launcher._skin_preview_drag_bound = True
-
-
-def _update_account_skin_preview(launcher, acc):
-    label = getattr(launcher, '_skin_preview_label', None)
-    caption = getattr(launcher, '_skin_preview_caption', None)
-    if label is None:
-        return
-    _skin_preview_bind_drag(launcher)
-
-    def worker():
-        skin, slim, cape = _fetch_skin_texture(acc)
-
-        def apply():
-            try:
-                if skin is None:
-                    launcher._skin_preview_state = {'skin': None}
-                    unavailable = launcher._t("SKIN_PREVIEW_UNAVAILABLE")
-                    if unavailable == "SKIN_PREVIEW_UNAVAILABLE":
-                        unavailable = "No skin preview available"
-                    label.config(image="", text=unavailable)
-                    label.image = None
-                else:
-                    launcher._skin_preview_state = {
-                        'skin': skin, 'slim': slim, 'cape': cape,
-                        'yaw': 25.0, 'pitch': 10.0, 'last': None,
-                    }
-                    _skin_preview_render(launcher)
-                if caption is not None:
-                    caption.config(text=acc.get('username', ''))
-            except Exception:
-                pass
-        try:
-            launcher.after(0, apply)
-        except RuntimeError:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
-
-
-def _build_accounts_page(parent, launcher):
-    bg_primary = launcher._get_theme_color('bg_primary')
-    account_card = _create_modern_card(parent, launcher._t("SETTINGS_ACCOUNTS_TITLE"), launcher)
-    account_desc = tk.Label(account_card, text=launcher._t("SETTINGS_ACCOUNTS_DESC"),
-                           bg=bg_primary, 
-                           fg=launcher._get_theme_color('fg_secondary'), 
-                           font=("Segoe UI", 10))
-    account_desc.pack(anchor="w", pady=(0, 20))
-    accounts_container = tk.Frame(account_card, 
-                                bg=launcher._get_theme_color('bg_secondary'),
-                                relief="flat",
-                                bd=1,
-                                highlightthickness=1,
-                                highlightcolor=launcher._get_theme_color('border_primary'),
-                                highlightbackground=launcher._get_theme_color('border_primary'))
-    accounts_container.pack(fill="x", pady=(0, 12))
-    canvas = tk.Canvas(accounts_container, height=300, bg=launcher._get_theme_color('bg_secondary'), highlightthickness=0)
-    scrollbar = ttk.Scrollbar(accounts_container, orient="vertical", command=canvas.yview, style="Modern.Vertical.TScrollbar")
-    launcher._accounts_list_frame = tk.Frame(canvas, bg=launcher._get_theme_color('bg_secondary'))
-    launcher._accounts_list_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-    canvas.create_window((0, 0), window=launcher._accounts_list_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-    scrollbar.pack(side="right", fill="y", pady=8, padx=(0, 4))
-
-    # Native skin preview
-    preview_frame = tk.Frame(account_card,
-                             bg=launcher._get_theme_color('bg_secondary'),
-                             highlightthickness=1,
-                             highlightbackground=launcher._get_theme_color('border_primary'))
-    preview_frame.pack(fill="x", pady=(0, 12))
-    launcher._skin_preview_label = tk.Label(preview_frame, text="",
-                                            bg=launcher._get_theme_color('bg_secondary'),
-                                            fg=launcher._get_theme_color('fg_secondary'))
-    launcher._skin_preview_label.pack(pady=(10, 2))
-    launcher._skin_preview_caption = tk.Label(preview_frame, text="",
-                                              bg=launcher._get_theme_color('bg_secondary'),
-                                              fg=launcher._get_theme_color('fg_primary'),
-                                              font=("Segoe UI", 10, "bold"))
-    launcher._skin_preview_caption.pack(pady=(0, 10))
-
-    _refresh_accounts_list(launcher)
-    btn_frame = tk.Frame(account_card, bg=launcher._get_theme_color('bg_primary'))
-    btn_frame.pack(fill="x")
-    
-    ms_icon = launcher._load_themed_icon("microsoft", size=(16, 16))
-    add_ms_btn = tk.Button(btn_frame, 
-                           text=f"  {launcher._t('SETTINGS_ACCOUNTS_ADD_MS')}",
-                           image=ms_icon,
-                           compound="left",
-                           bg=launcher._get_theme_color('bg_hover'),
-                           fg=launcher._get_theme_color('fg_primary'),
-                           activebackground=launcher._get_theme_color('bg_pressed'),
-                           activeforeground=launcher._get_theme_color('fg_primary'),
-                           font=("Segoe UI", 10),
-                           relief="flat",
-                           bd=0,
-                           padx=12,
-                           pady=8,
-                           cursor="hand2",
-                           command=lambda: _add_microsoft_account(launcher))
-    add_ms_btn.image = ms_icon  # type: ignore
-    add_ms_btn.pack(side="left", padx=(0, 8))
-    
-    offline_icon = launcher._load_themed_icon("offline", size=(16, 16))
-    add_offline_btn = tk.Button(btn_frame, 
-                               text=f"  {launcher._t('SETTINGS_ACCOUNTS_ADD_OFFLINE')}",
-                               image=offline_icon,
-                               compound="left",
-                               bg=launcher._get_theme_color('bg_hover'),
-                               fg=launcher._get_theme_color('fg_primary'),
-                               activebackground=launcher._get_theme_color('bg_pressed'),
-                               activeforeground=launcher._get_theme_color('fg_primary'),
-                               font=("Segoe UI", 10),
-                               relief="flat",
-                               bd=0,
-                               padx=12,
-                               pady=8,
-                               cursor="hand2",
-                               command=lambda: _add_offline_account(launcher))
-    add_offline_btn.image = offline_icon  # type: ignore
-    add_offline_btn.pack(side="left")
-def _build_about_page(parent, launcher):
-    bg_primary = launcher._get_theme_color('bg_primary')
-    about_card = _create_modern_card(parent, launcher._t("SETTINGS_ABOUT_TITLE"), launcher)
-    
-    about_inner = tk.Frame(about_card, bg=bg_primary)
-    about_inner.pack(fill="x")
-    
-    try:
-        logo_path = find_resource("oranglauncher/images/orange.png")
-        if logo_path:
-            img = Image.open(logo_path).resize((64, 64), Image.Resampling.LANCZOS)
-            launcher._about_logo_img = ImageTk.PhotoImage(img)
-            logo_frame = tk.Frame(about_inner, bg=bg_primary)
-            logo_frame.pack(side="left", anchor="n", padx=(0, 24))
-            
-            logo_lbl = tk.Label(logo_frame, image=launcher._about_logo_img, bg=bg_primary, cursor="hand2")
-            logo_lbl.pack()
-            
-            def on_logo_click(event):
-                launcher._toggle_music()
-            
-            logo_lbl.bind("<Button-1>", on_logo_click)
-            logo_lbl.bind("<Enter>", lambda e: logo_lbl.config(bg=launcher._get_theme_color('bg_hover')))
-            logo_lbl.bind("<Leave>", lambda e: logo_lbl.config(bg=bg_primary))
-    except Exception:
-        pass
-
-    info_frame = tk.Frame(about_inner, bg=bg_primary)
-    info_frame.pack(side="left", fill="both", expand=True)
-
-    name_label = tk.Label(info_frame, text="OrangLauncher", 
-                         bg=bg_primary, 
-                         fg=launcher._get_theme_color('fg_primary'),
-                         font=("Segoe UI", 16, "bold"))
-    name_label.pack(anchor="w", pady=(0, 8))
-    
-    version_label = tk.Label(info_frame, text=f"Version: {CURRENT_VERSION}", 
-                           bg=bg_primary, 
-                           fg=launcher._get_theme_color('fg_secondary'),
-                           font=("Segoe UI", 11))
-    version_label.pack(anchor="w", pady=(0, 4))
-    
-    author_label = tk.Label(info_frame, text=launcher._t("SETTINGS_ABOUT_AUTHOR"), 
-                          bg=bg_primary, 
-                          fg=launcher._get_theme_color('fg_secondary'),
-                          font=("Segoe UI", 10))
-    author_label.pack(anchor="w", pady=(0, 16))
-    
-    desc_label = tk.Label(info_frame, 
-                         text=launcher._t("SETTINGS_ABOUT_DESC"),
-                         bg=bg_primary, 
-                         fg=launcher._get_theme_color('fg_disabled'),
-                         font=("Segoe UI", 9),
-                         wraplength=400,
-                         justify="left")
-    desc_label.pack(anchor="w", pady=(0, 20))
-    
-    buttons_frame = tk.Frame(about_card, bg=bg_primary)
-    buttons_frame.pack(fill="x", pady=(16, 0))
-    
-    update_icon = launcher._load_themed_icon("update", size=(16, 16))
-    update_btn = tk.Button(buttons_frame, 
-                          text=f"  {launcher._t('SETTINGS_ABOUT_CHECK_UPDATES')}", 
-                          image=update_icon,
-                          compound="left",
-                          bg=launcher._get_theme_color('accent_primary'),
-                          fg=launcher._get_theme_color('fg_primary'),
-                          activebackground=launcher._get_theme_color('accent_hover'),
-                          activeforeground=launcher._get_theme_color('fg_primary'),
-                          font=("Segoe UI", 10),
-                          relief="flat",
-                          bd=0,
-                          padx=12,
-                          pady=8,
-                          cursor="hand2",
-                          command=lambda: show_update_dialog(parent, launcher))
-    update_btn.image = update_icon  # type: ignore
-    update_btn.pack(side="left", padx=(0, 8))
-    
-    github_icon = launcher._load_themed_icon("github", size=(16, 16))
-    github_btn = tk.Button(buttons_frame, 
-                          text=f"  {launcher._t('SETTINGS_ABOUT_GITHUB')}", 
-                          image=github_icon,
-                          compound="left",
-                          bg=launcher._get_theme_color('bg_hover'),
-                          fg=launcher._get_theme_color('fg_primary'),
-                          activebackground=launcher._get_theme_color('bg_pressed'),
-                          activeforeground=launcher._get_theme_color('fg_primary'),
-                          font=("Segoe UI", 9),
-                          relief="flat",
-                          bd=0,
-                          padx=10,
-                          pady=6,
-                          cursor="hand2",
-                          command=lambda: webbrowser.open("https://github.com/adasjusk/OrangLaunch"))
-    github_btn.image = github_icon  # type: ignore
-    github_btn.pack(side="left")
-
-    _build_source_package_note(parent, launcher)
-
-def _build_source_package_note(parent, launcher):
-    bg_primary = launcher._get_theme_color('bg_primary')
-    accent = launcher._get_theme_color('accent_primary')
-    container = tk.Frame(parent, bg=bg_primary)
-    container.pack(fill="x", pady=(0, 20), padx=4)
-    card = tk.Frame(container, bg=launcher._get_theme_color('bg_secondary'),
-                    highlightthickness=0, bd=0)
-    card.pack(fill="x")
-    strip = tk.Frame(card, bg=accent, width=4)
-    strip.pack(side="left", fill="y")
-    inner = tk.Frame(card, bg=launcher._get_theme_color('bg_secondary'))
-    inner.pack(side="left", fill="both", expand=True, padx=16, pady=14)
-    tk.Label(inner, text="New in 6.1.5  ·  Build-from-source package",
-             bg=launcher._get_theme_color('bg_secondary'), fg=accent,
-             font=("Segoe UI", 11, "bold")).pack(anchor="w")
-    tk.Label(inner,
-             text=("There's now an "
-                   "oranglauncher"
-                   " AUR package that builds the launcher with Nuitka on your "
-                   "machine instead of shipping a prebuilt binary. Prefer compiling "
-                   "yourself? Install that one. Want the quick prebuilt? Keep "
-                   "oranglauncher-bin."),
-             bg=launcher._get_theme_color('bg_secondary'),
-             fg=launcher._get_theme_color('fg_secondary'),
-             font=("Segoe UI", 9), wraplength=440, justify="left").pack(anchor="w", pady=(6, 10))
-    aur_btn = tk.Button(inner, text="View on AUR",
-                        bg=accent, fg="#ffffff",
-                        activebackground=launcher._get_theme_color('accent_hover'),
-                        activeforeground="#ffffff",
-                        font=("Segoe UI", 9, "bold"), relief="flat", bd=0,
-                        padx=12, pady=6, cursor="hand2",
-                        command=lambda: webbrowser.open("https://aur.archlinux.org/packages/oranglauncher"))
-    aur_btn.pack(anchor="w")
-
-def _build_experimental_page(parent, launcher):
-    title = tk.Label(parent, text=launcher._t("SETTINGS_EXP_PAGE_TITLE"), bg=launcher._get_theme_color('bg_primary'), fg=launcher._get_theme_color('fg_primary'),
-                    font=("Segoe UI", 18, "bold"))
-    title.pack(anchor="w", pady=(0, 20))
-    subtitle = tk.Label(parent, text=launcher._t("SETTINGS_EXP_PAGE_DESC"),
-                       bg=launcher._get_theme_color('bg_primary'), fg=launcher._get_theme_color('accent_primary'), font=("Segoe UI", 10, "italic"))
-    subtitle.pack(anchor="w", pady=(0, 20))
-    telemetry_section = _create_modern_section(parent, launcher._t("SETTINGS_EXP_TELEMETRY"), launcher)
-    if not hasattr(launcher, 'delete_telemetry_on_startup'):
-        launcher.delete_telemetry_on_startup = tk.BooleanVar(value=False)
-    telemetry_check = tk.Checkbutton(
-        telemetry_section,
-        text=launcher._t("DELETE_TELEMETRY"),
-        variable=launcher.delete_telemetry_on_startup,
-        bg=launcher._get_theme_color('bg_section'),
-        fg=launcher._get_theme_color('fg_primary'),
-        selectcolor=launcher._get_theme_color('bg_input'),
-        activebackground=launcher._get_theme_color('bg_section'),
-        activeforeground=launcher._get_theme_color('fg_primary'),
-        font=("Segoe UI", 10),
-        command=lambda: _save_settings(launcher)
-    )
-    telemetry_check.pack(anchor="w", pady=(0, 5))
-    telemetry_desc = tk.Label(
-        telemetry_section,
-        text=launcher._t("DELETE_TELEMETRY_DESC"),
-        bg=launcher._get_theme_color('bg_section'),
-        fg=launcher._get_theme_color('fg_tertiary'),
-        font=("Segoe UI", 9),
-        wraplength=500,
-        justify="left"
-    )
-    telemetry_desc.pack(anchor="w", pady=(0, 10))
-    plugins_section = _create_modern_section(parent, launcher._t("SETTINGS_EXP_PLUGINS"), launcher)
-    plugins_container = tk.Frame(plugins_section, bg=launcher._get_theme_color('bg_section'))
-    plugins_container.pack(fill="both", expand=True, pady=(0, 10))
-    canvas = tk.Canvas(plugins_container, height=200, bg=launcher._get_theme_color('bg_section'), highlightthickness=0)
-    scrollbar = ttk.Scrollbar(plugins_container, orient="vertical", command=canvas.yview, style="Modern.Vertical.TScrollbar")
-    launcher._plugins_list_frame = tk.Frame(canvas, bg=launcher._get_theme_color('bg_section'))
-    launcher._plugins_list_frame.bind(
-        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-    canvas.create_window((0, 0), window=launcher._plugins_list_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-    _refresh_plugins_list(launcher)
-    btn_frame = tk.Frame(plugins_section, bg=launcher._get_theme_color('bg_section'))
-    btn_frame.pack(fill="x", pady=(10, 0))
-    add_btn = ttk.Button(btn_frame, text=launcher._t("SETTINGS_EXP_ADD_PLUGIN"), style="Settings.TButton", width=14,
-                        command=lambda: _add_plugin_file(launcher))
-    add_btn.pack(side="left", padx=(0, 8))
-    refresh_btn = ttk.Button(btn_frame, text=launcher._t("SETTINGS_EXP_REFRESH_PLUGINS"), style="Settings.TButton", width=14,
-                            command=lambda: _refresh_plugins_runtime(launcher))
-    refresh_btn.pack(side="left")
-def _create_modern_section(parent, title_text, launcher):
-    bg_tertiary = launcher._get_theme_color('bg_tertiary')
-    fg_primary = launcher._get_theme_color('fg_primary')
-    section_frame = tk.Frame(parent, bg=bg_tertiary, bd=0)
-    section_frame.pack(fill="x", pady=(0, 15))
-    content = tk.Frame(section_frame, bg=bg_tertiary)
-    content.pack(fill="x", padx=15, pady=15)
-    if title_text:
-        title_label = tk.Label(content, text=title_text, bg=bg_tertiary, fg=fg_primary,
-                              font=("Segoe UI", 12, "bold"))
-        title_label.pack(anchor="w", pady=(0, 10))
-    return content
-def _create_theme_button(parent, launcher, theme_name, image_path, bg_color):
-    frame = tk.Frame(parent, bg="#363636")
-    frame.pack(side="left", padx=5, pady=5)
-    btn_frame = tk.Frame(frame, bg="#404040", bd=2, relief="solid")
-    btn_frame.pack()
-    try:
-        images_dir = find_resource("images")
-        if images_dir:
-            full_path = os.path.join(str(images_dir), image_path)
-        else:
-            full_path = None
-        if full_path and os.path.exists(full_path):
-            try:
-                
-                img = Image.open(full_path)
-                img = img.resize((100, 80), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
-                img_label = tk.Label(btn_frame, image=photo, bg=bg_color, cursor="hand2")
-                img_label.image = photo  # type: ignore
-                img_label.pack()
-                img_label.bind("<Button-1>", lambda e: _apply_theme(launcher, theme_name))
-            except ImportError:
-                color_label = tk.Label(btn_frame, bg=bg_color, width=12, height=4, cursor="hand2")
-                color_label.pack()
-                color_label.bind("<Button-1>", lambda e: _apply_theme(launcher, theme_name))
-        else:
-            color_label = tk.Label(btn_frame, bg=bg_color, width=12, height=4, cursor="hand2")
-            color_label.pack()
-            color_label.bind("<Button-1>", lambda e: _apply_theme(launcher, theme_name))
-    except Exception as e:
-        print(f"Error loading theme image: {e}")
-        color_label = tk.Label(btn_frame, bg=bg_color, width=12, height=4, cursor="hand2")
-        color_label.pack()
-        color_label.bind("<Button-1>", lambda e: _apply_theme(launcher, theme_name))
-    name_label = tk.Label(frame, text=theme_name, bg="#363636", fg="#e8e8e8",
-                         font=("Segoe UI", 9))
-    name_label.pack(pady=(5, 0))
-    if launcher.selected_theme.get() == theme_name:
-        btn_frame.config(bg="#ff8c00", bd=3)
-def _apply_theme(launcher, theme_name):
-    launcher.selected_theme.set(theme_name)
-    if save_theme_preference(theme_name):
-        try:
-            messagebox.showinfo(
-                launcher._t("THEME_CHANGED_TITLE"),
-                "Theme preference saved. Restart the launcher to apply the change."
-            )
-        except Exception as e:
-            print(f"Error notifying theme change: {e}")
-    else:
-        messagebox.showerror(launcher._t("ERROR"), launcher._t("THEME_SAVE_ERROR"))
-def _load_theme_preference_legacy():
-    return load_saved_theme()
-def _add_microsoft_account(launcher):
-    try:
-        result = add_profile(parent=launcher)
-        _refresh_accounts_list(launcher)
-        if hasattr(launcher, '_refresh_profiles'):
-            launcher._refresh_profiles()
-    except Exception as e:
-        messagebox.showerror(launcher._t("ERROR"), f"{launcher._t('MS_AUTH_FAIL')}\n{e}")
-def _add_offline_account(launcher):
-    username = themed_askstring(launcher._t("OFFLINE_ACCOUNT_TITLE"), launcher._t("OFFLINE_ACCOUNT_PROMPT"), parent=launcher, launcher=launcher)
-    
-    if username:
-        try:
-            offline_profile = {
-                'username': username,
-                'type': 'offline',
-                'uuid': '00000000-0000-0000-0000-000000000000'
-            }
-            accounts = load_profiles()
-            accounts.append(offline_profile)
-            save_profiles(accounts)
-            _refresh_accounts_list(launcher)
-            if hasattr(launcher, '_refresh_profiles'):
-                launcher._refresh_profiles()
-            messagebox.showinfo(launcher._t("SUCCESS"), launcher._t("OFFLINE_ACCOUNT_ADDED").format(username=username))
-        except Exception as e:
-            messagebox.showerror(launcher._t("ERROR"), launcher._t("OFFLINE_ACCOUNT_FAIL").format(e=e))
-def _get_plugins_config_path():
-    config_dir = Path.home() / ".config" / "oranglauncher"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "launcher_plugins.json"
-
-def _load_plugins():
-    return []
-
-def _save_plugins(plugins):
-    pass
-def _refresh_plugins_runtime(launcher):
-    try:
-        launcher._initialize_plugins()
-        _refresh_plugins_list(launcher)
-        messagebox.showinfo("Plugins Refreshed", "Native plugins have been reloaded successfully!")
-    except Exception as e:
-        messagebox.showerror("Plugin Error", f"Error refreshing plugins: {e}")
-        print(f"[PLUGIN ERROR] Full traceback:\n{traceback.format_exc()}")
-def _refresh_plugins_list(launcher):
-    for widget in launcher._plugins_list_frame.winfo_children():
-        widget.destroy()
-    plugins = []
-    if hasattr(launcher, 'loaded_plugins') and launcher.loaded_plugins:
-        plugins = launcher.loaded_plugins
-    
-    if not plugins:
-        no_plugin_label = tk.Label(launcher._plugins_list_frame,
-                                   text=launcher._t("PLUGINS_NONE"),
-                                   bg=launcher._get_theme_color('bg_secondary'),
-                                   fg=launcher._get_theme_color('fg_disabled'),
-                                   font=("Segoe UI", 9, "italic"))
-        no_plugin_label.pack(anchor="w", pady=8, padx=8)
-    else:
-        for i, plugin_info in enumerate(plugins):
-            if isinstance(plugin_info, dict):
-                plugin_name = plugin_info.get('name', 'Unknown')
-                plugin_type = plugin_info.get('type', 'unknown')
-                plugin_path = plugin_info.get('path', 'N/A')
-            else:
-                plugin_name = str(plugin_info[0]) if isinstance(plugin_info, (tuple, list)) else str(plugin_info)
-                plugin_type = "native"
-                plugin_path = "built-in"
-            
-            plugin_container = tk.Frame(launcher._plugins_list_frame, 
-                                       bg=launcher._get_theme_color('bg_tertiary'), 
-                                       relief="flat",
-                                       bd=1,
-                                       highlightthickness=1,
-                                       highlightcolor=launcher._get_theme_color('border_primary'),
-                                       highlightbackground=launcher._get_theme_color('border_primary'))
-            plugin_container.pack(fill="x", pady=2, padx=4)
-            plugin_frame = tk.Frame(plugin_container, bg=launcher._get_theme_color('bg_tertiary'))
-            plugin_frame.pack(fill="x", padx=8, pady=6)
-            info_frame = tk.Frame(plugin_frame, bg=launcher._get_theme_color('bg_tertiary'))
-            info_frame.pack(side="left", fill="x", expand=True)
-            
-            name_label = tk.Label(info_frame,
-                                 text=f"{plugin_name} ({plugin_type})",
-                                 bg=launcher._get_theme_color('bg_tertiary'),
-                                 fg=launcher._get_theme_color('fg_primary'),
-                                 font=("Segoe UI", 10, "bold"))
-            name_label.pack(anchor="w")
-            
-            status_label = tk.Label(info_frame,
-                                   text=f"Type: {plugin_type} | Active",
-                                   bg=launcher._get_theme_color('bg_tertiary'),
-                                   fg=launcher._get_theme_color('fg_secondary'),
-                                   font=("Segoe UI", 8))
-            status_label.pack(anchor="w")
+# the pre logic was bad.
 def _add_plugin_file(launcher):
     plugin_dir = Path.home() / ".local" / "share" / "oranglauncher" / "plugins"
     info_text = (
@@ -1851,383 +734,59 @@ def _add_plugin_file(launcher):
     )
     messagebox.showinfo("Add Plugin", info_text)
 
-def _remove_plugin(launcher, idx):
-    info_text = (
-        "To remove a native plugin:\n\n"
-        "1. Go to your plugins directory:\n"
-        f"   {Path.home() / '.local' / 'share' / 'oranglauncher' / 'plugins'}\n\n"
-        "2. Delete the plugin's .py file\n\n"
-        "3. Restart the launcher\n\n"
-        "Built-in plugins cannot be removed."
-    )
-    messagebox.showinfo("Remove Plugin", info_text)
 
-def _toggle_plugin_enabled(launcher, idx):
-    messagebox.showinfo("Plugin Status", "Native plugins are managed by file system.\n\nPlace/remove .py files in the plugins directory to enable/disable.")
-def _configure_modern_styles(style, tm=None):
-    if tm is None:
-        tm = get_theme_manager()
-    style.configure("Modern.TFrame", 
-                   background=tm.get_color('bg_tertiary'),
-                   borderwidth=0,
-                   relief="flat")
-    style.configure("Modern.TButton",
-                   background=tm.get_color('accent_primary'),
-                   foreground=tm.get_color('fg_primary'),
-                   borderwidth=0,
-                   focuscolor="none",
-                   font=("Segoe UI", 10, "normal"),
-                   padding=(12, 8))
-    style.map("Modern.TButton",
-             background=[("active", tm.get_color('accent_hover')), 
-                        ("pressed", tm.get_color('accent_pressed'))],
-             foreground=[("active", tm.get_color('fg_primary')),
-                        ("pressed", tm.get_color('fg_primary'))])
-    style.configure("Secondary.TButton",
-                   background=tm.get_color('bg_hover'),
-                   foreground=tm.get_color('fg_primary'),
-                   borderwidth=1,
-                   focuscolor="none",
-                   font=("Segoe UI", 9),
-                   padding=(10, 6))
-    style.map("Secondary.TButton",
-             background=[("active", tm.get_color('bg_pressed')), 
-                        ("pressed", tm.get_color('bg_section'))],
-             foreground=[("active", tm.get_color('fg_primary')),
-                        ("pressed", tm.get_color('fg_primary'))])
-    style.configure("Modern.TCheckbutton",
-                   background=tm.get_color('bg_tertiary'),
-                   foreground=tm.get_color('fg_primary'),
-                   focuscolor="none",
-                   font=("Segoe UI", 10))
-    style.map("Modern.TCheckbutton",
-             background=[("active", tm.get_color('bg_tertiary'))],
-             foreground=[("active", tm.get_color('fg_primary'))])
-    style.configure("Modern.TEntry",
-                   fieldbackground=tm.get_color('bg_input'),
-                   background=tm.get_color('bg_input'),
-                   foreground=tm.get_color('fg_primary'),
-                   borderwidth=1,
-                   relief="solid",
-                   insertcolor=tm.get_color('fg_primary'),
-                   font=("Segoe UI", 10))
-    style.configure("Modern.TCombobox",
-                   fieldbackground=tm.get_color('bg_input'),
-                   background=tm.get_color('bg_input'),
-                   foreground=tm.get_color('fg_primary'),
-                   borderwidth=1,
-                   arrowcolor=tm.get_color('fg_primary'),
-                   font=("Segoe UI", 10))
-    style.map("Modern.TCombobox",
-             fieldbackground=[('readonly', tm.get_color('bg_input'))],
-             selectbackground=[('readonly', tm.get_color('accent_primary'))],
-             selectforeground=[('readonly', tm.get_color('fg_primary'))],
-             foreground=[('readonly', tm.get_color('fg_primary'))],
-             arrowcolor=[('disabled', tm.get_color('fg_disabled'))])
-    try:
-        if not hasattr(style, '_rounded_scrollbar_assets_loaded'):
-            sb_width = 8
-            sb_radius = sb_width // 2
-            def create_pill_image(width, height, color, alpha=255):
-                scale = 2
-                w, h = width * scale, height * scale
-                r = sb_radius * scale
-                
-                if color.startswith('#'):
-                     color_rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5)) 
-                     fill_color = color_rgb + (alpha,)
-                else:
-                     fill_color = color
-                
-                image = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-                draw = ImageDraw.Draw(image)
-                draw.rounded_rectangle([0, 0, w-1, h-1], radius=r, fill=fill_color)
-                
-                image = image.resize((width, height), Image.Resampling.LANCZOS)
-                return ImageTk.PhotoImage(image)
-            trough_color = tm.get_color('bg_secondary') 
-            if trough_color.startswith('#'):
-                pass
-            thumb_color = "#606060" 
-            active_thumb_color = "#909090"
-            base_h = 32 
-            
-            style._trough_img = create_pill_image(sb_width, base_h, trough_color, alpha=0) # Invisible trough primarily
-            style._thumb_img = create_pill_image(sb_width, base_h, thumb_color, alpha=180)
-            style._thumb_active_img = create_pill_image(sb_width, base_h, active_thumb_color, alpha=220)
-            
-            style.element_create("Rounded.Vertical.Scrollbar.trough", "image", style._trough_img,
-                               border=[0, sb_radius, 0, sb_radius], sticky="ns", padding=0)
-            
-            style.element_create("Rounded.Vertical.Scrollbar.thumb", "image", style._thumb_img,
-                               ('active', style._thumb_active_img),
-                               border=[0, sb_radius, 0, sb_radius], sticky="ns")
-                               
-            style._rounded_scrollbar_assets_loaded = True
-
-    except Exception as e:
-        print(f"Failed to create rounded scrollbar, falling back: {e}")
-
-    try:
-        style.layout("Modern.Vertical.TScrollbar", [
-            ('Rounded.Vertical.Scrollbar.trough', {'children': [
-                ('Rounded.Vertical.Scrollbar.thumb', {'unit': '1', 'children': [], 'sticky': 'nswe'})
-            ], 'sticky': 'ns'})
-        ])
-    except tk.TclError:
-         pass
-
-    style.configure("Modern.Vertical.TScrollbar",
-                   background=tm.get_color('bg_section'),
-                   troughcolor=tm.get_color('bg_tertiary'),
-                   borderwidth=0,
-                   relief="flat",
-                   width=8)
-    
-    style.layout("Modern.Horizontal.TScrollbar", [
-        ('Horizontal.Scrollbar.trough', {'children': [
-            ('Horizontal.Scrollbar.thumb', {'expand': '1', 'sticky': 'nswe'})
-        ], 'sticky': 'ew'})
-    ])
-    style.configure("Modern.Horizontal.TScrollbar",
-                   background=tm.get_color('bg_section'),
-                   troughcolor=tm.get_color('bg_tertiary'),
-                   borderwidth=0,
-                   relief="flat",
-                   width=8)
-def _configure_enhanced_styles(style):
-    _configure_modern_styles(style)
-def _create_header(parent, launcher):
-    header_frame = tk.Frame(parent, bg=launcher._get_theme_color('bg_primary'))
-    header_frame.pack(fill="x", pady=(0, 16))
-    title = tk.Label(header_frame, 
-                    text=launcher._t("LAUNCHER_SETTINGS"),
-                    bg=launcher._get_theme_color('bg_primary'),
-                    fg=launcher._get_theme_color('fg_primary'),
-                    font=("Segoe UI", 16, "bold"))
-    title.pack(anchor="w")
-    subtitle = tk.Label(header_frame,
-                       text=launcher._t("LAUNCHER_SETTINGS_DESC"),
-                       bg=launcher._get_theme_color('bg_primary'),
-                       fg=launcher._get_theme_color('fg_tertiary'),
-                       font=("Segoe UI", 10))
-    subtitle.pack(anchor="w", pady=(2, 0))
-    separator = tk.Frame(header_frame, height=2, bg="#ff8c00")
-    separator.pack(fill="x", pady=(8, 0))
-def _create_section_frame(parent, title_text):
-    section_frame = tk.Frame(parent, bg="#363636", bd=1, relief="solid")
-    section_frame.pack(fill="x", pady=(0, 12))
-    title_bar = tk.Frame(section_frame, bg="#ff8c00", height=24)
-    title_bar.pack(fill="x")
-    title_bar.pack_propagate(False)
-    title_label = tk.Label(title_bar,
-                          text=title_text,
-                          bg="#ff8c00",
-                          fg="#000000",
-                          font=("Segoe UI", 9, "bold"))
-    title_label.pack(anchor="w", padx=10, pady=4)
-    content_area = tk.Frame(section_frame, bg="#363636")
-    content_area.pack(fill="x", padx=12, pady=12)
-    return content_area
-def _create_display_section(parent, launcher):
-    content = _create_section_frame(parent, launcher._t("DISPLAY_OPTIONS"))
-    status_cb = tk.Checkbutton(content,
-                               text=launcher._t("SHOW_STATUS_BAR"),
-                               variable=launcher.show_status_bar,
-                               bg="#363636",
-                               fg="#e8e8e8",
-                               selectcolor="#404040",
-                               activebackground="#363636",
-                               activeforeground="#ffffff",
-                               font=("Segoe UI", 9),
-                               bd=0,
-                               highlightthickness=0,
-                               command=lambda: _save_and_apply(launcher, launcher._toggle_status_bar))
-    status_cb.pack(anchor="w", pady=(0, 4))
-    helper = tk.Label(content,
-                     text=launcher._t("SHOW_PROGRESS_BAR"),
-                     bg="#363636",
-                     fg="#a0a0a0",
-                     font=("Segoe UI", 8))
-    helper.pack(anchor="w")
-def _create_discord_section(parent, launcher):
-    content = _create_section_frame(parent, launcher._t("DISCORD_RICH_PRESENCE"))
-    launcher.discord_rpc_enabled = tk.BooleanVar(value=True)
-    discord_cb = tk.Checkbutton(content,
-                                text=launcher._t("ENABLE_DISCORD_RPC"),
-                                variable=launcher.discord_rpc_enabled,
-                                bg="#363636",
-                                fg="#e8e8e8",
-                                selectcolor="#404040",
-                                activebackground="#363636",
-                                activeforeground="#ffffff",
-                                font=("Segoe UI", 9),
-                                bd=0,
-                                highlightthickness=0,
-                                command=lambda: _save_and_apply(launcher, lambda: _toggle_discord_rpc(launcher)))
-    discord_cb.pack(anchor="w", pady=(0, 4))
-    helper = tk.Label(content,
-                     text=launcher._t("DISCORD_RPC_DESC"),
-                     bg="#363636",
-                     fg="#a0a0a0",
-                     font=("Segoe UI", 8))
-    helper.pack(anchor="w")
+# the toggle
 def _toggle_discord_rpc(launcher):
     if launcher.discord_rpc_enabled.get():
         launcher._start_discord_rpc()
     else:
         launcher._stop_discord_rpc()
         # Vakarux, I removed the section and made it as easteregg
-def _create_audio_section(launcher, parent):
-    content = _create_section_frame(parent, launcher._t("MUSIC"))
-    launcher.music_btn = ttk.Button(content,
-                                   text=launcher._t("PLAY_MUSIC"),
-                                   command=launcher._toggle_music,
-                                   style="Settings.TButton",
-                                   width=18)
-    launcher.music_btn.pack(anchor="w", pady=(0, 4))
-    helper = tk.Label(content,
-                     text=launcher._t("PLAY_BACKGROUND_MUSIC"),
-                     bg="#363636",
-                     fg="#a0a0a0",
-                     font=("Segoe UI", 8))
-    helper.pack(anchor="w")
-def _create_language_section(parent, launcher):
-    content = _create_section_frame(parent, launcher._t("LANGUAGE_SETTINGS"))
-    lang_label = tk.Label(content,
-                         text=launcher._t("LANGUAGE") + ":",
-                         bg="#363636",
-                         fg="#e8e8e8",
-                         font=("Segoe UI", 9, "bold"))
-    lang_label.pack(anchor="w", pady=(0, 4))
-    launcher.language_var = tk.StringVar(value=launcher.current_locale)
-    lang_cb = ttk.Combobox(content,
-                          textvariable=launcher.language_var,
-                          state="readonly",
-                          width=22,
-                          font=("Segoe UI", 8))
-    lang_names = {
-        'en-US': 'English (United States)',
-        'lt-LT': 'Lietuvių (Lithuania)', 
-        'ru-RU': 'Русский (Russia)',
-        'lv-LV': 'Latviešu (Latvia)',
-        'pl-PL': 'Polski (Poland)',
-        'de-DE': 'Deutsch (Germany)',
-        'na-NA': 'Debug Locale (For Developers)'
-    }
-    display_values = []
-    launcher._lang_code_map = {}
-    for code in launcher.locales:
-        display_name = lang_names.get(code, code)
-        display_values.append(display_name)
-        launcher._lang_code_map[display_name] = code
-    lang_cb['values'] = display_values
-    current_display = lang_names.get(launcher.current_locale, launcher.current_locale)
-    lang_cb.set(current_display)
-    lang_cb.pack(anchor="w", pady=(0, 8))
-    def on_lang_change(event=None):
-        selected_display = lang_cb.get()
-        selected_code = launcher._lang_code_map.get(selected_display)
-        if selected_code and selected_code != launcher.current_locale:
-            try:
-                _save_language_preference(selected_code)
-                messagebox.showinfo(
-                    launcher._t("LANGUAGE_CHANGED_TITLE"),
-                    "Language preference saved. Restart the launcher to apply the change."
-                )
-            except Exception as e:
-                messagebox.showerror(launcher._t("ERROR"), str(e))
-    lang_cb.bind("<<ComboboxSelected>>", on_lang_change)
-    warning = tk.Label(content,
-                      text=launcher._t("LANGUAGE_RESTART_WARNING"),
-                      bg="#363636",
-                      fg="#ff8c00",
-                      font=("Segoe UI", 8, "italic"))
-    warning.pack(anchor="w")
-def _create_accounts_section(parent, launcher):
-    content = _create_section_frame(parent, launcher._t("ACCOUNTS"))
-    accounts_container = tk.Frame(content, bg="#363636")
-    accounts_container.pack(fill="x", pady=(0, 4))
-    canvas = tk.Canvas(accounts_container, height=80, bg="#363636", highlightthickness=0)
-    scrollbar = ttk.Scrollbar(accounts_container, orient="vertical", command=canvas.yview, style="Modern.Vertical.TScrollbar")
-    launcher._accounts_list_frame = tk.Frame(canvas, bg="#363636")
-    launcher._accounts_list_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-    canvas.create_window((0, 0), window=launcher._accounts_list_frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-    _refresh_accounts_list(launcher)
-def _create_mojang_section(parent, launcher):
-    content = _create_section_frame(parent, launcher._t("MOJANG_ACCOUNTS"))
-    info = tk.Label(content,
-                   text=launcher._t("MOJANG_DISCONTINUED"),
-                   bg="#363636",
-                   fg="#e8e8e8",
-                   font=("Segoe UI", 8),
-                   wraplength=220,
-                   justify="left")
-    info.pack(anchor="w", pady=(0, 8))
-    add_btn = ttk.Button(content,
-                        text=launcher._t("ADD_MOJANG_ACCOUNT"),
-                        style="Settings.TButton",
-                        state="disabled",
-                        width=18)
-    add_btn.pack(anchor="w")
-def _refresh_accounts_list(launcher):
-    for widget in launcher._accounts_list_frame.winfo_children():
-        widget.destroy()
-    try:
-        accounts = load_profiles()
-    except Exception as e:
-        print(f"Error loading accounts: {e}")
-        accounts = []
-    if not accounts:
-        no_acc_label = tk.Label(launcher._accounts_list_frame,
-                               text=launcher._t("NO_ACCOUNTS"),
-                               bg=launcher._get_theme_color('bg_secondary'),
-                               fg=launcher._get_theme_color('fg_disabled'),
-                               font=("Segoe UI", 8, "italic"))
-        no_acc_label.pack(anchor="w", pady=4)
-    else:
-        for i, acc in enumerate(accounts):
-            acc_container = tk.Frame(launcher._accounts_list_frame, 
-                                    bg=launcher._get_theme_color('bg_hover'),
-                                    bd=1, relief="solid",
-                                    highlightthickness=1,
-                                    highlightbackground=launcher._get_theme_color('border_primary'))
-            acc_container.pack(fill="x", pady=2)
-            acc_frame = tk.Frame(acc_container, bg=launcher._get_theme_color('bg_hover'))
-            acc_frame.pack(fill="x", padx=8, pady=4)
-            info_frame = tk.Frame(acc_frame, bg=launcher._get_theme_color('bg_hover'))
-            info_frame.pack(side="left", fill="x", expand=True)
-            username = acc.get('username', 'Unknown')
-            acc_type = acc.get('type', 'unknown').title()
-            name_label = tk.Label(info_frame,
-                                 text=f"{username} ({acc_type})",
-                                 bg=launcher._get_theme_color('bg_hover'),
-                                 fg=launcher._get_theme_color('fg_primary'),
-                                 font=("Segoe UI", 8, "bold"),
-                                 cursor="hand2")
-            name_label.pack(anchor="w")
-            for w in (acc_container, acc_frame, info_frame, name_label):
-                w.bind("<Button-1>", lambda e, a=acc: _update_account_skin_preview(launcher, a))
-            btn = ttk.Button(acc_frame,
-                           text=launcher._t("REMOVE"),
-                           style="Settings.TButton",
-                           width=8,
-                           command=lambda idx=i: _remove_account_persistent(launcher, idx))
-            btn.pack(side="right")
-        # show the first account's skin by default
-        if getattr(launcher, '_skin_preview_label', None) is not None:
-            _update_account_skin_preview(launcher, accounts[0])
 def _get_settings_path():
     config_dir = Path.home() / ".config" / "oranglauncher"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "launcher_config.json"
+_ADV_CACHE = {}
+_ADV_LOADED = [False]
+def _adv_all():
+    if not _ADV_LOADED[0]:
+        _ADV_LOADED[0] = True
+        try:
+            config_path = _get_settings_path()
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                adv = data.get('advanced')
+                if isinstance(adv, dict):
+                    _ADV_CACHE.update(adv)
+        except Exception as e:
+            print(f"Error loading advanced settings: {e}")
+    return _ADV_CACHE
+def _adv_get(key, default=None):
+    value = _adv_all().get(key)
+    return default if value is None else value
+def _adv_set(key, value):
+    _adv_all()[key] = value
+    try:
+        config_path = _get_settings_path()
+        data = {}
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data['advanced'] = dict(_ADV_CACHE)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving advanced settings: {e}")
+    # loader settings
 def _load_settings(launcher):
+    try:
+        apply_launcher_proxy()
+    except Exception as e:
+        print(f"[Proxy] apply failed: {e}")
     try:
         config_path = _get_settings_path()
         if config_path.exists():
@@ -2236,19 +795,19 @@ def _load_settings(launcher):
             launcher.show_status_bar.set(data.get('show_status_bar', False))
             launcher.discord_rpc_enabled.set(data.get('discord_rpc_enabled', True))
             if not hasattr(launcher, 'delete_telemetry_on_startup'):
-                launcher.delete_telemetry_on_startup = tk.BooleanVar(value=False)
+                launcher.delete_telemetry_on_startup = _Var(False)
             launcher.delete_telemetry_on_startup.set(data.get('delete_telemetry_on_startup', False))
             if not hasattr(launcher, 'custom_layout_enabled'):
-                launcher.custom_layout_enabled = tk.BooleanVar(value=False)
+                launcher.custom_layout_enabled = _Var(False)
             launcher.custom_layout_enabled.set(data.get('custom_layout_enabled', False))
             if not hasattr(launcher, 'debug_mode_enabled'):
-                launcher.debug_mode_enabled = tk.BooleanVar(value=False)
+                launcher.debug_mode_enabled = _Var(False)
             launcher.debug_mode_enabled.set(data.get('debug_mode_enabled', False))
             if not hasattr(launcher, 'show_progress_bar'):
-                launcher.show_progress_bar = tk.BooleanVar(value=False)
+                launcher.show_progress_bar = _Var(False)
             launcher.show_progress_bar.set(data.get('show_progress_bar', False))
             if not hasattr(launcher, 'use_dri_prime'):
-                launcher.use_dri_prime = tk.BooleanVar(value=False)
+                launcher.use_dri_prime = _Var(False)
             launcher.use_dri_prime.set(data.get('use_dri_prime', False))
             for attr, key in [('share_options', 'share_options'),
                                ('share_resourcepacks', 'share_resourcepacks'),
@@ -2256,7 +815,7 @@ def _load_settings(launcher):
                                ('share_servers', 'share_servers'),
                                ('share_screenshots', 'share_screenshots')]:
                 if not hasattr(launcher, attr):
-                    setattr(launcher, attr, tk.BooleanVar(value=False))
+                    setattr(launcher, attr, _Var(False))
                 getattr(launcher, attr).set(data.get(key, False))
     except Exception as e:
         print(f"Error loading settings: {e}")
@@ -2276,6 +835,8 @@ def _save_settings(launcher):
                     data = json.load(f)
             except Exception:
                 data = {}
+        data['advanced'] = dict(_adv_all())
+        # update the settings with current values from launcher
         data.update({
             'show_status_bar': launcher.show_status_bar.get(),
             'discord_rpc_enabled': launcher.discord_rpc_enabled.get(),
@@ -2295,6 +856,7 @@ def _save_settings(launcher):
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving settings: {e}")
+        # language preference is saved separately
 def _save_language_preference(language_code):
     try:
         config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
@@ -2310,32 +872,10 @@ def _save_language_preference(language_code):
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving language preference: {e}")
-def _restart_application():
-    try:
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        print(f"Error restarting application: {e}")
-        messagebox.showerror("Restart Failed", "Please manually restart the application.")
 def _save_and_apply(launcher, apply_func):
     _save_settings(launcher)
     if apply_func:
         apply_func()
-def _remove_account_persistent(launcher, idx):
-    try:
-        accounts = load_profiles()
-        if 0 <= idx < len(accounts):
-            username = accounts[idx].get('username', 'Unknown')
-            result = messagebox.askyesno(
-                launcher._t("ACCOUNT_REMOVE_TITLE"),
-                launcher._t("ACCOUNT_REMOVE_CONFIRM").format(username=username)
-            )
-            if result:
-                del accounts[idx]
-                save_profiles(accounts)
-                _refresh_accounts_list(launcher)
-                launcher._refresh_profiles()
-    except Exception as e:
-        messagebox.showerror(launcher._t("ERROR"), launcher._t("ACCOUNT_REMOVE_FAIL").format(e=e))
 def load_saved_language():
     try:
         config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
@@ -2349,135 +889,6 @@ def load_saved_language():
     except Exception as e:
         print(f"[DEBUG] Error loading language: {e}")
     return 'en-US'
-def initialize_settings_on_startup(launcher):
-    try:
-        _load_settings(launcher)
-    except Exception as e:
-        print(f"[DEBUG] Error initializing settings: {e}")
-def update_language_ui(launcher):
-    try:
-        if hasattr(launcher, 'language_var') and hasattr(launcher, '_lang_code_map'):
-            lang_names = {
-                'en-US': 'English (United States)',
-                'lt-LT': 'Lietuvių (Lithuania)',
-                'lv-LV': 'Latvian (Latvia)',
-                'ru-RU': 'Русский (Russia)',
-                'pl-PL': 'Polski (Poland)',
-                'de-DE': 'Deutsch (Germany)',
-                'na-NA': 'For Translators'
-            }
-            current_display = lang_names.get(launcher.current_locale, launcher.current_locale)
-            launcher.language_var.set(current_display)
-    except Exception as e:
-        print(f"[DEBUG] Error updating language UI: {e}")
-def _create_modern_card(parent, title, launcher):
-    card_container = tk.Frame(parent, bg=launcher._get_theme_color('bg_primary'))
-    card_container.pack(fill="x", pady=(0, 20), padx=4)
-    
-    card_frame = tk.Frame(card_container, 
-                         bg=launcher._get_theme_color('bg_primary'),
-                         relief="flat", 
-                         bd=0,
-                         highlightthickness=0)
-    card_frame.pack(fill="x", padx=0, pady=2)
-    
-    header_frame = tk.Frame(card_frame, bg=launcher._get_theme_color('bg_primary'))
-    header_frame.pack(fill="x", padx=0, pady=(16, 8))
-    
-    title_label = tk.Label(header_frame, text=title,
-                          bg=launcher._get_theme_color('bg_primary'), 
-                          fg=launcher._get_theme_color('fg_primary'),
-                          font=("Segoe UI", 12, "bold"))
-    title_label.pack(anchor="w")
-    
-    content_frame = tk.Frame(card_frame, bg=launcher._get_theme_color('bg_primary'))
-    content_frame.pack(fill="x", padx=0, pady=(0, 16))
-    return content_frame
-def _create_modern_theme_button(parent, launcher, theme_name, description, bg_color):
-    btn_container = tk.Frame(parent, bg=launcher._get_theme_color('bg_primary'))
-    btn_container.pack(fill="x", pady=(0, 12))
-    theme_frame = tk.Frame(btn_container, 
-                          bg=launcher._get_theme_color('bg_secondary'),
-                          relief="flat",
-                          bd=1,
-                          highlightthickness=1,
-                          highlightcolor=launcher._get_theme_color('border_primary'),
-                          highlightbackground=launcher._get_theme_color('border_primary'))
-    theme_frame.pack(fill="x", padx=2, pady=2)
-    preview_frame = tk.Frame(theme_frame, bg=bg_color, width=40, height=40)
-    preview_frame.pack(side="left", padx=12, pady=12)
-    preview_frame.pack_propagate(False)
-    info_frame = tk.Frame(theme_frame, bg=launcher._get_theme_color('bg_secondary'))
-    info_frame.pack(side="left", fill="both", expand=True, padx=(0, 12), pady=12)
-    name_label = tk.Label(info_frame, text=theme_name,
-                         bg=launcher._get_theme_color('bg_secondary'),
-                         fg=launcher._get_theme_color('fg_primary'),
-                         font=("Segoe UI", 11, "bold"))
-    name_label.pack(anchor="w")
-    desc_label = tk.Label(info_frame, text=description,
-                         bg=launcher._get_theme_color('bg_secondary'),
-                         fg=launcher._get_theme_color('fg_disabled'),
-                         font=("Segoe UI", 9))
-    desc_label.pack(anchor="w")
-
-    switch_icon = launcher._load_themed_icon("switch", size=(24, 24))
-    
-    def _update_selection_indicator(*args):
-        if not indicator_btn.winfo_exists():
-            return
-        is_selected = (launcher.selected_theme.get() == theme_name)
-        color = launcher._get_theme_color('accent_primary') if is_selected else launcher._get_theme_color('fg_disabled')
-        
-        icon = launcher._load_themed_icon("switch", size=(24, 24), force_color=color)
-        try:
-            indicator_btn.config(image=icon)
-            indicator_btn.image = icon  # type: ignore
-        except Exception:
-            return
-    indicator_btn = tk.Button(theme_frame,
-                             bg=launcher._get_theme_color('bg_secondary'),
-                             bd=0,
-                             activebackground=launcher._get_theme_color('bg_secondary'),
-                             relief="flat",
-                             cursor="hand2",
-                             command=lambda: _on_theme_select(launcher, theme_name))
-    indicator_btn.pack(side="right", padx=12)
-    
-    _update_selection_indicator()
-    
-    launcher.selected_theme.trace_add("write", lambda *a: _update_selection_indicator())
-
-    return theme_frame
-def _on_theme_select(launcher, theme_name):
-    try:
-        if save_theme_preference(theme_name):
-            try:
-                launcher.selected_theme.set(theme_name)
-                messagebox.showinfo(
-                    launcher._t("THEME_CHANGED_TITLE"),
-                    "Theme preference saved. Restart the launcher to apply the change."
-                )
-            except Exception as e:
-                print(f"Error notifying theme change: {e}")
-        else:
-            messagebox.showerror(launcher._t("ERROR"), launcher._t("THEME_SAVE_ERROR"))
-    except Exception as e:
-        print(f"Error changing theme: {e}")
-def _save_theme_preference(theme_name):
-    try:
-        config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
-        data = {}
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
-        data['theme'] = theme_name
-        with open(config_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"Error saving theme preference: {e}")
 
 class StreamCapture:
     def __init__(self, log_file_path, original_stream):
@@ -2518,106 +929,158 @@ class StreamCapture:
     def get_buffer_content(self) -> str:
         return ''.join(self.buffer)
         
-def _open_terminal_tailing_file(log_path: Path) -> bool:
-    tail_args = ["tail", "-n", "200", "-f", str(log_path)]
-    terminal_commands = [
-        ("gnome-terminal", ["gnome-terminal", "--"] + tail_args),
-        ("mate-terminal", ["mate-terminal", "--"] + tail_args),
-        ("xfce4-terminal", ["xfce4-terminal", "--"] + tail_args),
-        ("konsole", ["konsole", "-e"] + tail_args),
-        ("xterm", ["xterm", "-e"] + tail_args),
-        ("kitty", ["kitty", "-e"] + tail_args),
-        ("alacritty", ["alacritty", "-e"] + tail_args),
-        ("x-terminal-emulator", ["x-terminal-emulator", "-e"] + tail_args),
-    ]
 
-    for terminal_name, command in terminal_commands:
-        if shutil.which(terminal_name):
-            try:
-                subprocess.Popen(command)
-                return True
-            except Exception as e:
-                print(f"[DEBUG] Failed to launch {terminal_name}: {e}")
 
+_DEBUG_CAPTURE = {"active": False, "log_file": None, "stdout": None, "stderr": None}
+
+
+# logging directory for debug logs
+def _launcher_log_dir():
+    log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return log_dir
+
+ # capture stdout and stderr to a log file when debug mode enabled
+def _start_debug_capture():
+    if _DEBUG_CAPTURE["active"]:
+        return _DEBUG_CAPTURE["log_file"]
+    log_file = _launcher_log_dir() / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    if _DEBUG_CAPTURE["stdout"] is None:
+        _DEBUG_CAPTURE["stdout"] = sys.stdout
+        _DEBUG_CAPTURE["stderr"] = sys.stderr
+    sys.stdout = StreamCapture(str(log_file), _DEBUG_CAPTURE["stdout"] or sys.__stdout__)
+    sys.stderr = StreamCapture(str(log_file), _DEBUG_CAPTURE["stderr"] or sys.__stderr__)
+    _DEBUG_CAPTURE["active"] = True
+    _DEBUG_CAPTURE["log_file"] = str(log_file)
+    print(f"[DEBUG] Debug mode enabled, logging to: {log_file}")
+    print(f"[DEBUG] OrangLauncher {CURRENT_VERSION} on {platform.platform()} / Python {sys.version.split()[0]}")
+    return str(log_file)
+
+
+def _stop_debug_capture():
+    if not _DEBUG_CAPTURE["active"]:
+        return
+    print("[DEBUG] Debug mode disabled")
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if isinstance(stream, StreamCapture):
+            stream.close()
+    sys.stdout = _DEBUG_CAPTURE["stdout"] or sys.__stdout__
+    sys.stderr = _DEBUG_CAPTURE["stderr"] or sys.__stderr__
+    _DEBUG_CAPTURE["active"] = False
+
+
+def _debug_mode_saved():
+    try:
+        config_path = Path.home() / ".config" / "oranglauncher" / "launcher_config.json"
+        if config_path.exists():
+            return bool(json.loads(config_path.read_text(encoding="utf-8")).get("debug_mode_enabled", False))
+    except Exception:
+        pass
     return False
 
-def _load_theme_preference():
+ # crash report writing, submit to the  if you can
+def _write_crash_report(kind, text):
     try:
-        config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
-        if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return data.get('theme', 'Arc')
+        log_dir = _launcher_log_dir()
+        path = log_dir / f"crash_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.log"
+        lines = [f"=== OrangLauncher {CURRENT_VERSION} crash report ({kind}) ===",
+                 f"Time: {datetime.now().isoformat()}",
+                 f"Platform: {platform.platform()}",
+                 f"Python: {sys.version}",
+                 f"Executable: {sys.executable}",
+                 f"Arguments: {' '.join(sys.argv)}",
+                 f"Desktop: {os.environ.get('XDG_CURRENT_DESKTOP', '?')} / {os.environ.get('XDG_SESSION_TYPE', '?')}",
+                 f"Debug log: {_DEBUG_CAPTURE.get('log_file') or 'off'}", "", text.rstrip(), ""]
+        stream = sys.stdout if isinstance(sys.stdout, StreamCapture) else None
+        if stream is not None:
+            lines.append("=== Last console output ===")
+            lines.append(stream.get_buffer_content().rstrip())
+            lines.append("")
+        launcher = _QT_APP_REF[0] if _QT_APP_REF else None
+        buffer = getattr(launcher, "_log_buffer", None)
+        if buffer:
+            lines.append("=== Launcher log (last 300 lines) ===")
+            for entry in list(buffer)[-300:]:
+                lines.append(entry[0] if isinstance(entry, tuple) else str(entry))
+        path.write_text("\n".join(lines), encoding="utf-8")
+        old = sorted(log_dir.glob("crash_*.log"), key=lambda q: q.stat().st_mtime)
+        for stale in old[:-25]:
+            try:
+                stale.unlink()
+            except Exception:
+                pass
+        return path
     except Exception as e:
-        print(f"Error loading theme preference: {e}")
-    return 'Arc'
+        try:
+            sys.__stderr__.write(f"[crash] could not write crash report: {e}\n")
+        except Exception:
+            pass
+    return None
 
+
+def install_crash_handlers():
+    if getattr(install_crash_handlers, "_done", False):
+        return
+    install_crash_handlers._done = True
+    log_dir = _launcher_log_dir()
+    try:
+        import faulthandler
+        fh = open(log_dir / "faulthandler.log", "a", encoding="utf-8")
+        fh.write(f"\n=== OrangLauncher {CURRENT_VERSION} started {datetime.now().isoformat()} (pid {os.getpid()}) ===\n")
+        fh.flush()
+        faulthandler.enable(file=fh, all_threads=True)
+        install_crash_handlers._faulthandler_file = fh
+    except Exception as e:
+        print(f"[crash] faulthandler unavailable: {e}")
+    previous_hook = sys.excepthook
+
+    def excepthook(exc_type, exc, exc_tb):
+        text = "".join(traceback.format_exception(exc_type, exc, exc_tb))
+        path = _write_crash_report("unhandled exception", text)
+        try:
+            sys.__stderr__.write(text)
+            if path:
+                sys.__stderr__.write(f"[crash] report written to {path}\n")
+        except Exception:
+            pass
+        if isinstance(sys.stderr, StreamCapture):
+            try:
+                sys.stderr.write(text)
+            except Exception:
+                pass
+        if previous_hook not in (None, sys.__excepthook__):
+            try:
+                previous_hook(exc_type, exc, exc_tb)
+            except Exception:
+                pass
+    sys.excepthook = excepthook
+
+    def thread_hook(args):
+        if args.exc_type is SystemExit:
+            return
+        text = f"Thread: {getattr(args.thread, 'name', '?')}\n" + "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+        _write_crash_report("thread exception", text)
+        try:
+            sys.stderr.write(text)
+        except Exception:
+            pass
+    try:
+        threading.excepthook = thread_hook
+    except Exception:
+        pass
+
+ # toggle debug mode and start/stop capturing stdout/stderr to a log file
 def _toggle_debug_mode(launcher):
     _save_settings(launcher)
     if launcher.debug_mode_enabled.get():
-        print("[DEBUG] Debug mode enabled")
-        log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"launcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        if not hasattr(launcher, '_original_stdout'):
-            launcher._original_stdout = sys.stdout
-            launcher._original_stderr = sys.stderr
-        sys.stdout = StreamCapture(str(log_file), launcher._original_stdout)
-        sys.stderr = StreamCapture(str(log_file), launcher._original_stderr)
-        launcher._current_log_file = str(log_file)
-        print(f"[DEBUG] Logging to: {log_file}")
-        
-        if hasattr(launcher, '_debug_text_widget'):
-            _update_debug_info(launcher)
+        launcher._current_log_file = _start_debug_capture()
     else:
-        print("[DEBUG] Debug mode disabled")
-        # Restore original streams
-        if hasattr(launcher, '_original_stdout'):
-            sys.stdout = launcher._original_stdout
-            sys.stderr = launcher._original_stderr
-        
-    if hasattr(launcher, '_settings_current_content'):
-        try:
-            for btn in launcher._settings_nav_buttons:
-                if "Advanced" in btn.cget("text"):
-                    btn.invoke()
-                    break
-        except Exception as e:
-            print(f"[DEBUG] Error refreshing debug UI: {e}")
-def _update_debug_info(launcher):
-    if not hasattr(launcher, '_debug_text_widget'):
-        return
-    if launcher._debug_text_widget is None:
-        return
-    try:
-        if not launcher._debug_text_widget.winfo_exists():
-            return
-    except Exception:
-        return
-    try:
-        debug_info = []
-        debug_info.append("=== SYSTEM INFO ===")
-        debug_info.append(f"Platform: {platform.platform()}")
-        debug_info.append(f"Python: {sys.version}")
-        debug_info.append(f"Current locale: {launcher.current_locale}")
-        debug_info.append(f"Debug mode: {'ON' if launcher.debug_mode_enabled.get() else 'OFF'}")
-        
-        if launcher.debug_mode_enabled.get() and hasattr(launcher, '_current_log_file'):
-            debug_info.append(f"Log file: {launcher._current_log_file}")
-            debug_info.append("=== CAPTURED OUTPUT (last 30 lines) ===")
-            if isinstance(sys.stdout, StreamCapture):
-                output = sys.stdout.get_buffer_content()
-                lines = output.split('\n')
-                last_lines = lines[-30:] if len(lines) > 30 else lines
-                debug_info.extend(last_lines)
-        
-        launcher._debug_text_widget.config(state='normal')
-        launcher._debug_text_widget.delete('1.0', tk.END)
-        launcher._debug_text_widget.insert('1.0', '\n'.join(debug_info))
-        launcher._debug_text_widget.config(state='disabled')
-        launcher._debug_text_widget.yview(tk.END)  # Scroll to bottom
-    except Exception as e:
-        print(f"Error updating debug info: {e}")
+        _stop_debug_capture()
+
 
 # modpack things 
 class ModrinthPackImporter:
@@ -2644,7 +1107,9 @@ class ModrinthPackImporter:
             with zipfile.ZipFile(mrpack_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
             print(f"[MRPACK] Extracted mrpack file")
-            index_path = temp_dir / "modrinth.index.json"
+            index_path = temp_dir / ORANGPACK_INDEX
+            if not index_path.exists():
+                index_path = temp_dir / "modrinth.index.json"
             if not index_path.exists():
                 return False, "Invalid modpack: modrinth.index.json not found", None
             with open(index_path, 'r', encoding='utf-8') as f:
@@ -2656,7 +1121,7 @@ class ModrinthPackImporter:
             if not game_version:
                 return False, "Invalid modpack: no Minecraft version found in modrinth.index.json", None
             pack_name = pack_data.get("name", "Unknown Pack")
-            pack_version = pack_data.get("version_id", "1.0")
+            pack_version = pack_data.get("versionId") or pack_data.get("version_id") or "1.0"
             mod_loader, loader_version = self._detect_mod_loader(pack_data)
             print(f"[MRPACK] Pack info: {pack_name} v{pack_version}")
             print(f"[MRPACK] Minecraft version: {game_version}")
@@ -2678,6 +1143,8 @@ class ModrinthPackImporter:
                 self._download_mods_to_instance(pack_data, instance)
                 self._download_dependencies(pack_data, instance)
                 self._import_overrides_to_instance(temp_dir, instance)
+                self._save_pack_metadata(temp_dir, pack_data, instance, mrpack_file)
+                self._apply_orangpack_settings(temp_dir, pack_data, instance)
             except ValueError as e:
                 print(f"[MRPACK] Instance name exists, trying with version suffix...")
                 try:
@@ -2696,6 +1163,8 @@ class ModrinthPackImporter:
                     self._download_mods_to_instance(pack_data, instance)
                     self._download_dependencies(pack_data, instance)
                     self._import_overrides_to_instance(temp_dir, instance)
+                    self._save_pack_metadata(temp_dir, pack_data, instance, mrpack_file)
+                    self._apply_orangpack_settings(temp_dir, pack_data, instance)
                 except Exception as inner_e:
                     return False, f"Failed to create instance: {str(inner_e)}", None
             shutil.rmtree(temp_dir)
@@ -2705,10 +1174,88 @@ class ModrinthPackImporter:
                 except Exception as share_e:
                     print(f"[MRPACK] sharing apply failed: {share_e}")
             self.instance_mgr._notify_callbacks()
-            return True, f"Successfully imported {pack_name} (Minecraft {game_version}, {mod_loader})", instance.name
+            failed = getattr(self, '_failed_files', []) or []
+            note = ""
+            if failed:
+                note = f"\n\n{len(failed)} file(s) could not be downloaded:\n" + "\n".join(failed[:8])
+                if len(failed) > 8:
+                    note += f"\n... and {len(failed) - 8} more"
+            return True, f"Successfully imported {pack_name} (Minecraft {game_version}, {mod_loader}){note}", instance.name
         except Exception as e:
             traceback.print_exc()
             return False, f"Error importing modpack: {str(e)}", None
+    def _apply_orangpack_settings(self, temp_dir, pack_data, instance):
+        extra = pack_data.get("orangpack") if isinstance(pack_data, dict) else None
+        if not isinstance(extra, dict):
+            return
+        inst_data = extra.get("instance") or {}
+        try:
+            if inst_data.get("ram"):
+                instance.ram = inst_data["ram"]
+                instance.java_args = f"-Xmx{instance.ram}"
+            if inst_data.get("env_vars"):
+                instance.env_vars = inst_data["env_vars"]
+            opts = inst_data.get("opts")
+            if isinstance(opts, dict):
+                for k, v in opts.items():
+                    if k in ("custom_lwjgl_dir", "glfw_path", "openal_path", "pre_launch_cmd", "wrapper_cmd", "post_exit_cmd"):
+                        continue
+                    instance.opts[k] = v
+            inst_dir = temp_dir / "instance"
+            if inst_dir.exists():
+                for src_path in inst_dir.glob("**/*"):
+                    if src_path.is_file() and src_path.name != "instance.json":
+                        rel = src_path.relative_to(inst_dir)
+                        dst = instance.base_path / rel
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_path, dst)
+                icon_txt = instance.base_path / "icon.txt"
+                icon_png = instance.base_path / "icon.png"
+                if icon_png.exists():
+                    icon_txt.write_text(str(icon_png), encoding="utf-8")
+            self.instance_mgr.save_instances()
+        except Exception as e:
+            print(f"[ORANGPACK] settings apply failed: {e}")
+    def apply_pack_to_instance(self, pack_path, instance):
+        pack_path = Path(pack_path)
+        if not pack_path.exists() or not zipfile.is_zipfile(pack_path):
+            return False, "Pack file is missing or not a zip."
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            with zipfile.ZipFile(pack_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            index_path = temp_dir / ORANGPACK_INDEX
+            if not index_path.exists():
+                index_path = temp_dir / "modrinth.index.json"
+            if not index_path.exists():
+                return False, "Invalid modpack: modrinth.index.json not found"
+            with open(index_path, 'r', encoding='utf-8') as f:
+                pack_data = json.load(f)
+            game_version = pack_data.get("dependencies", {}).get("minecraft", "") or instance.version
+            mod_loader, loader_version = self._detect_mod_loader(pack_data)
+            changed = (instance.version != game_version) or ((instance.mod_loader or "").lower() != mod_loader) or ((instance.loader_version or "") != (loader_version or ""))
+            instance.version = game_version
+            instance.mod_loader = mod_loader
+            instance.loader_version = loader_version or ""
+            if changed:
+                instance.installed_version_id = None
+            self._download_mods_to_instance(pack_data, instance)
+            self._download_dependencies(pack_data, instance)
+            self._import_overrides_to_instance(temp_dir, instance)
+            self._save_pack_metadata(temp_dir, pack_data, instance, pack_path)
+            self._apply_orangpack_settings(temp_dir, pack_data, instance)
+            self.instance_mgr.save_instances()
+            self.instance_mgr._notify_callbacks()
+            failed = getattr(self, '_failed_files', []) or []
+            note = f"\n\n{len(failed)} file(s) could not be downloaded." if failed else ""
+            return True, f"Applied {pack_data.get('name', pack_path.name)} {pack_data.get('version_id', '')} to '{instance.name}'.{note}"
+        except Exception as e:
+            traceback.print_exc()
+            return False, f"Error applying modpack: {e}"
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+            # detect mod loader from pack data
     def _detect_mod_loader(self, pack_data):
         dependencies = pack_data.get("dependencies", {})
         if "fabric-loader" in dependencies:
@@ -2731,44 +1278,81 @@ class ModrinthPackImporter:
             if "forge" in file_path:
                 return "forge", ""
         return "vanilla", ""
+
+        # downloader
     def _download_mods_to_instance(self, pack_data, instance):
         files = pack_data.get("files", [])
-        mods_dir = instance.mods_dir
-        mods_dir.mkdir(parents=True, exist_ok=True)
-        total_mods = len([f for f in files if f.get("path", "").startswith("mods/")])
-        if self.launcher and hasattr(self.launcher, 'status_label'):
-            self.launcher.after(0, lambda: self.launcher.status_label.config(text=f"Importing modpack: 0/{total_mods} mods"))  # type: ignore
-        downloaded_count = 0
-        for i, file_info in enumerate(files, 1):
-            file_path = file_info.get("path", "")
-            if not file_path.startswith("mods/"):
+        game_dir = instance.minecraft_dir
+        game_dir.mkdir(parents=True, exist_ok=True)
+        wanted = []
+        for file_info in files:
+            file_path = (file_info.get("path", "") or "").replace("\\", "/").lstrip("/")
+            if not file_path or ".." in file_path.split("/"):
                 continue
-            download_url = file_info.get("downloads", [""])[0]
-            if not download_url:
-                print(f"Skipping {file_path} - no download URL")
+            env = file_info.get("env") or {}
+            if env.get("client") == "unsupported":
                 continue
-            try:
-                filename = Path(file_path).name
-                mod_path = mods_dir / filename
-                if mod_path.exists():
-                    print(f"[MRPACK] {filename} already exists, skipping")
-                    downloaded_count += 1
-                    continue
-                if self.launcher and hasattr(self.launcher, 'status_label'):
-                    n = downloaded_count + 1
-                    self.launcher.after(0, lambda n=n: self.launcher.status_label.config(text=f"Importing modpack: {n}/{total_mods} mods"))  # type: ignore
-                print(f"[MRPACK] Downloading {filename}...")
-                response = _http_session.get(download_url, stream=True, timeout=30)
-                response.raise_for_status()
-                with open(mod_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                downloaded_count += 1
-                print(f"[MRPACK] Downloaded {filename}")
-            except Exception as e:
-                print(f"[MRPACK] Error downloading {file_path}: {e}")
-        print(f"[MRPACK] Successfully downloaded {downloaded_count} mods")
+            urls = [u for u in (file_info.get("downloads") or []) if u]
+            if not urls:
+                print(f"[MRPACK] Skipping {file_path} - no download URL")
+                continue
+            wanted.append((file_path, urls, file_info.get("hashes") or {}, file_info.get("fileSize")))
+        total = len(wanted)
+        self._failed_files = []
+        done_count = [0]
+        lock = threading.Lock()
+        def _status(n):
+            if self.launcher and hasattr(self.launcher, 'status_label'):
+                try:
+                    self.launcher.after(0, lambda n=n: self.launcher.status_label.config(text=f"Importing modpack: {n}/{total} files"))  # type: ignore
+                except Exception:
+                    pass
+        _status(0)
+        def _fetch(item):
+            file_path, urls, hashes, size = item
+            dest = game_dir / file_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            want_sha1 = hashes.get("sha1")
+            if dest.exists():
+                try:
+                    if not want_sha1 or _sha1_file(dest) == want_sha1:
+                        return True
+                except Exception:
+                    pass
+            last_err = None
+            for attempt in range(3):
+                for url in urls:
+                    try:
+                        response = _http_session.get(url, stream=True, timeout=60)
+                        response.raise_for_status()
+                        tmp = dest.with_name(dest.name + ".part")
+                        with open(tmp, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=65536):
+                                if chunk:
+                                    f.write(chunk)
+                        if want_sha1 and _sha1_file(tmp) != want_sha1:
+                            raise IOError("sha1 mismatch")
+                        tmp.replace(dest)
+                        return True
+                    except Exception as e:
+                        last_err = e
+                time.sleep(0.5 * (attempt + 1))
+            print(f"[MRPACK] Error downloading {file_path}: {last_err}")
+            with lock:
+                self._failed_files.append(file_path)
+            return False
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            for ok in pool.map(_fetch, wanted):
+                with lock:
+                    done_count[0] += 1
+                    n = done_count[0]
+                if n % 5 == 0 or n == total:
+                    _status(n)
+        print(f"[MRPACK] Downloaded {total - len(self._failed_files)}/{total} files")
+        if self._failed_files:
+            print(f"[MRPACK] Failed files: {self._failed_files}")
+            # im not sponsoring modrinth or these, but this is a good way to get the dependencies from modrinth
     def _download_dependencies(self, pack_data, instance):
         dependencies = pack_data.get("dependencies", {})
         mods_dir = instance.mods_dir
@@ -2881,22 +1465,83 @@ class ModrinthPackImporter:
             print(f"[MRPACK] Error in _download_from_modrinth: {e}")
             traceback.print_exc()
             return False
+            # copy overrides to instance
     def _import_overrides_to_instance(self, temp_dir, instance):
-        overrides_dir = temp_dir / "overrides"
-        if not overrides_dir.exists():
-            print("No overrides directory found")
-            return
         game_dir = instance.minecraft_dir
         game_dir.mkdir(parents=True, exist_ok=True)
         copied_files = 0
-        for src_path in overrides_dir.glob("**/*"):
-            if src_path.is_file():
-                rel_path = src_path.relative_to(overrides_dir)
-                dst_path = game_dir / rel_path
-                dst_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_path, dst_path)
-                copied_files += 1
+        for folder in ("overrides", "client-overrides"):
+            overrides_dir = temp_dir / folder
+            if not overrides_dir.exists():
+                continue
+            for src_path in overrides_dir.glob("**/*"):
+                if src_path.is_file():
+                    rel_path = src_path.relative_to(overrides_dir)
+                    dst_path = game_dir / rel_path
+                    dst_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_path, dst_path)
+                    copied_files += 1
         print(f"Copied {copied_files} override files")
+    def _save_pack_metadata(self, temp_dir, pack_data, instance, source_path):
+        meta = {
+            "name": pack_data.get("name"),
+            "version_id": pack_data.get("version_id"),
+            "summary": pack_data.get("summary"),
+            "dependencies": pack_data.get("dependencies", {}),
+            "imported": datetime.now().isoformat(),
+            "source_file": str(source_path),
+            "file_count": len(pack_data.get("files", [])),
+            "managed_files": [f.get("path") for f in pack_data.get("files", []) if f.get("path")],
+        }
+        try:
+            sha1 = _sha1_file(source_path)
+            found = _modrinth_lookup_hashes([sha1])
+            version = found.get(sha1)
+            if version:
+                meta["modrinth_project_id"] = version.get("project_id")
+                meta["modrinth_version_id"] = version.get("id")
+                meta["modrinth_version_number"] = version.get("version_number")
+                try:
+                    r = _http_session.get(f"{MODRINTH_API_URL}/project/{version.get('project_id')}", timeout=15)
+                    if r.ok:
+                        proj = r.json()
+                        meta["modrinth_slug"] = proj.get("slug")
+                        meta["modrinth_title"] = proj.get("title")
+                        icon_url = proj.get("icon_url")
+                        if icon_url:
+                            self._save_icon_from_url(icon_url, instance)
+                except Exception as e:
+                    print(f"[MRPACK] project lookup failed: {e}")
+        except Exception as e:
+            print(f"[MRPACK] hash lookup failed: {e}")
+        if not (instance.base_path / "icon.txt").exists():
+            for candidate in ("icon.png", "icon.jpg", "icon.jpeg", "icon.webp", "pack.png"):
+                src = temp_dir / candidate
+                if src.exists():
+                    self._save_icon_file(src, instance)
+                    break
+        try:
+            with open(instance.base_path / "modpack.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[MRPACK] metadata save failed: {e}")
+    def _save_icon_file(self, src, instance):
+        try:
+            img = _qimage_thumbnail(src, 64)
+            dest = instance.base_path / "icon.png"
+            img.save(str(dest), "PNG")
+            (instance.base_path / "icon.txt").write_text(str(dest), encoding="utf-8")
+        except Exception as e:
+            print(f"[MRPACK] icon save failed: {e}")
+    def _save_icon_from_url(self, url, instance):
+        try:
+            data = _cached_image_get(url, timeout=15)
+            img = _qimage_thumbnail(data, 64)
+            dest = instance.base_path / "icon.png"
+            img.save(str(dest), "PNG")
+            (instance.base_path / "icon.txt").write_text(str(dest), encoding="utf-8")
+        except Exception as e:
+            print(f"[MRPACK] icon download failed: {e}")
 def import_modpack(mrpack_path, launcher=None):
     importer = ModrinthPackImporter(launcher)
     return importer.import_mrpack(mrpack_path)
@@ -2982,7 +1627,7 @@ class CurseForgePackImporter:
 
             required_mods = [f for f in files if f.get("required", True)]
             optional_mods = [f for f in files if not f.get("required", True)]
-
+            # Curse is a shit company and they don't want people to download mods without an API key, so we have to check for that
             api_key = os.environ.get("CURSEFORGE_API_KEY", "")
             downloaded = 0
             failed_ids = []
@@ -3042,24 +1687,12 @@ def import_curseforge_pack(zip_path, launcher=None):
     return importer.import_zip(zip_path)
 
 MODRINTH_API_BASE = "https://api.modrinth.com/v2"
-
-# release < beta < alpha: lower sorts first, i.e. is preferred.
 _MODRINTH_CHANNEL_RANK = {"release": 0, "beta": 1, "alpha": 2}
 
 
 def order_modrinth_versions(versions):
-    """
-    Order Modrinth versions by preference: stable releases first, then beta,
-    then alpha, and newest first within each channel.
-
-    Preferring the newest build regardless of channel silently pulls in
-    prereleases whose internals other mods have not caught up with. Real
-    example: for MC 26.2, Iris ships only 1.11.2, built against the Sodium
-    0.9.1 release; grabbing the newer Sodium 0.9.2-alpha.4 makes Iris's
-    compatibility mixin fail to inject and the game crashes on world load.
-    """
-    # Two stable sorts: newest first, then group by channel, which keeps the
-    # newest build within whichever channel wins.
+  #  order Modrinth versions by preference: stable releases first, then beta,
+  #  then alpha, and newest first within each channel.
     ordered = sorted(versions or [], key=lambda v: v.get("date_published") or "", reverse=True)
     ordered.sort(key=lambda v: _MODRINTH_CHANNEL_RANK.get(
         (v.get("version_type") or "release").lower(), 3))
@@ -3067,7 +1700,7 @@ def order_modrinth_versions(versions):
 
 
 def pick_modrinth_version(versions):
-    """Best version to install from an already game-version/loader-filtered list."""
+    # best version to install from an already game-version/loader-filtered list.
     ordered = order_modrinth_versions(versions)
     return ordered[0] if ordered else None
 
@@ -3474,7 +2107,7 @@ class ModrinthUpdater:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-        return _inner_update(local_jar, loader, game_version, aggressive=aggressive, force=force)
+        return False, 'update aborted'
 
     def check_mod(self, local_jar: Path, loader: str, game_version: str, aggressive: bool = False) -> Optional[Dict]:
         name = local_jar.name
@@ -3534,6 +2167,131 @@ class ModrinthUpdater:
                 continue
         return None
 
+    def scan_dir(self, directory: Path, loader: str, game_version: str, exts=('.jar',),
+                 progress: Optional[Callable[[int, int, str], None]] = None, stop_event: Optional[object] = None) -> Dict:
+        files = [p for p in Path(directory).iterdir() if p.is_file() and p.suffix.lower() in exts]
+        files.sort(key=lambda p: p.name.lower())
+        total = len(files)
+        by_hash = {}
+        results = {}
+        for idx, f in enumerate(files, 1):
+            if stop_event is not None and getattr(stop_event, 'is_set', lambda: False)():
+                return {'candidates': {}, 'downgrades': {}, 'results': {'__aborted__': 'Aborted'}}
+            try:
+                by_hash[_sha1_file(f)] = f
+            except Exception as e:
+                results[f.name] = f"Error: {e}"
+            if progress and (idx % 10 == 0 or idx == total):
+                progress(idx, total, f"Hashing {idx}/{total}")
+        hashes = list(by_hash.keys())
+        self._log(f"[Modrinth] Looking up {len(hashes)} files by hash")
+        known = _modrinth_lookup_hashes(hashes)
+        loaders = [loader.lower()] if loader and loader.lower() not in ('vanilla', 'none') else []
+        if progress:
+            progress(total, total, "Checking for updates on Modrinth...")
+        updates = _modrinth_update_hashes(list(known.keys()), loaders, [game_version]) if known else {}
+        project_ids = sorted({v.get('project_id') for v in updates.values() if v.get('project_id')})
+        projects = {}
+        for i in range(0, len(project_ids), 100):
+            chunk = project_ids[i:i + 100]
+            try:
+                r = _http_session.get(f"{MODRINTH_API_BASE}/projects", params={"ids": json.dumps(chunk)}, timeout=20)
+                r.raise_for_status()
+                for pr in r.json():
+                    projects[pr.get('id')] = pr
+            except Exception as e:
+                self._log(f"[Modrinth] project batch lookup failed: {e}")
+        candidates, downgrades = {}, {}
+        for sha1, f in by_hash.items():
+            current = known.get(sha1)
+            if not current:
+                results[f.name] = 'No project found'
+                continue
+            latest = updates.get(sha1)
+            if not latest:
+                results[f.name] = 'No compatible version found'
+                continue
+            if latest.get('id') == current.get('id') or (latest.get('version_number') and latest.get('version_number') == current.get('version_number')):
+                results[f.name] = 'Already up to date'
+                continue
+            chosen = None
+            for vf in latest.get('files', []):
+                if vf.get('primary'):
+                    chosen = vf
+                    break
+            if not chosen and latest.get('files'):
+                chosen = latest['files'][0]
+            if not chosen:
+                results[f.name] = 'No downloadable files'
+                continue
+            proj = projects.get(latest.get('project_id'), {})
+            info = {
+                'jar': f,
+                'slug': proj.get('slug') or latest.get('project_id'),
+                'project_title': proj.get('title') or current.get('name') or f.name,
+                'project_icon_url': proj.get('icon_url'),
+                'version_number': latest.get('version_number'),
+                'current_version_number': current.get('version_number'),
+                'chosen_filename': chosen.get('filename'),
+                'chosen_url': chosen.get('url'),
+                'chosen_sha1': (chosen.get('hashes') or {}).get('sha1'),
+                'game_versions': latest.get('game_versions', []),
+                'loaders': latest.get('loaders', []),
+            }
+            try:
+                cur_date = current.get('date_published') or ''
+                new_date = latest.get('date_published') or ''
+                if cur_date and new_date and new_date < cur_date:
+                    downgrades[f.name] = info
+                    results[f.name] = 'Remote version older than local (skipped)'
+                    continue
+            except Exception:
+                pass
+            candidates[f.name] = info
+        return {'candidates': candidates, 'downgrades': downgrades, 'results': results}
+
+    def apply_candidate(self, info: Optional[Dict], force: bool = False) -> Tuple[bool, str]:
+        if not info:
+            return False, "No candidate"
+        local = Path(info['jar'])
+        url = info.get('chosen_url')
+        if not url:
+            return False, "No file url"
+        filename = info.get('chosen_filename') or local.name
+        target = local.parent / filename
+        tmpdir = Path(tempfile.mkdtemp(prefix='mr_updater_'))
+        tmpfile = tmpdir / filename
+        try:
+            if not self._download_url_to_path(url, tmpfile) or not tmpfile.exists():
+                return False, "Download failed"
+            want = info.get('chosen_sha1')
+            if want and self.file_hash_sha1(tmpfile) != want:
+                return False, "Downloaded file hash mismatch"
+            if local.exists() and self.file_hash_sha1(local) == self.file_hash_sha1(tmpfile):
+                return False, "Already up to date"
+            disabled = local.suffix.lower() == '.disabled'
+            if disabled:
+                target = target.with_name(target.name + '.disabled')
+            bak = local.with_suffix(local.suffix + '.bak')
+            try:
+                shutil.move(str(local), str(bak))
+            except Exception:
+                pass
+            try:
+                shutil.move(str(tmpfile), str(target))
+            except Exception as e:
+                if bak.exists():
+                    shutil.move(str(bak), str(local))
+                return False, f"Failed to replace file: {e}"
+            try:
+                if bak.exists():
+                    bak.unlink()
+            except Exception:
+                pass
+            return True, f"Updated to {info.get('version_number', '')}"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def update_mods_in_dir(self, mods_dir: Path, loader: str, game_version: str,
                            progress: Optional[Callable[[int, int, str], None]] = None,
                            stop_event: Optional[object] = None,
@@ -3561,838 +2319,6 @@ class ModrinthUpdater:
                 progress(idx, total, f"Processed {idx}/{total}")
         return results
 
-class ModdingTab:
-    def __init__(self, parent, mod_loader_var, instance_manager=None):
-        self.parent = parent
-        self.mod_loader_var = mod_loader_var
-        self.profile_manager = get_game_profile_manager()
-        self.theme_manager = parent.theme_manager
-        self.instance_manager = instance_manager
-        self.mods_listbox = None
-        self.current_profile = None
-        self.current_instance = None
-        self.mod_info_label = None
-        self.download_thread = None
-        self.search_var = tk.StringVar()
-        self._all_mods = []
-        register_mod_change_callback(self.on_mod_list_changed)
-        if self.instance_manager:
-            self.instance_manager.register_callback(self.on_instance_changed)
-    def open_mod_download_sites(self):
-        messagebox.showinfo(self.parent._t('MODS_DOWNLOAD_SITES_TITLE'), self.parent._t('MODS_DOWNLOAD_SITES_MSG'))
-    def import_modpack(self):
-        messagebox.showinfo(self.parent._t('MODS_IMPORT_FEATURE_TITLE'), self.parent._t('MODS_IMPORT_FEATURE_MSG'))
-    def build_tab(self):
-        mods_frame = ttk.Frame(self.parent.notebook)
-        self.parent.notebook.add(mods_frame, text=self.parent._t('MODS_TAB_TITLE'))
-        header_frame = ttk.Frame(mods_frame)
-        header_frame.pack(fill="x", padx=20, pady=20)
-
-        ttk.Label(header_frame, text=self.parent._t("MODS_MANAGEMENT_TITLE"),
-                  style="Header.TLabel", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        profile_info_frame = ttk.Frame(mods_frame)
-        profile_info_frame.pack(fill="x", padx=20, pady=(0, 10))
-        self.profile_info_label = ttk.Label(
-            profile_info_frame,
-            text=self.parent._t("MODS_CURRENT_PROFILE_LOADING"),
-            style="Header.TLabel"
-        )
-        self.profile_info_label.pack(anchor="w")
-        self.mod_loader_info_label = ttk.Label(
-            profile_info_frame,
-            text=self.parent._t("MODS_LOADER_NONE"),
-            style="News.TLabel"
-        )
-        self.mod_loader_info_label.pack(anchor="w")
-        self.loader_warning_frame = ttk.Frame(mods_frame)
-        self.loader_warning_frame.pack(fill="x", padx=20, pady=(0, 10))
-        self.loader_warning_label = ttk.Label(
-            self.loader_warning_frame,
-            text=self.parent._t("MODS_LOADER_WARNING"),
-            style="News.TLabel",
-            foreground=self.theme_manager.get_color('accent_primary')
-        )
-        self.loader_warning_label.pack(anchor="w")
-        self.loader_warning_frame.pack_forget()
-        mods_list_frame = ttk.LabelFrame(mods_frame, text=self.parent._t("MODS_INSTALLED_TITLE"), style="TLabelframe")
-        mods_list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        self.mods_count_label = ttk.Label(
-            mods_list_frame,
-            text=self.parent._t("MODS_COUNT_0"),
-            style="News.TLabel"
-        )
-        self.mods_count_label.pack(anchor="w", padx=10, pady=(5, 0))
-        listbox_frame = ttk.Frame(mods_list_frame)
-        listbox_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        search_frame = ttk.Frame(listbox_frame)
-        search_frame.pack(fill="x", pady=(0, 6))
-        ttk.Label(search_frame, text="Search:").pack(side="left", padx=(0,6))
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=40)
-        search_entry.pack(side="left", padx=(0,6))
-        def _on_search_change(*args):
-            try:
-                self._apply_search_filter()
-            except Exception:
-                pass
-        self.search_var.trace_add('write', _on_search_change)
-        self.mods_listbox = tk.Listbox(
-            listbox_frame,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            selectbackground=self.theme_manager.get_color('bg_hover'),
-            selectforeground=self.theme_manager.get_color('fg_primary'),
-            selectmode=tk.EXTENDED
-        )
-        scrollbar_mods = ttk.Scrollbar(
-            listbox_frame,
-            orient="vertical",
-            command=self.mods_listbox.yview,
-            style="Modern.Vertical.TScrollbar"
-        )
-        self.mods_listbox.configure(yscrollcommand=scrollbar_mods.set)
-        self.mods_listbox.pack(side="left", fill="both", expand=True)
-        scrollbar_mods.pack(side="right", fill="y")
-        mod_info_frame = ttk.Frame(mods_list_frame)
-        mod_info_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self.mod_info_label = ttk.Label(
-            mod_info_frame,
-            text=self.parent._t("MODS_SELECT_INFO"),
-            style="News.TLabel"
-        )
-        self.mod_info_label.pack(anchor="w")
-        self.mods_listbox.bind("<<ListboxSelect>>", lambda e: self.on_mod_select())
-        mods_btn_frame = ttk.Frame(mods_frame)
-        mods_btn_frame.pack(fill="x", padx=20, pady=(0, 20))
-        
-        def create_mod_btn(text, icon_name, command):
-            icon = self.parent._load_themed_icon(icon_name, size=(16, 16))
-            btn = tk.Button(
-                mods_btn_frame,
-                text=f"  {text}",
-                image=icon,
-                compound="left",
-                command=command,
-                bg=self.theme_manager.get_color('bg_tertiary'),
-                fg=self.theme_manager.get_color('fg_primary'),
-                font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-            )
-            btn._icon = icon
-            return btn
-
-        create_mod_btn(self.parent._t("MODS_ADD_BTN"), "plus", self.add_mods).pack(side="left", padx=(0, 10))
-        create_mod_btn(self.parent._t("MODS_REMOVE_BTN"), "trash", self.remove_selected_mods).pack(side="left", padx=(0, 10))
-        create_mod_btn(self.parent._t("MODS_UPDATE_BTN"), "update", self.update_mods).pack(side="left", padx=(0, 10))
-        create_mod_btn(self.parent._t("MODS_REFRESH_LIST"), "refresh", self.refresh_ui).pack(side="left", padx=(0, 10))
-        create_mod_btn(self.parent._t("MODS_OPEN_FOLDER_BTN"), "folder", self.open_mods_folder).pack(side="left", padx=(0, 10))
-        self.refresh_ui()
-    def refresh_ui(self):
-        if self.instance_manager:
-            self.current_instance = self.instance_manager.get_selected_instance()
-            if self.current_instance:
-                self.current_profile = None
-                self.profile_info_label.config(
-                    text=self.parent._t("MODS_CURRENT_INSTANCE").format(name=self.current_instance.name)
-                )
-                self.mod_loader_info_label.config(
-                    text=self.parent._t("MODS_LOADER_VERSION").format(
-                        loader=self.current_instance.mod_loader, version=self.current_instance.version)
-                )
-                if self.current_instance.mod_loader.lower() == "vanilla":
-                    self.loader_warning_frame.pack()
-                else:
-                    self.loader_warning_frame.pack_forget()
-                self.mod_loader_var.set(self.current_instance.mod_loader)
-                self.refresh_mods_list()
-                return
-        self.current_profile = self.profile_manager.get_selected_profile()
-        if not self.current_profile:
-            self.profile_info_label.config(text=self.parent._t("MODS_NO_PROFILE"))
-            self.mod_loader_info_label.config(text=self.parent._t("MODS_LOADER_NA"))
-            self.loader_warning_frame.pack()
-            self.refresh_mods_list()
-            return
-        self.profile_info_label.config(
-            text=self.parent._t("MODS_CURRENT_PROFILE").format(name=self.current_profile.name)
-        )
-        self.mod_loader_info_label.config(
-            text=self.parent._t("MODS_LOADER_VERSION").format(
-                loader=self.current_profile.mod_loader, version=self.current_profile.version)
-        )
-        if self.current_profile.mod_loader == "None":
-            self.loader_warning_frame.pack()
-        else:
-            self.loader_warning_frame.pack_forget()
-        self.mod_loader_var.set(self.current_profile.mod_loader)
-        self.refresh_mods_list()
-    def on_mod_list_changed(self):
-        self.refresh_ui()
-    def on_instance_changed(self):
-        self.refresh_ui()
-    def on_mod_select(self):
-        selection = self.mods_listbox.curselection()
-        if not selection:
-            self.mod_info_label.config(text=self.parent._t("MODS_SELECT_MOD_INFO"))
-            return
-        if len(selection) == 1:
-            mod_name = self.mods_listbox.get(selection[0])
-            if mod_name not in (self.parent._t("MODS_NONE_INSTALLED"), self.parent._t("MODS_NO_PROFILE_SELECTED")):
-                if self.current_instance:
-                    mod_path = self.current_instance.mods_dir / mod_name
-                    if mod_path.exists():
-                        size_mb = mod_path.stat().st_size / (1024 * 1024)
-                        self.mod_info_label.config(
-                            text=f"Selected: {mod_name} ({size_mb:.2f} MB)"
-                        )
-                    else:
-                        self.mod_info_label.config(text=f"Selected: {mod_name}")
-                elif self.current_profile:
-                    mod_path = self.current_profile.get_mods_directory() / mod_name
-                    if mod_path.exists():
-                        size_mb = mod_path.stat().st_size / (1024 * 1024)
-                        self.mod_info_label.config(
-                            text=f"Selected: {mod_name} ({size_mb:.2f} MB)"
-                        )
-                    else:
-                        self.mod_info_label.config(text=f"Selected: {mod_name}")
-        else:
-            self.mod_info_label.config(text=f"{len(selection)} mods selected")
-    def add_mods(self):
-        if not self.current_instance and not self.current_profile:
-            messagebox.showwarning(self.parent._t("MODS_NO_PROFILE_WARNING_TITLE"), self.parent._t("MODS_NO_PROFILE_WARNING_MSG"))
-            return
-        is_vanilla = False
-        if self.current_instance:
-            is_vanilla = self.current_instance.mod_loader.lower() == "vanilla"
-        elif self.current_profile:
-            is_vanilla = self.current_profile.mod_loader == "None"
-        if is_vanilla:
-            result = messagebox.askyesno(
-                self.parent._t("MODS_NO_LOADER_TITLE"),
-                self.parent._t("MODS_NO_LOADER_MSG")
-            )
-            if not result:
-                return
-        filetypes = [("Mod files", "*.jar *.zip"), ("All files", "*.*")]
-        mod_files = filedialog.askopenfilenames(
-            title=self.parent._t("MODS_FILE_SELECT_TITLE"),
-            filetypes=filetypes
-        )
-        if not mod_files:
-            return
-        added_count = 0
-        failed_count = 0
-        if self.current_instance:
-            mods_dir = self.current_instance.mods_dir
-            mods_dir.mkdir(parents=True, exist_ok=True)
-            for mod_file in mod_files:
-                try:
-                    mod_filename = os.path.basename(mod_file)
-                    dest_path = mods_dir / mod_filename
-                    shutil.copy2(mod_file, dest_path)
-                    added_count += 1
-                except Exception as e:
-                    print(f"Error adding mod {os.path.basename(mod_file)}: {e}")
-                    failed_count += 1
-        else:
-            for mod_file in mod_files:
-                try:
-                    if add_mod_to_current_profile(mod_file):
-                        added_count += 1
-                    else:
-                        failed_count += 1
-                except Exception as e:
-                    print(f"Error adding mod {os.path.basename(mod_file)}: {e}")
-                    failed_count += 1
-        if added_count > 0:
-            if failed_count > 0:
-                messagebox.showinfo(
-                    self.parent._t("MODS_ADDED_TITLE"),
-                    f"{self.parent._t('MODS_ADDED_SUCCESS').format(count=added_count)}\n"
-                    f"{self.parent._t('MODS_ADDED_FAIL').format(count=failed_count)}"
-                )
-            else:
-                messagebox.showinfo(
-                    self.parent._t("SUCCESS"),
-                    self.parent._t("MODS_ADDED_SUCCESS").format(count=added_count)
-                )
-            self.refresh_mods_list()
-        elif failed_count > 0:
-            messagebox.showerror(
-                self.parent._t("ERROR"),
-                self.parent._t("MODS_ADDED_FAIL").format(count=failed_count)
-            )
-    def remove_selected_mods(self):
-        selection = self.mods_listbox.curselection()
-        if not selection:
-            messagebox.showinfo(self.parent._t("MODS_REMOVE_TITLE"), self.parent._t("MODS_REMOVE_NONE"))
-            return
-        if (not self.current_instance and not self.current_profile):
-            return
-        mod_names = [self.mods_listbox.get(i) for i in selection]
-        mod_names = [name for name in mod_names if name not in (self.parent._t("MODS_NONE_INSTALLED"), self.parent._t("MODS_NO_PROFILE_SELECTED"))]
-        if not mod_names:
-            return
-        if len(mod_names) == 1:
-            confirm_msg = self.parent._t("MODS_REMOVE_CONFIRM_SINGLE").format(name=mod_names[0])
-        else:
-            confirm_msg = self.parent._t("MODS_REMOVE_CONFIRM_MULTI").format(count=len(mod_names))
-        confirm = messagebox.askyesno(self.parent._t("MODS_REMOVE_CONFIRM_TITLE"), confirm_msg)
-        if not confirm:
-            return
-        removed_count = 0
-        if self.current_instance:
-            mods_dir = self.current_instance.mods_dir
-            for mod_name in mod_names:
-                try:
-                    mod_path = mods_dir / mod_name
-                    if mod_path.exists():
-                        mod_path.unlink()
-                        removed_count += 1
-                except Exception as e:
-                    print(f"Error removing mod {mod_name}: {e}")
-        else:
-            for mod_name in mod_names:
-                try:
-                    if remove_mod_from_current_profile(mod_name):
-                        removed_count += 1
-                except Exception as e:
-                    print(f"Error removing mod {mod_name}: {e}")
-        if removed_count > 0:
-            self.refresh_mods_list()
-            messagebox.showinfo(
-                self.parent._t("SUCCESS"),
-                self.parent._t("MODS_REMOVED_SUCCESS").format(count=removed_count)
-            )
-    def open_mods_folder(self):
-        if not self.current_instance and not self.current_profile:
-            messagebox.showwarning(self.parent._t("MODS_NO_PROFILE_WARNING_TITLE"), self.parent._t("MODS_NO_PROFILE_WARNING_MSG"))
-            return
-        mods_path = None
-        if self.current_instance:
-            mods_path = self.current_instance.mods_dir
-            mods_path.mkdir(parents=True, exist_ok=True)
-        else:
-            mods_path = self.current_profile.ensure_mods_directory()
-        try:
-            subprocess.run(["xdg-open", str(mods_path)])
-        except Exception as e:
-            messagebox.showerror(self.parent._t("ERROR"), self.parent._t("MODS_OPEN_FOLDER_ERROR").format(e=str(e)))
-    def import_mrpack(self):
-        filetypes = [("Modrinth Modpack", "*.mrpack"), ("All files", "*.*")]
-        mrpack_path = filedialog.askopenfilename(
-            title=self.parent._t("MODS_IMPORT_TITLE"),
-            filetypes=filetypes
-        )
-        if not mrpack_path:
-            return
-        old_status = ""
-        if hasattr(self.parent, 'status_label'):
-            old_status = self.parent.status_label.cget("text")
-            self.parent.status_label.config(text="Importing modpack...")
-            self.parent.update_idletasks()
-        if hasattr(self.parent, 'status_bar_progress'):
-            self.parent.status_bar_progress.config(mode='indeterminate')
-            self.parent.status_bar_progress.start(15)
-        def _restore_spinner():
-            if hasattr(self.parent, 'status_bar_progress'):
-                self.parent.status_bar_progress.stop()
-                self.parent.status_bar_progress.config(mode='determinate')
-                if hasattr(self.parent, 'progress'):
-                    self.parent.progress.set(0)
-            if hasattr(self.parent, 'status_label'):
-                self.parent.status_label.config(text=old_status or "Ready")  # type: ignore
-        def import_thread():
-            try:
-                launcher_obj = self.parent if hasattr(self.parent, 'status_label') else None
-                success, message, profile_name = import_modpack(mrpack_path, launcher_obj)
-                def update_ui():
-                    _restore_spinner()
-                    if success:
-                        messagebox.showinfo(
-                            self.parent._t("MODS_IMPORT_SUCCESS_TITLE"),
-                            self.parent._t("MODS_IMPORT_SUCCESS_MSG").format(message=message, profile_name=profile_name)
-                        )
-                        if hasattr(self.parent, '_refresh_game_profiles'):
-                            self.parent._refresh_game_profiles()
-                        self.refresh_ui()
-                    else:
-                        messagebox.showerror(self.parent._t("MODS_IMPORT_FAIL_TITLE"), message)
-                self.parent.after(0, update_ui)
-            except Exception as e:
-                error_msg = f"Error importing modpack: {str(e)}\n\n{traceback.format_exc()}"
-                print(error_msg)
-                def show_error():
-                    _restore_spinner()
-                    messagebox.showerror(self.parent._t("MODS_IMPORT_ERROR_TITLE"), str(e))
-                self.parent.after(0, show_error)
-        thread = threading.Thread(target=import_thread, daemon=True)
-        thread.start()
-
-
-    def restore_backups(self):
-        if not self.current_instance and not self.current_profile:
-            messagebox.showwarning(self.parent._t("MODS_NO_PROFILE_WARNING_TITLE"), self.parent._t("MODS_NO_PROFILE_WARNING_MSG"))
-            return
-        if self.current_instance:
-            mods_dir = self.current_instance.mods_dir
-        else:
-            mods_dir = self.current_profile.ensure_mods_directory()
-        bak_files = list(mods_dir.glob('*.jar.bak')) if mods_dir.exists() else []
-        if not bak_files:
-            messagebox.showinfo(self.parent._t("MODS_BACKUP_NONE") if hasattr(self.parent, '_t') else "No backups", self.parent._t("MODS_BACKUP_NONE_MSG") if hasattr(self.parent, '_t') else "No .bak backup files found.")
-            return
-        confirm = messagebox.askyesno(self.parent._t("MODS_BACKUP_RESTORE_TITLE") if hasattr(self.parent, '_t') else "Restore Backups", self.parent._t("MODS_BACKUP_RESTORE_CONFIRM").format(count=len(bak_files)) if hasattr(self.parent, '_t') else f"Restore {len(bak_files)} backup(s)?")
-        if not confirm:
-            return
-        restored = 0
-        errors = []
-        for bak in bak_files:
-            try:
-                orig = bak.with_suffix('')
-                if orig.exists():
-                    try:
-                        orig.unlink()
-                    except Exception:
-                        pass
-                shutil.move(str(bak), str(orig))
-                restored += 1
-            except Exception as e:
-                errors.append(f"{bak.name}: {e}")
-        msg = f"Restored {restored} backup(s)."
-        if errors:
-            msg += "\nErrors:\n" + "\n".join(errors[:10])
-        messagebox.showinfo(self.parent._t("MODS_BACKUP_RESTORE_DONE") if hasattr(self.parent, '_t') else "Restore complete", msg)
-        self.refresh_mods_list()
-
-    def _report_progress(self, current: int, total: int, message: str):
-        try:
-            percent = int((current / max(total, 1)) * 100)
-        except Exception:
-            percent = 0
-        try:
-            if hasattr(self.parent, '_submit_progress_update'):
-                self.parent._submit_progress_update(percent, message)
-            elif hasattr(self.parent, 'status_label'):
-                self.parent.status_label.config(text=message)  # type: ignore
-        except Exception:
-            pass
-
-    def update_mods(self):
-        if not self.current_instance and not self.current_profile:
-            messagebox.showwarning(self.parent._t("MODS_NO_PROFILE_WARNING_TITLE"), self.parent._t("MODS_NO_PROFILE_WARNING_MSG"))
-            return
-        if self.current_instance:
-            mods_dir = self.current_instance.mods_dir
-            loader = self.current_instance.mod_loader
-            game_version = self.current_instance.version
-        else:
-            mods_dir = self.current_profile.ensure_mods_directory()
-            loader = self.current_profile.mod_loader
-            game_version = self.current_profile.version
-        if not mods_dir.exists():
-            messagebox.showinfo(self.parent._t("MODS_UPDATE_TITLE") if hasattr(self.parent, '_t') else "Update Mods", "No mods to update")
-            return
-
-        dlg = tk.Toplevel(self.parent)
-        dlg.title(self.parent._t("MODS_UPDATE_TITLE") if hasattr(self.parent, '_t') else "Update Mods")
-        dlg.transient(self.parent)
-        dlg.grab_set()
-        try:
-            bg = self.parent._get_theme_color('bg_primary')
-            fg = self.parent._get_theme_color('fg_primary')
-            accent = self.parent._get_theme_color('accent_primary')
-            hover = self.parent._get_theme_color('bg_hover')
-        except Exception:
-            bg = None
-            fg = None
-            accent = None
-            hover = None
-        if bg:
-            try:
-                dlg.configure(bg=bg)
-            except Exception:
-                pass
-        lbl = tk.Label(dlg, text=self.parent._t("MODS_UPDATING") if hasattr(self.parent, '_t') else "Updating mods...",
-                       bg=(bg if bg else None), fg=(fg if fg else None), font=("Segoe UI", 11, "bold"))
-        lbl.pack(padx=12, pady=(12, 6))
-        pb = ttk.Progressbar(dlg, orient='horizontal', length=360, mode='determinate')
-        pb.pack(padx=12, pady=(0, 12))
-        status_lbl = tk.Label(dlg, text=self.parent._t("MODS_UPDATING_START") if hasattr(self.parent, '_t') else "Starting...",
-                              bg=(bg if bg else None), fg=(fg if fg else None))
-        status_lbl.pack(padx=12, pady=(0, 12))
-        cancel_event = threading.Event()
-        def on_cancel():
-            cancel_event.set()
-            status_lbl.config(text="Cancelling...")
-        cancel_btn = tk.Button(dlg, text=self.parent._t("CANCEL") if hasattr(self.parent, '_t') else "Cancel",
-                       command=on_cancel,
-                       bg=(hover if hover else None), fg=(fg if fg else None), bd=0, padx=12, pady=6,
-                       cursor="hand2")
-        cancel_btn.pack(padx=12, pady=(0, 12))
-
-        def worker():
-            updater = ModrinthUpdater(logger=lambda m: self.parent._safe_append_log(m) if hasattr(self.parent, '_safe_append_log') else None)
-            def progress(curr, total, msg):
-                try:
-                    pct = int((curr / max(total, 1)) * 100)
-                except Exception:
-                    pct = 0
-                def ui_update():
-                    try:
-                        pb['value'] = pct
-                        status_lbl.config(text=msg)
-                    except Exception:
-                        pass
-                self.parent.after(0, ui_update)
-            try:
-                jars = [p for p in mods_dir.iterdir() if p.suffix.lower() == '.jar' and p.is_file()]
-                candidates = {}
-                downgrade_candidates = {}  
-                results = {} 
-                incompatible_installed = [] 
-                total = len(jars)
-                for idx, jar in enumerate(sorted(jars), start=1):
-                    if cancel_event.is_set():
-                        break
-                    if progress:
-                        progress(idx - 1, total, f"Scanning {jar.name}...")
-                    try:
-                        cand = updater.check_mod(jar, loader, game_version, aggressive=False)
-                        try:
-                            info = updater._extract_info_from_jar(jar)
-                            slug_candidates = []
-                            if info.get('id'):
-                                slug_candidates.append(info.get('id'))
-                            if info.get('name'):
-                                slug_candidates.append(info.get('name'))
-                            slug_candidates.append(_normalize_query_from_filename(jar.name))
-                            found_slug = None
-                            for q in slug_candidates:
-                                hits = updater.search_projects(q)
-                                if hits:
-                                    for h in hits:
-                                        if h.get('slug'):
-                                            found_slug = h.get('slug')
-                                            break
-                                if found_slug:
-                                    break
-                            if found_slug:
-                                versions = updater.get_project_versions(found_slug)
-                                if versions:
-                                    compatible_versions = [v for v in versions if updater._version_is_compatible(v, game_version)]
-                                    if not compatible_versions:
-                                        incompatible_installed.append(jar.name)
-                        except Exception:
-                            pass
-                        if cand:
-                            try:
-                                local_info = updater._extract_info_from_jar(jar)
-                                local_ver_text = local_info.get('version')
-                                local_nv = updater._parse_numeric_ver(local_ver_text) if local_ver_text else None
-                                if local_nv is None:
-                                    local_nv = updater._parse_numeric_ver(jar.name)
-                                chosen_text = cand.get('version_number') or cand.get('chosen_filename') or ''
-                                chosen_nv = updater._parse_numeric_ver(chosen_text)
-                                if local_nv and chosen_nv and chosen_nv < local_nv:
-                                    self.parent._safe_append_log(f"[Updater] Skipping candidate for {jar.name}: chosen {cand.get('version_number') or cand.get('chosen_filename')} older than local")
-                                    downgrade_candidates[jar.name] = {'jar': jar, **cand}
-                                    results[jar.name] = 'Remote version older than local (skipped)'
-                                else:
-                                    candidates[jar.name] = {'jar': jar, **cand}
-                            except Exception:
-                                candidates[jar.name] = {'jar': jar, **cand}
-                        if progress:
-                            progress(idx, total, f"Scanned {idx}/{total}")
-                    except Exception as e:
-                        self.parent._safe_append_log(f"[Updater] Error scanning {jar.name}: {e}")
-                        results[jar.name] = f"Error scanning: {e}"
-                if cancel_event.is_set():
-                    results = {'__aborted__': 'Aborted'}
-                else:
-                    if incompatible_installed:
-                        def show_incompat_warning():
-                            msg = "The following installed mods do not appear to have any release compatible with this instance's Minecraft version (" + str(game_version) + "):\n\n"
-                            msg += "\n".join(incompatible_installed[:50])
-                            msg += "\n\nYou can either: upgrade the instance Minecraft version, remove the listed mods, or proceed and skip updating them.\n\nProceed and skip incompatible mods?"
-                            return messagebox.askyesno(self.parent._t("MODS_INCOMPAT_WARNING_TITLE") if hasattr(self.parent, '_t') else "Incompatible mods detected", msg)
-                        proceed = [False]
-                        evt = threading.Event()
-                        def ask_ui():
-                            try:
-                                proceed[0] = show_incompat_warning()
-                            except Exception:
-                                proceed[0] = False
-                            finally:
-                                evt.set()
-                        self.parent.after(0, ask_ui)
-                        while not evt.wait(timeout=0.1):
-                            if cancel_event.is_set():
-                                break
-                        if cancel_event.is_set() or not proceed[0]:
-                            self.parent._safe_append_log("[Updater] Aborted due to incompatible installed mods or user cancelled")
-                            results = {'__aborted__': 'Aborted (incompatible mods)'}
-                            for nm in incompatible_installed:
-                                results[nm] = 'Incompatible with instance (no compatible release)'
-                        else:
-                            for nm in incompatible_installed:
-                                if nm in candidates:
-                                    del candidates[nm]
-                    if not candidates:
-                        self.parent._safe_append_log("[Updater] No updates found for installed mods")
-                        for jar in jars:
-                            if jar.name not in results:
-                                results[jar.name] = 'No update available'
-                    else:
-                        selection_event = threading.Event()
-                        selected = {'names': None, 'force': False}
-                        def show_confirm():
-                            try:
-                                dlg2 = tk.Toplevel(self.parent)
-                                dlg2.title(self.parent._t("MODS_UPDATE_CONFIRM_TITLE") if hasattr(self.parent, '_t') else "Confirm Updates")
-                                dlg2.transient(self.parent)
-                                dlg2.grab_set()
-                                tm = self.parent.theme_manager
-                                bg = tm.get_color('bg_primary')
-                                fg = tm.get_color('fg_primary')
-                                dlg2.configure(bg=bg)
-                                tk.Label(dlg2, text=self.parent._t("MODS_UPDATE_CONFIRM_HEADER") if hasattr(self.parent, '_t') else "Select mods to update:", bg=bg, fg=fg, font=("Segoe UI", 11, "bold")).pack(padx=12, pady=(12, 6))
-                                list_frame = tk.Frame(dlg2, bg=bg)
-                                list_frame.pack(fill='both', expand=True, padx=8, pady=6)
-                                canvas = tk.Canvas(list_frame, bg=tm.get_color('bg_secondary'), highlightthickness=0)
-                                scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview, style="Modern.Vertical.TScrollbar")
-                                inner = tk.Frame(canvas, bg=tm.get_color('bg_secondary'))
-                                inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-                                canvas.create_window((0,0), window=inner, anchor='nw')
-                                canvas.configure(yscrollcommand=scrollbar.set)
-                                canvas.pack(side='left', fill='both', expand=True)
-                                scrollbar.pack(side='right', fill='y')
-
-                                checks = {}
-                                downgrade_checks = {}
-                                images = {}
-                                for name, info in candidates.items():
-                                    row = tk.Frame(inner, bg=tm.get_color('bg_secondary'))
-                                    row.pack(fill='x', pady=4, padx=6)
-                                    var = tk.BooleanVar(value=True)
-                                    cb = tk.Checkbutton(row, variable=var, bg=tm.get_color('bg_secondary'))
-                                    cb.pack(side='left')
-                                    img_label = tk.Label(row, bg=tm.get_color('bg_secondary'))
-                                    img_label.pack(side='left', padx=(6,8))
-                                    icon_url = info.get('project_icon_url')
-                                    if icon_url:
-                                        try:
-                                            icon_bytes = _cached_image_get(icon_url)
-                                            img = Image.open(io.BytesIO(icon_bytes)).convert('RGBA')
-                                            img = img.resize((32,32), Image.Resampling.LANCZOS)
-                                            photo = ImageTk.PhotoImage(img)
-                                            images[name] = photo
-                                            img_label.config(image=photo)
-                                        except Exception:
-                                            pass
-                                    lbl_text = f"{info.get('project_title')} → {info.get('version_number')}  (installed: {name})"
-                                    tk.Label(row, text=lbl_text, bg=tm.get_color('bg_secondary'), fg=tm.get_color('fg_primary')).pack(side='left')
-                                    checks[name] = var
-
-                                if downgrade_candidates:
-                                    sep = tk.Label(inner, text="", bg=tm.get_color('bg_secondary'))
-                                    sep.pack(fill='x')
-                                    warn_label = tk.Label(inner, text="Candidates skipped due to downgrade protection:", bg=tm.get_color('bg_secondary'), fg=tm.get_color('accent_primary'), font=("Segoe UI", 9, "italic"))
-                                    warn_label.pack(anchor='w', padx=6, pady=(6, 0))
-                                    for name, info in downgrade_candidates.items():
-                                        row = tk.Frame(inner, bg=tm.get_color('bg_secondary'))
-                                        row.pack(fill='x', pady=2, padx=6)
-                                        var = tk.BooleanVar(value=False)
-                                        cb = tk.Checkbutton(row, variable=var, bg=tm.get_color('bg_secondary'))
-                                        cb.pack(side='left')
-                                        cb.config(state='disabled')
-                                        img_label = tk.Label(row, bg=tm.get_color('bg_secondary'))
-                                        img_label.pack(side='left', padx=(6,8))
-                                        icon_url = info.get('project_icon_url')
-                                        if icon_url:
-                                            try:
-                                                icon_bytes = _cached_image_get(icon_url)
-                                                img = Image.open(io.BytesIO(icon_bytes)).convert('RGBA')
-                                                img = img.resize((32,32), Image.Resampling.LANCZOS)
-                                                photo = ImageTk.PhotoImage(img)
-                                                images[name] = photo
-                                                img_label.config(image=photo)
-                                            except Exception:
-                                                pass
-                                        lbl_text = f"{info.get('project_title')} → {info.get('version_number')}  (installed: {name})"
-                                        tk.Label(row, text=lbl_text, bg=tm.get_color('bg_secondary'), fg=tm.get_color('fg_primary')).pack(side='left')
-                                        note = tk.Label(row, text=' (skipped - older than local)', bg=tm.get_color('bg_secondary'), fg=tm.get_color('fg_disabled'))
-                                        note.pack(side='left')
-                                        downgrade_checks[name] = (var, cb)
-
-                                btns = tk.Frame(dlg2, bg=bg)
-                                btns.pack(pady=(8,12))
-                                force_state = {'enabled': False}
-                                def on_force_all():
-                                    force_state['enabled'] = True
-                                    for nm, (v, box) in downgrade_checks.items():
-                                        try:
-                                            box.config(state='normal')
-                                            v.set(True)
-                                        except Exception:
-                                            pass
-                                    try:
-                                        force_btn.config(text=self.parent._t('MODS_FORCE_ENABLED') if hasattr(self.parent, '_t') else 'Force Enabled')
-                                    except Exception:
-                                        pass
-                                    selected['force'] = True
-                                force_btn = tk.Button(btns, text=self.parent._t('MODS_FORCE_BTN') if hasattr(self.parent, '_t') else "Force Update All", command=on_force_all, bg=tm.get_color('accent_primary'), fg=tm.get_color('fg_primary'))
-                                force_btn.pack(side='left', padx=6)
-                                def select_all():
-                                    for v in checks.values():
-                                        v.set(True)
-                                def deselect_all():
-                                    for v in checks.values():
-                                        v.set(False)
-                                tk.Button(btns, text=self.parent._t("SELECT_ALL") if hasattr(self.parent, '_t') else "Select All", command=select_all, bg=tm.get_color('accent_primary'), fg=tm.get_color('fg_primary')).pack(side='left', padx=6)
-                                tk.Button(btns, text=self.parent._t("DESELECT_ALL") if hasattr(self.parent, '_t') else "Deselect All", command=deselect_all, bg=tm.get_color('bg_hover'), fg=tm.get_color('fg_primary')).pack(side='left', padx=6)
-                                def on_confirm():
-                                    names = [n for n, v in checks.items() if v.get()]
-                                    names += [n for n, (v, _) in downgrade_checks.items() if v.get()]
-                                    selected['names'] = names
-                                    try:
-                                        dlg2.destroy()
-                                    except Exception:
-                                        pass
-                                    selection_event.set()
-                                def on_cancel2():
-                                    selected['names'] = []
-                                    try:
-                                        dlg2.destroy()
-                                    except Exception:
-                                        pass
-                                    selection_event.set()
-                                tk.Button(btns, text=self.parent._t("CONFIRM") if hasattr(self.parent, '_t') else "Confirm", command=on_confirm, bg=tm.get_color('accent_primary'), fg=tm.get_color('fg_primary')).pack(side='left', padx=6)
-                                tk.Button(btns, text=self.parent._t("CANCEL") if hasattr(self.parent, '_t') else "Cancel", command=on_cancel2, bg=tm.get_color('bg_hover'), fg=tm.get_color('fg_primary')).pack(side='left', padx=6)
-                                dlg2.wait_window()
-                            except Exception as e:
-                                self.parent._safe_append_log(f"[Updater] Error showing confirmation dialog: {e}")
-                                selected['names'] = []
-                                selection_event.set()
-
-                        self.parent.after(0, show_confirm)
-                        while not selection_event.wait(timeout=0.1):
-                            if cancel_event.is_set():
-                                break
-
-                        sel = selected.get('names')
-                        if not sel:
-                            results = {jar.name: 'Skipped by user' for jar in jars}
-                        else:
-                            results = {}
-                            sel_set = set(sel)
-                            to_update = [(name, candidates[name]['jar']) for name in sel if name in candidates]
-                            total2 = len(to_update)
-                            for idx2, (name, jar) in enumerate(to_update, start=1):
-                                if cancel_event.is_set():
-                                    results['__aborted__'] = 'Aborted'
-                                    break
-                                if progress:
-                                    progress(idx2 - 1, total2, f"Updating {name}...")
-                                try:
-                                    force_flag = selected.get('force', False)
-                                    updated, msg = updater.update_mod(jar, loader, game_version, aggressive=False, force=force_flag)
-                                    results[name] = msg if not updated else f"Updated: {msg}"
-                                except Exception as e:
-                                    results[name] = f"Error: {e}"
-                                if progress:
-                                    progress(idx2, total2, f"Processed {idx2}/{total2}")
-                updated = [k for k, v in results.items() if v and v.startswith('Updated')]
-                skipped = [k for k, v in results.items() if v in ('No project found', 'No versions found', 'No compatible version found', 'No downloadable files', 'Already up to date', 'Remote version older than local (skipped)', 'No update available', 'Skipped by user')]
-                errors = [f"{k}: {v}" for k, v in results.items() if v and (v.startswith('Error') or v.startswith('Failed') or (not v.startswith('Updated') and k not in skipped))]
-                summary = f"Updated: {len(updated)}, Skipped: {len(skipped)}, Errors: {len(errors)}"
-                self.parent._safe_append_log(f"[Updater] {summary}")
-                for k, v in results.items():
-                    try:
-                        self.parent._safe_append_log(f"[Updater] {k}: {v}")
-                    except Exception:
-                        pass
-                def done_ui():
-                    if errors:
-                        messagebox.showwarning(self.parent._t("MODS_UPDATE_DONE_TITLE") if hasattr(self.parent, '_t') else "Update Mods", f"{summary}\nErrors:\n" + "\n".join(errors[:10]))
-                    else:
-                        messagebox.showinfo(self.parent._t("MODS_UPDATE_DONE_TITLE") if hasattr(self.parent, '_t') else "Update Mods", summary)
-                    self.refresh_mods_list()
-                    try:
-                        dlg.destroy()
-                    except Exception:
-                        pass
-                self.parent.after(0, done_ui)
-            except Exception as e:
-                self.parent._safe_append_log(f"[Updater] Error: {e}")
-                def err_ui():
-                    messagebox.showerror(self.parent._t("ERROR"), str(e))
-                    try:
-                        dlg.destroy()
-                    except Exception:
-                        pass
-                self.parent.after(0, err_ui)
-
-        thread = threading.Thread(target=worker, daemon=True)
-        thread.start()
-    def _mods_count_text(self, n):
-        return self.parent._t("MODS_COUNT").format(n=n)
-
-    def refresh_mods_list(self):
-        none_txt = self.parent._t("MODS_NONE_INSTALLED")
-        no_profile_txt = self.parent._t("MODS_NO_PROFILE_SELECTED")
-        self.mods_listbox.delete(0, tk.END)
-        if self.current_instance:
-            mods_dir = self.current_instance.mods_dir
-            if not mods_dir.exists():
-                self.mods_listbox.insert(tk.END, none_txt)
-                self.mods_count_label.config(text=self._mods_count_text(0))
-                return
-            mods = [f.name for f in mods_dir.iterdir() if f.suffix.lower() == '.jar' and f.is_file()]
-            self._all_mods = sorted(mods)
-            self._apply_search_filter()
-            if not mods:
-                self.mods_listbox.insert(tk.END, none_txt)
-            self.mods_count_label.config(text=self._mods_count_text(len(mods)))
-            return
-        if not self.current_profile:
-            self.mods_listbox.insert(tk.END, no_profile_txt)
-            self.mods_count_label.config(text=self._mods_count_text(0))
-            return
-        mods = get_current_profile_mods()
-        self._all_mods = sorted(mods)
-        self._apply_search_filter()
-        if not mods:
-            self.mods_listbox.insert(tk.END, none_txt)
-        self.mods_count_label.config(text=self._mods_count_text(len(mods)))
-
-    def _apply_search_filter(self):
-        q = (self.search_var.get() or '').strip().lower()
-        self.mods_listbox.delete(0, tk.END)
-        if not self._all_mods:
-            return
-        filtered = [m for m in self._all_mods if q in m.lower()] if q else list(self._all_mods)
-        if not filtered:
-            self.mods_listbox.insert(tk.END, "No mods match")
-        else:
-            for mod in filtered:
-                self.mods_listbox.insert(tk.END, mod)
-def build_mods_tab(parent, mod_loader_var, instance_manager=None):
-    modding_tab = ModdingTab(parent, mod_loader_var, instance_manager)
-    modding_tab.build_tab()
-    parent.modding_tab = modding_tab
-def build_modding_tab(launcher, notebook, selected_mod_loader):
-    try:
-        build_mods_tab(launcher, selected_mod_loader, get_instance_manager())
-    except Exception as e:
-        print(f"Error building modding tab: {e}")
-        modding_frame = ttk.Frame(notebook)
-        notebook.add(modding_frame, text=launcher._t("MODS_TAB_TITLE"))
-        content_frame = ttk.Frame(modding_frame)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        ttk.Label(content_frame, text=launcher._t("MODS_NOT_AVAILABLE"), 
-                 style="Header.TLabel").pack(pady=20)
-        ttk.Label(content_frame, text=launcher._t("MODS_MODULE_MISSING"),
-                 style="News.TLabel").pack(pady=10)
 class InstanceManager:
     def __init__(self):
         self.instances: Dict[str, MinecraftInstance] = {}
@@ -4412,7 +2338,6 @@ class InstanceManager:
     def load_instances(self):
         config_file = self.get_config_file()
         if not config_file.exists():
-            self.create_default_instance()
             return
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
@@ -4426,11 +2351,8 @@ class InstanceManager:
                 instance = MinecraftInstance.from_dict(instance_data)
                 self.instances[instance.instance_id] = instance
             self.selected_instance_id = data.get("selected_instance_id") if isinstance(data, dict) else None
-            if not self.instances:
-                self.create_default_instance()
         except Exception as e:
             print(f"Error loading instances: {e}")
-            self.create_default_instance()
     def save_instances(self):
         config_file = self.get_config_file()
         data = {
@@ -4648,6 +2570,7 @@ class MojangVersionManager:
         thread.start()
     def _fetch_versions_sync(self):
         try:
+            # versions
             response = _http_session.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', timeout=10)
             response.raise_for_status()
             data = response.json()
@@ -5136,7 +3059,7 @@ def find_java_executable(java_major: int) -> Optional[str]:
 def download_java_runtime(java_major: int, progress_callback=None) -> Optional[str]:
     
     os_name = {"linux": "linux", "darwin": "mac", "win32": "windows"}.get(sys.platform, "linux")
-    machine = _platform.machine().lower()
+    machine = platform.machine().lower()
     arch = "aarch64" if machine in ("aarch64", "arm64") else "x64"
     api_url = (
         f"https://api.adoptium.net/v3/assets/latest/{java_major}/hotspot"
@@ -5245,13 +3168,13 @@ def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
         log_fn(f"[Java] Download failed, falling back to system java")
     return system_java
 
-# ---- OptiFine (standalone) support ----
+# OptiFine (standalone) support
 OPTIFINE_SITE = "https://optifine.net"
 _OPTIFINE_UA = {"User-Agent": "Mozilla/5.0"}
 
 
 def get_optifine_files_for(mc_version):
-    """Returns OptiFine jar filenames available for mc_version, newest first."""
+    # Returns OptiFine jar filenames available for mc_version
     if not mc_version:
         return []
     try:
@@ -5270,7 +3193,7 @@ def get_optifine_files_for(mc_version):
 
 
 def download_optifine(filename, dest_path, log_fn=None):
-    """Resolves the per-session download token and saves the OptiFine jar."""
+    # Resolves the per-session download token and saves the OptiFine jar
     r = _http_session.get(f"{OPTIFINE_SITE}/adloadx?f={filename}", timeout=20, headers=_OPTIFINE_UA)
     r.raise_for_status()
     m = re.search(r'downloadx\?f=[^"&]+&(?:amp;)?x=([0-9a-f]+)', r.text)
@@ -5288,8 +3211,6 @@ def download_optifine(filename, dest_path, log_fn=None):
 
 
 def optifine_version_id(filename):
-    """OptiFine_1.21.4_HD_U_J3.jar -> 1.21.4-OptiFine_HD_U_J3 (matches the
-    version folder the OptiFine installer creates)."""
     base = filename[:-4] if filename.lower().endswith(".jar") else filename
     if base.startswith("preview_"):
         base = base[len("preview_"):]
@@ -5300,9 +3221,6 @@ def optifine_version_id(filename):
 
 def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
                      log_fn=None, progress_fn=None):
-    """Standalone OptiFine install into the instance dir. Downloads the installer,
-    ensures the vanilla base version exists, then runs OptiFine's headless installer
-    redirected at the instance via user.home. Returns the installed version id."""
     log = log_fn or (lambda *_: None)
     if not filename:
         files = get_optifine_files_for(mc_version)
@@ -5377,8 +3295,9 @@ def is_version_valid(version_id):
 def get_available_mod_loaders():
     return ["None", "Forge", "Fabric", "Quilt"]
 def get_ram_options():
-    return ["1G", "2G", "3G", "4G", "6G", "8G", "12G", "16G"]
+    return ["1G", "2G", "3G", "4G", "6G", "8G", "12G", "16G", "24G", "32G", "64G", "128G", "256G", "512G", "1T"]
 
+# I WANT TO ROB your ram
 def _get_system_ram_mb() -> int:
     try:
         with open('/proc/meminfo') as f:
@@ -5389,1316 +3308,1208 @@ def _get_system_ram_mb() -> int:
         pass
     return 8192
 
-def _make_ram_slider(parent, bg, ram_var, accent, fg_primary, fg_secondary, wizard_fmt=False):
-    """
-    Slider-based RAM selector.
-    wizard_fmt=True  → sets ram_var as "4G" / "512M"  (for create_instance)
-    wizard_fmt=False → sets ram_var as "4 GB" / "512 MB" (for GameProfilesTab save logic)
-    """
-    total_mb = _get_system_ram_mb()
-    usable_mb = max(total_mb - 2048, 1024)
+# prism I love you, but modrinth is a shit in 2026 on linux.
+LWJGL_META_INDEX_URL = "https://meta.prismlauncher.org/v1/org.lwjgl3/index.json"
+LWJGL_META_VERSION_URL = "https://meta.prismlauncher.org/v1/org.lwjgl3/{ver}.json"
+LWJGL_FALLBACK_VERSIONS = ["3.4.3", "3.4.2", "3.4.1", "3.3.6", "3.3.3", "3.3.2", "3.3.1", "3.2.2", "3.2.1", "3.1.6", "3.1.2"]
+LWJGL_MODE_STOCK = "stock"
+LWJGL_MODE_AUTO = "auto"
+LWJGL_MIN_GOOD = (3, 3, 3)
 
-    frame = tk.Frame(parent, bg=bg)
 
-    header = tk.Frame(frame, bg=bg)
-    header.pack(fill="x")
-    tk.Label(header, text="RAM allocation", bg=bg, fg=fg_primary,
-             font=("Segoe UI", 10)).pack(side="left")
-    tk.Label(header, text=f"system: {total_mb // 1024} GB total", bg=bg, fg=fg_secondary,
-             font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
-    val_label = tk.Label(header, text="", bg=bg, fg=accent, font=("Segoe UI", 10, "bold"))
-    val_label.pack(side="right")
+def _lwjgl_os_name():
+    system = platform.system()
+    if system == "Windows":
+        return "windows"
+    if system == "Darwin":
+        return "osx"
+    return "linux"
 
-    def parse_mb(s):
-        s = str(s).strip().upper().replace(' ', '')
+# I would love to have riscv processor
+def _lwjgl_arch_suffix():
+    machine = platform.machine().lower()
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    if machine.startswith("arm"):
+        return "arm32"
+    if machine in ("riscv64",):
+        return "riscv64"
+    if machine in ("i386", "i686", "x86"):
+        return "x86"
+    return ""
+
+
+def _version_tuple(text):
+    nums = re.findall(r"\d+", str(text or ""))
+    return tuple(int(n) for n in nums[:3]) if nums else ()
+
+
+class LwjglManager:
+    def __init__(self):
+        self.store_dir = Path.home() / ".config" / "oranglauncher" / "lwjgl"
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        self._index_cache = None
+        self._meta_cache = {}
+        self._lock = threading.Lock()
+
+    def list_versions(self, force=False):
+        with self._lock:
+            if self._index_cache and not force:
+                return list(self._index_cache)
+        index_file = self.store_dir / "index.json"
+        versions = []
         try:
-            if s.endswith('GB') or (s.endswith('G') and not s.endswith('GB')):
-                return int(float(s.rstrip('GB'))) * 1024
-            if s.endswith('MB') or s.endswith('M'):
-                return int(float(s.rstrip('MB')))
-        except Exception:
-            pass
-        return 4096
-
-    slider_var = tk.IntVar(value=parse_mb(ram_var.get()))
-
-    def on_slide(v):
-        mb = round(int(float(v)) / 256) * 256
-        mb = max(512, min(mb, usable_mb))
-        slider_var.set(mb)
-        g = mb / 1024
-        if mb % 1024 == 0:
-            display = f"{int(g)} GB"
-            store = f"{int(g)}G" if wizard_fmt else f"{int(g)} GB"
-        else:
-            display = f"{mb} MB"
-            store = f"{mb}M" if wizard_fmt else f"{mb} MB"
-        val_label.config(text=display)
-        ram_var.set(store)
-
-    tk.Scale(frame, from_=512, to=usable_mb, resolution=256,
-             variable=slider_var, orient="horizontal",
-             bg=bg, fg=fg_secondary, troughcolor=accent,
-             highlightthickness=0, bd=0, showvalue=False,
-             activebackground=accent,
-             command=on_slide).pack(fill="x", pady=(4, 0))
-
-    on_slide(slider_var.get())
-    return frame
-
-class GameProfilesTab:
-    def __init__(self, parent, notebook):
-        self.notebook = notebook
-        self.parent = parent
-        self.instance_manager = get_instance_manager()
-        self.profile_manager = get_game_profile_manager()
-        self.selected_instance_id = None
-        self.editing_instance_id = None
-        self.icons = {}
-        self.profile_cards = {}
-        self._card_icon_cache = {}  
-        self.current_mode = "list"
-        self.version_values = []
-        self.custom_icon_path = None
-        self.theme_manager = parent.theme_manager
-    def _get_card_bg(self):
-        return self.theme_manager.get_color('bg_secondary')
-    def _get_card_bg_selected(self):
-        return self.theme_manager.get_color('bg_hover')
-    def build_tab(self):
-        self._load_icons()
-        self._load_versions()
-        self.tab_frame = tk.Frame(self.notebook, bg=self._get_card_bg())
-        self.notebook.add(self.tab_frame, text=self.parent._t('GAME_PROFILES_TITLE'))
-        self.container = tk.Frame(self.tab_frame, bg=self._get_card_bg())
-
-        self.container.pack(fill="both", expand=True, padx=16, pady=12)
-        self.list_view = tk.Frame(self.container, bg=self._get_card_bg())
-        self.list_view.pack(fill="both", expand=True)
-        self._build_list_view()
-        self._build_form_view()
-        self._build_settings_view()
-        self._show_list_view()
-        self._refresh_profiles_list()
-    def _load_icons(self):
-        base = find_resource("oranglauncher/images")
-        loaders = ("forge", "fabric", "quilt", "neoforge", "optifine")
-        if not base or not base.exists():
-            print("Warning: images directory not found")
-            def _load_icon(filename):
-                return None
-            self.icons["vanilla"] = _load_icon('minecraft-green.png')
-            self.icons["modded"] = _load_icon('minecraft-blue.png')
-            for loader in loaders:
-                self.icons[loader] = None
-            return
-        def _load_icon(filename):
-            try:
-                image_path = base / filename
-                if not image_path.exists():
-                    return None
-                image = tk.PhotoImage(file=str(image_path))
-                width = image.width() or 64
-                scale = max(width // 64, 1)
-                if scale > 1:
-                    image = image.subsample(scale, scale)
-                return image
-            except Exception as err:
-                print(f"[DEBUG] Failed to load icon {filename}: {err}")
-                return None
-        self.icons["vanilla"] = _load_icon('minecraft-green.png')
-        self.icons["modded"] = _load_icon('minecraft-blue.png')
-        # Modded instances show their mod loader's icon instead of the generic
-        # modded block; fall back to that generic block if a loader has no art.
-        for loader in loaders:
-            self.icons[loader] = _load_icon(f'loaders/{loader}.png')
-    def _load_versions(self):
-        try:
-            versions = get_available_versions()
-            self.version_values = versions if versions else []
+            r = _http_session.get(LWJGL_META_INDEX_URL, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            versions = [v.get("version") for v in data.get("versions", []) if v.get("version")]
+            index_file.write_text(json.dumps(data), encoding="utf-8")
         except Exception as e:
-            print(f"[DEBUG] Failed to load versions: {e}")
-            self.version_values = []
-    def _build_list_view(self):
-        header = tk.Label(
-            self.list_view,
-            text=self.parent._t("GAME_PROFILES_TITLE"),
-            bg=self._get_card_bg(),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 14, "bold")
-        )
-        header.pack(anchor="w", pady=(0, 12))
-        canvas_wrapper = tk.Frame(self.list_view, bg=self._get_card_bg())
-        canvas_wrapper.pack(fill="both", expand=True)
-        self.cards_canvas = tk.Canvas(canvas_wrapper, highlightthickness=0, bg=self._get_card_bg())
-        scrollbar = ttk.Scrollbar(canvas_wrapper, orient="vertical", command=self.cards_canvas.yview, style="Modern.Vertical.TScrollbar")
-        self.cards_canvas.configure(yscrollcommand=scrollbar.set)
-        self.cards_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        self.cards_inner = tk.Frame(self.cards_canvas, bg=self._get_card_bg())
-        self.cards_window_id = self.cards_canvas.create_window((0, 0), window=self.cards_inner, anchor="n")
-        self.cards_canvas.bind("<Configure>", lambda e: self.cards_canvas.itemconfig(self.cards_window_id, width=e.width))
-        self.cards_inner.bind("<Configure>", lambda e: self.cards_canvas.configure(scrollregion=self.cards_canvas.bbox("all")))
-        button_bar = tk.Frame(self.list_view, bg=self._get_card_bg())
-        button_bar.pack(fill="x", pady=(12, 0))
-        
-        def get_btn_icon(name):
-             return self.parent._load_themed_icon(name, size=(16, 16))
-
-        new_icon = get_btn_icon("plus")
-        new_btn = tk.Button(
-            button_bar,
-            text=f"  {self.parent._t('GAME_PROFILES_NEW')}",
-            image=new_icon,
-            compound="left",
-            command=self._open_create_form,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        new_btn._icon = new_icon
-        new_btn.pack(side="left", padx=(0, 6))
-        
-        dup_icon = get_btn_icon("dublicate")
-        dup_btn = tk.Button(
-            button_bar,
-            text=f"  {self.parent._t('GAME_PROFILES_DUPLICATE')}",
-            image=dup_icon,
-            compound="left",
-            command=self._duplicate_selected,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        dup_btn._icon = dup_icon
-        dup_btn.pack(side="left", padx=(0, 6))
-        
-        del_icon = get_btn_icon("trash")
-        del_btn = tk.Button(
-            button_bar,
-            text=f"  {self.parent._t('GAME_PROFILES_DELETE')}",
-            image=del_icon,
-            compound="left",
-            command=self._delete_selected,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        del_btn._icon = del_icon
-        del_btn.pack(side="left")
-
-        imp_icon = get_btn_icon("mrpack")
-        imp_btn = tk.Button(
-            button_bar,
-            text="  Import",
-            image=imp_icon,
-            compound="left",
-            command=self._import_instance,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        imp_btn._icon = imp_icon
-        imp_btn.pack(side="left", padx=(6, 0))
-
-        mrpack_icon = get_btn_icon("mrpack")
-        mrpack_btn = tk.Button(
-            button_bar,
-            text=f"  {self.parent._t('MODS_IMPORT_MRPACK_BTN')}",
-            image=mrpack_icon,
-            compound="left",
-            command=self._import_mrpack,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        mrpack_btn._icon = mrpack_icon
-        mrpack_btn.pack(side="left", padx=(6, 0))
-
-    def _create_profile_card(self, instance):
-        frame = tk.Frame(self.cards_inner, bg=self._get_card_bg(), padx=16, pady=12)
-        frame.pack(fill='x', expand=False, padx=8, pady=6)
-        frame.grid_columnconfigure(0, weight=0, minsize=64)
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_columnconfigure(2, weight=0, minsize=60)
-        frame.grid_rowconfigure(0, weight=0)
-        def enter(_):
-            pass
-        def leave(_):
-            self._highlight_selection()
-        frame.bind('<Enter>', enter)
-        frame.bind('<Leave>', leave)
-        icon = None
-        icon_file = instance.base_path / "icon.txt"
-        if icon_file.exists():
+            print(f"[LWJGL] index fetch failed: {e}")
             try:
-                with open(icon_file, 'r', encoding='utf-8') as f:
-                    icon_path = f.read().strip()
-                if icon_path and Path(icon_path).exists():
-                    try:
-                        mtime = Path(icon_path).stat().st_mtime
-                        cache_key = (instance.instance_id, mtime)
-                        if cache_key not in self._card_icon_cache:
-                            custom_icon = tk.PhotoImage(file=icon_path)
-                            width = custom_icon.width() or 64
-                            scale = max(width // 64, 1)
-                            if scale > 1:
-                                self._card_icon_cache[cache_key] = custom_icon.subsample(scale, scale)
-                            else:
-                                self._card_icon_cache[cache_key] = custom_icon
-                        icon = self._card_icon_cache[cache_key]
-                    except Exception as e:
-                        print(f"Failed to load custom icon: {e}")
-            except Exception as e:
-                print(f"Failed to read icon file: {e}")
-        if not icon:
-            loader_lower = (instance.mod_loader or '').lower()
-            if loader_lower in ('vanilla', 'none', ''):
-                icon = self.icons.get('vanilla')
-            else:
-                icon = self.icons.get(loader_lower) or self.icons.get('modded')
-        icon_label = tk.Label(frame, bg=self._get_card_bg())
-        if icon:
-            icon_label.configure(image=icon)
-            icon_label.image = icon  # type: ignore
-        icon_label.grid(row=0, column=0, sticky='nw', padx=(0, 12))
-        info_frame = tk.Frame(frame, bg=self._get_card_bg())
-        info_frame.grid(row=0, column=1, sticky='nsew')
-        name_lbl = tk.Label(info_frame, text=instance.name, font=('Segoe UI', 12, 'bold'), fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg())
-        name_lbl.pack(anchor='w')
-        version_text = f"MC version {instance.version}"
-        if instance.mod_loader.lower() != 'vanilla':
-            version_text += f" | {instance.mod_loader.title()}"
-        subtitle = tk.Label(info_frame, text=version_text, font=('Segoe UI', 9), fg=self.theme_manager.get_color('fg_tertiary'), bg=self._get_card_bg())
-        subtitle.pack(anchor='w', pady=(2, 0))
-        pt = getattr(instance, 'play_time', 0) or 0
-        if pt >= 3600:
-            pt_text = f"⏱ {pt // 3600}h {(pt % 3600) // 60}m"
-        elif pt >= 60:
-            pt_text = f"⏱ {pt // 60}m"
-        elif pt > 0:
-            pt_text = f"⏱ {pt}s"
-        else:
-            pt_text = "⏱ Never played"
-        playtime_lbl = tk.Label(info_frame, text=pt_text, font=('Segoe UI', 8),
-                                fg=self.theme_manager.get_color('fg_tertiary'), bg=self._get_card_bg())
-        playtime_lbl.pack(anchor='w', pady=(1, 0))
-        actions = tk.Frame(frame, bg=self._get_card_bg())
-        actions.grid(row=0, column=2, sticky='n', padx=(12, 0))
-        actions.grid_columnconfigure(0, weight=1)
-        
-        buttons_icon = self.parent._load_themed_icon("4buttons", size=(24, 24))
-        
-        menu_btn = tk.Button(
-            actions,
-            image=buttons_icon,
-            command=lambda i=instance: self._show_instance_popup(menu_btn, i),
-            bg=self._get_card_bg(),
-            activebackground=self._get_card_bg(),
-            bd=0,
-            cursor="hand2",
-            relief="flat"
-        )
-        menu_btn.image = buttons_icon  # type: ignore
-        menu_btn.grid(row=0, column=0, sticky='ew', pady=2)
-
-        for widget in (frame, icon_label, info_frame, name_lbl, subtitle, actions):
-            widget.bind('<Button-1>', lambda e, inst_id=instance.instance_id: self._select_card(inst_id))
-        self.profile_cards[instance.instance_id] = frame
-
-    def _show_instance_popup(self, btn, instance):
-        popup = tk.Toplevel(self.parent)
-        popup.overrideredirect(True)
-        popup.attributes('-topmost', True)
-        
-        popup.geometry("+10000+10000")
-
-        bg_color = self.theme_manager.get_color('bg_secondary')
-        fg_color = self.theme_manager.get_color('fg_primary')
-        hover_color = self.theme_manager.get_color('bg_hover')
-        border_color = self.theme_manager.get_color('border_primary')
-        
-        container = tk.Frame(popup, bg=bg_color, bd=1, relief="solid")
-        container.pack(fill="both", expand=True)
-        
-        def close_popup(e=None):
-            popup.destroy()
-            
-        popup.bind("<FocusOut>", lambda e: popup.destroy())
-        popup.focus_set()
-
-        def create_menu_item(text, icon_name, command, text_color=None):
-            if text_color is None:
-                text_color = fg_color
-                
-            item_frame = tk.Frame(container, bg=bg_color)
-            item_frame.pack(fill="x")
-            
-            icon = self.parent._load_themed_icon(icon_name, size=(16, 16), force_color=text_color)
-            
-            btn = tk.Button(
-                item_frame,
-                text=f"  {text}",
-                image=icon,
-                compound="left",
-                bg=bg_color,
-                fg=text_color,
-                activebackground=hover_color,
-                activeforeground=text_color,
-                bd=0,
-                relief="flat",
-                anchor="w",
-                padx=12,
-                pady=8,
-                font=("Segoe UI", 9),
-                cursor="hand2",
-                command=lambda: [command(), close_popup()]
-            )
-            btn.image = icon  # type: ignore
-            btn.pack(fill="x")
-            return btn
-
-        create_menu_item(self.parent._t("GAME_PROFILES_SELECT"), "instances", 
-                         lambda: self._select_and_close(instance.instance_id))
-                         
-        create_menu_item(self.parent._t("GAME_PROFILES_EDIT"), "settings", 
-                         lambda: self._open_settings_view(instance))
-                         
-        def open_folder():
-             path = instance.base_path
-             if platform.system() == "Windows":
-                 os.startfile(path)
-             elif platform.system() == "Darwin":
-                 subprocess.Popen(["open", str(path)])
-             else:
-                 subprocess.Popen(["xdg-open", str(path)])
-
-        create_menu_item(self.parent._t("RES_SH_OPEN_FOLDER"), "folder", open_folder)
-
-        create_menu_item("Screenshots", "folder", lambda: self._show_screenshots(instance))
-
-        create_menu_item("Export Instance", "update", lambda: self._export_instance(instance))
-
-        create_menu_item(self.parent._t("GAME_PROFILES_DELETE_BTN"), "trash",
-                         lambda: self._delete_instance(instance),
-                         text_color="#FF5555")
-
-        popup.update_idletasks()
-        pw = popup.winfo_reqwidth()
-        ph = popup.winfo_reqheight()
-        sw = self.parent.winfo_screenwidth()
-        sh = self.parent.winfo_screenheight()
-
-        btn_x = btn.winfo_rootx()
-        btn_y = btn.winfo_rooty()
-        btn_w = btn.winfo_width()
-        btn_h = btn.winfo_height()
-
-        if btn_x + btn_w + pw + 5 <= sw:
-            x = btn_x + btn_w + 5
-        else:
-            x = max(0, btn_x - pw - 5)
-
-        y = btn_y
-        if y + ph > sh:
-            y = max(0, sh - ph - 5)
-
-        popup.geometry(f"+{x}+{y}")
-
-    def _instance_fingerprint(self, inst):
-        icon_file = inst.base_path / "icon.txt"
-        icon_mtime = 0
-        if icon_file.exists():
-            try:
-                icon_mtime = icon_file.stat().st_mtime
-            except OSError:
-                pass
-        return (inst.instance_id, inst.name, inst.version, inst.mod_loader,
-                getattr(inst, 'play_time', 0) or 0, icon_mtime)
-
-    def _refresh_profiles_list(self):
-        try:
-            instances = sorted(self.instance_manager.instances.values(), key=lambda inst: inst.name.lower())
-            current_ids = {inst.instance_id for inst in instances}
-
-            new_fingerprints = {inst.instance_id: self._instance_fingerprint(inst) for inst in instances}
-            old_fingerprints = getattr(self, '_profile_fingerprints', {})
-
-            if (new_fingerprints == old_fingerprints
-                    and list(new_fingerprints.keys()) == list(old_fingerprints.keys())
-                    and self.profile_cards):
-                return
-            self._profile_fingerprints = new_fingerprints
-
-            for frame in self.cards_inner.winfo_children():
-                frame.destroy()
-            self.profile_cards.clear()
-            stale = [k for k in self._card_icon_cache if k[0] not in current_ids]
-            for k in stale:
-                del self._card_icon_cache[k]
-            if not instances:
-                tk.Label(self.cards_inner, text=self.parent._t("GAME_PROFILES_NO_PROFILES"), fg=self.theme_manager.get_color('fg_tertiary'), bg=self._get_card_bg(), font=("Segoe UI", 10)).pack(anchor="center", pady=40)
-                self.selected_instance_id = None
-                return
-            for inst in instances:
-                self._create_profile_card(inst)
-            if self.selected_instance_id not in self.profile_cards and instances:
-                self.selected_instance_id = instances[0].instance_id
-            self._highlight_selection()
-        except Exception as e:
-            print(f"Error refreshing profiles list: {e}")
-            traceback.print_exc()
-    def _select_and_close(self, instance_id):
-        self._select_card(instance_id)
-        try:
-            self.instance_manager.set_selected_instance(instance_id)
-            if hasattr(self.parent, '_refresh_game_profiles'):
-                self.parent._refresh_game_profiles()
-            if hasattr(self.parent, '_update_profile_display'):
-                self.parent._update_profile_display()
-            if hasattr(self.parent, '_sync_active_instance'):
-                self.parent._sync_active_instance()
-        except Exception:
-            pass
-        self._highlight_selection()
-    def _select_card(self, instance_id):
-        self.selected_instance_id = instance_id
-        self._highlight_selection()
-        try:
-            if hasattr(self.parent, '_update_profile_display'):
-                self.parent._update_profile_display()
-        except Exception as e:
-            pass
-    def _update_child_backgrounds(self, widget, color):
-        for child in widget.winfo_children():
-            try:
-                child.configure(bg=color)
+                data = json.loads(index_file.read_text(encoding="utf-8"))
+                versions = [v.get("version") for v in data.get("versions", []) if v.get("version")]
             except Exception:
-                pass
-            if isinstance(child, tk.Frame):
-                self._update_child_backgrounds(child, color)
-    def _highlight_selection(self):
-        for inst_id, frame in self.profile_cards.items():
-            bg = self._get_card_bg()
-            frame.configure(bg=bg)
-            self._update_child_backgrounds(frame, bg)
-    def _build_form_view(self):
-        self.form_view = tk.Frame(self.container, bg=self._get_card_bg())
-        back_btn = tk.Label(self.form_view, text=self.parent._t("GAME_PROFILES_GO_BACK"), font=("Segoe UI", 14), fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg(), cursor="hand2")
-        back_btn.pack(anchor="w")
-        back_btn.bind("<Button-1>", lambda e: self._show_list_view())
-        self.form_title_var = tk.StringVar(value=self.parent._t("GAME_PROFILES_CREATE_TITLE"))
-        tk.Label(self.form_view, textvariable=self.form_title_var, font=("Segoe UI", 16, "bold"), 
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).pack(pady=(10, 20))
-        form_icon_wrap = tk.Frame(self.form_view, bg=self._get_card_bg(), height=72)
-        form_icon_wrap.pack(fill="x")
-        form_icon_wrap.pack_propagate(False)
-        self.form_icon_label = tk.Label(form_icon_wrap, bg=self._get_card_bg())
-        # place() centers using the wrapper's real on-screen pixel width at
-        # render time, so the logo lands dead-center regardless of platform
-        # DPI/theme quirks that can throw off pack()'s default centering.
-        self.form_icon_label.place(relx=0.5, rely=0.5, anchor="center")
-        form_container = tk.Frame(self.form_view, bg=self._get_card_bg())
-        form_container.pack(pady=20, fill="x")
-        form_container.columnconfigure(0, weight=1)
-        form_container.columnconfigure(1, weight=0)
-        form_container.columnconfigure(2, weight=0)
-        form_container.columnconfigure(3, weight=1)
-        self.name_var = tk.StringVar()
-        self.loader_var = tk.StringVar(value="vanilla")
-        self.version_var = tk.StringVar()
-        self.loader_version_var = tk.StringVar()
-        tk.Label(form_container, text=self.parent._t("GAME_PROFILES_NAME"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=0, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.name_entry = ttk.Entry(form_container, textvariable=self.name_var, width=40)
-        self.name_entry.grid(row=0, column=2, sticky="w", pady=6)
-        tk.Label(form_container, text=self.parent._t("GAME_PROFILES_LOADER"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=1, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.loader_combo = ttk.Combobox(form_container, textvariable=self.loader_var, state="readonly", values=["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"], width=37)
-        self.loader_combo.bind("<<ComboboxSelected>>", lambda e: self._on_loader_change())
-        self.loader_combo.grid(row=1, column=2, sticky="w", pady=6)
-        tk.Label(form_container, text=self.parent._t("GAME_PROFILES_VERSION"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=2, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.version_combo = ttk.Combobox(form_container, textvariable=self.version_var, values=self.version_values, width=37)
-        self.version_combo.grid(row=2, column=2, sticky="w", pady=6)
-        self.version_combo.bind("<<ComboboxSelected>>", lambda e: self._on_loader_change())
-        tk.Label(form_container, text=self.parent._t("GAME_PROFILES_LOADER_VERSION"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=3, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.loader_version_combo = ttk.Combobox(form_container, textvariable=self.loader_version_var, width=37)
-        self.loader_version_combo.grid(row=3, column=2, sticky="w", pady=6)
-        buttons = tk.Frame(self.form_view, bg=self._get_card_bg())
-        buttons.pack(pady=20)
-        
-        create_icon = self.parent._load_themed_icon("plus", size=(16, 16))
-        self.form_submit_btn = tk.Button(buttons, 
-                                         text=f"  {self.parent._t('GAME_PROFILES_CREATE_BTN')}", 
-                                         image=create_icon,
-                                         compound="left",
-                                         command=self._submit_form,
-                                         bg=self.theme_manager.get_color('bg_tertiary'),
-                                         fg=self.theme_manager.get_color('fg_primary'),
-                                         font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        self.form_submit_btn.image = create_icon  # type: ignore
-        self.form_submit_btn.pack(side="left", padx=6)
-        
-        discard_icon = self.parent._load_themed_icon("trash", size=(16, 16))
-        discard_btn = tk.Button(buttons, 
-                  text=f"  {self.parent._t('GAME_PROFILES_DISCARD_BTN')}", 
-                  image=discard_icon,
-                  compound="left",
-                  command=self._show_list_view,
-                  bg=self.theme_manager.get_color('bg_tertiary'),
-                  fg=self.theme_manager.get_color('fg_primary'),
-                  font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        discard_btn.image = discard_icon  # type: ignore
-        discard_btn.pack(side="left", padx=6)
-    def _build_settings_view(self):
-        self.settings_view = tk.Frame(self.container, bg=self._get_card_bg())
-        back_btn = tk.Label(self.settings_view, text=self.parent._t("GAME_PROFILES_GO_BACK"), font=("Segoe UI", 14), fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg(), cursor="hand2")
-        back_btn.pack(anchor="w")
-        back_btn.bind("<Button-1>", lambda e: self._show_list_view())
-        tk.Label(self.settings_view, text=self.parent._t("GAME_PROFILES_EDIT_TITLE"), font=("Segoe UI", 16, "bold"),
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).pack(pady=(10, 20))
-        settings_icon_wrap = tk.Frame(self.settings_view, bg=self._get_card_bg(), height=72)
-        settings_icon_wrap.pack(fill="x")
-        settings_icon_wrap.pack_propagate(False)
-        self.settings_icon_label = tk.Label(settings_icon_wrap, bg=self._get_card_bg())
-        self.settings_icon_label.place(relx=0.5, rely=0.5, anchor="center")
-        settings_container = tk.Frame(self.settings_view, bg=self._get_card_bg())
-        settings_container.pack(pady=20, fill="x")
-        settings_container.columnconfigure(0, weight=1)
-        settings_container.columnconfigure(1, weight=0)
-        settings_container.columnconfigure(2, weight=0)
-        settings_container.columnconfigure(3, weight=1)
-        self.settings_name_var = tk.StringVar()
-        self.settings_loader_var = tk.StringVar()
-        self.settings_version_var = tk.StringVar()
-        self.settings_loader_version_var = tk.StringVar()
-        self.java_install_var = tk.StringVar(value="Auto")
-        self.instance_path_var = tk.StringVar()
-        self.icon_path_var = tk.StringVar()
-        self.fullscreen_var = tk.BooleanVar(value=False)
-        self.ram_var = tk.StringVar(value="16 GB")
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_NAME"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=0, column=1, padx=(0, 12), pady=6, sticky="e")
-        name_entry = ttk.Entry(settings_container, textvariable=self.settings_name_var, width=40)
-        name_entry.grid(row=0, column=2, sticky="w", pady=6)
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_LOADER"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=1, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.settings_loader_combo = ttk.Combobox(settings_container, textvariable=self.settings_loader_var, width=38, state="readonly",
-                                                 values=["vanilla", "forge", "neoforge", "fabric", "quilt"], style="Modern.TCombobox")
-        self.settings_loader_combo.grid(row=1, column=2, sticky="w", pady=6)
-        self.settings_loader_combo.bind("<<ComboboxSelected>>", lambda e: self._update_settings_loader_versions())
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_VERSION"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=2, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.settings_version_combo = ttk.Combobox(settings_container, textvariable=self.settings_version_var, width=38,
-                                                   values=self.version_values, style="Modern.TCombobox")
-        self.settings_version_combo.grid(row=2, column=2, sticky="w", pady=6)
-        self.settings_version_combo.bind("<<ComboboxSelected>>", lambda e: self._update_settings_loader_versions())
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_LOADER_VERSION"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=3, column=1, padx=(0, 12), pady=6, sticky="e")
-        self.settings_loader_version_combo = ttk.Combobox(settings_container, textvariable=self.settings_loader_version_var, width=38, state="readonly",
-                                                          style="Modern.TCombobox")
-        self.settings_loader_version_combo.grid(row=3, column=2, sticky="w", pady=6)
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_JAVA_DIR"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=4, column=1, padx=(0, 12), pady=6, sticky="e")
-        java_frame = tk.Frame(settings_container, bg=self._get_card_bg())
-        java_frame.grid(row=4, column=2, sticky="w", pady=6)
-        _java_options = ["Auto"]
-        for _jv in (8, 11, 17, 21, 25):
-            _jp = find_java_executable(_jv)
-            if _jp and _jp not in _java_options:
-                _java_options.append(_jp)
-        self.java_install_combo = ttk.Combobox(java_frame, textvariable=self.java_install_var, width=28,
-                                              values=_java_options, style="Modern.TCombobox")
-        self.java_install_combo.pack(side="left")
-        
-        folder_icon = self.parent._load_themed_icon("folder", size=(16, 16))
-        
-        browse_java_btn = tk.Button(java_frame, text=f"  Browse", image=folder_icon, compound="left",
-                                   bg=self.theme_manager.get_color('bg_tertiary'),
-                                   fg=self.theme_manager.get_color('fg_primary'),
-                                   font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
-                                   command=self._browse_java)
-        browse_java_btn.image = folder_icon  # type: ignore
-        browse_java_btn.pack(side="left", padx=(6, 0))
+                versions = []
+        if not versions:
+            versions = list(LWJGL_FALLBACK_VERSIONS)
+        versions = sorted(set(versions), key=_version_tuple, reverse=True)
+        with self._lock:
+            self._index_cache = versions
+        return list(versions)
 
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_PATH"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=5, column=1, padx=(0, 12), pady=6, sticky="e")
-        path_frame = tk.Frame(settings_container, bg=self._get_card_bg())
-        path_frame.grid(row=5, column=2, sticky="w", pady=6)
-        self.path_entry = ttk.Entry(path_frame, textvariable=self.instance_path_var, width=30, state="readonly")
-        self.path_entry.pack(side="left")
-        
-        open_btn = tk.Button(path_frame, text=f"  {self.parent._t('GAME_PROFILES_OPEN_BTN')}", image=folder_icon, compound="left",
-                             bg=self.theme_manager.get_color('bg_tertiary'),
-                             fg=self.theme_manager.get_color('fg_primary'),
-                             font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
-                             command=self._open_instance_folder)
-        open_btn.image = folder_icon  # type: ignore
-        open_btn.pack(side="left", padx=(6, 0))
-
-        tk.Label(settings_container, text=self.parent._t("GAME_PROFILES_ICON"), width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=6, column=1, padx=(0, 12), pady=6, sticky="e")
-        icon_frame = tk.Frame(settings_container, bg=self._get_card_bg())
-        icon_frame.grid(row=6, column=2, sticky="w", pady=6)
-        self.icon_entry = ttk.Entry(icon_frame, textvariable=self.icon_path_var, width=30)
-        self.icon_entry.pack(side="left")
-        
-        browse_icon_btn = tk.Button(icon_frame, text="  Browse", image=folder_icon, compound="left",
-                                    bg=self.theme_manager.get_color('bg_tertiary'),
-                                    fg=self.theme_manager.get_color('fg_primary'),
-                                    font=("Segoe UI", 9), bd=0, padx=8, pady=4, cursor="hand2", relief="flat",
-                                    command=self._browse_icon)
-        browse_icon_btn.image = folder_icon  # type: ignore
-        browse_icon_btn.pack(side="left", padx=(6, 0))
-        
-        tk.Label(settings_container, text="Env Vars", width=18, anchor="e",
-                 fg=self.theme_manager.get_color('fg_primary'), bg=self._get_card_bg()).grid(row=7, column=1, padx=(0, 12), pady=6, sticky="ne")
-        env_frame = tk.Frame(settings_container, bg=self._get_card_bg())
-        env_frame.grid(row=7, column=2, sticky="w", pady=6)
-        self.settings_env_vars_text = tk.Text(env_frame, width=40, height=4,
-                                               bg=self.theme_manager.get_color('bg_secondary'),
-                                               fg=self.theme_manager.get_color('fg_primary'),
-                                               insertbackground=self.theme_manager.get_color('fg_primary'),
-                                               font=("Consolas", 9), bd=1, relief="solid",
-                                               highlightthickness=0)
-        self.settings_env_vars_text.pack()
-        tk.Label(env_frame, text="One var per line: KEY=VALUE  (lines starting with # are ignored)",
-                 fg=self.theme_manager.get_color('fg_secondary'), bg=self._get_card_bg(),
-                 font=("Segoe UI", 8)).pack(anchor="w")
-
-        ram_frame = tk.Frame(settings_container, bg=self._get_card_bg())
-        ram_frame.grid(row=8, column=1, columnspan=2, pady=(8, 4), sticky="ew", padx=(12, 0))
-        _make_ram_slider(ram_frame, self._get_card_bg(), self.ram_var,
-                         self.theme_manager.get_color('accent_primary'),
-                         self.theme_manager.get_color('fg_primary'),
-                         self.theme_manager.get_color('fg_secondary'),
-                         wizard_fmt=False).pack(fill="x")
-        
-        buttons = tk.Frame(self.settings_view, bg=self._get_card_bg())
-        buttons.pack(pady=20)
-        
-        save_icon = self.parent._load_themed_icon("update", size=(16, 16))
-        save_btn = tk.Button(buttons, text=f"  {self.parent._t('GAME_PROFILES_SAVE_BTN')}", 
-                  image=save_icon, compound="left",
-                  command=self._submit_settings,
-                  bg=self.theme_manager.get_color('bg_tertiary'),
-                  fg=self.theme_manager.get_color('fg_primary'),
-                  font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        save_btn.image = save_icon  # type: ignore
-        save_btn.pack(side="left", padx=6)
-        
-        discard_icon = self.parent._load_themed_icon("trash", size=(16, 16))
-        discard_btn = tk.Button(buttons, text=f"  {self.parent._t('GAME_PROFILES_DISCARD_BTN')}", 
-                  image=discard_icon, compound="left",
-                  command=self._show_list_view,
-                  bg=self.theme_manager.get_color('bg_tertiary'),
-                  fg=self.theme_manager.get_color('fg_primary'),
-                  font=("Segoe UI", 9), bd=0, pady=6, padx=12, cursor="hand2", relief="flat")
-        discard_btn.image = discard_icon  # type: ignore
-        discard_btn.pack(side="left", padx=6)
-    def _on_loader_change(self):
-        loader = self.loader_var.get().lower()
-        if loader in ('vanilla', 'none', ''):
-            icon = self.icons.get('vanilla')
-        else:
-            icon = self.icons.get(loader) or self.icons.get('modded')
-        self.form_icon_label.configure(image=icon)
-        self.form_icon_label.image = icon  # type: ignore
-        self.loader_version_combo.configure(state="disabled" if loader == "vanilla" else "readonly")
-        self._loader_incompatible = False
-        if loader == "vanilla":
-            self.loader_version_var.set("N/A")
-        else:
-            self.loader_version_var.set("Loading…")
-            self.loader_version_combo.configure(values=["Loading…"])
-            mc_ver = self.version_var.get()
-            def _fetch_and_set(loader=loader, mc_ver=mc_ver):
-                versions = self._fetch_loader_versions(loader, mc_ver)
-                def _apply():
-                    if versions:
-                        self._loader_incompatible = False
-                        self.loader_version_combo.configure(values=versions)
-                        if self.loader_version_var.get() not in versions:
-                            self.loader_version_var.set(versions[0])
-                    else:
-                        # no build of this loader exists for the chosen MC version
-                        self._loader_incompatible = True
-                        msg = self.parent._t("LOADER_NOT_COMPATIBLE")
-                        self.loader_version_combo.configure(values=[msg])
-                        self.loader_version_var.set(msg)
-                try:
-                    self.parent.after(0, _apply)
-                except Exception:
-                    pass
-            threading.Thread(target=_fetch_and_set, daemon=True).start()
-    def _fetch_loader_versions(self, loader, mc_version):
-        if not mc_version:
-            return []
-        try:
-            if loader == "forge" and hasattr(minecraft_launcher_lib, "forge"):
-                forge_versions = minecraft_launcher_lib.forge.list_forge_versions()
-                return [v for v in reversed(forge_versions) if v.startswith(f"{mc_version}-")]
-            if loader == "neoforge":
-                nf = _NeoforgeCompat()
-                versions = nf.get_loader_versions(mc_version, True)
-                if not versions:
-                    versions = nf.get_loader_versions(mc_version, False)
-                return versions
-            if loader == "fabric" and hasattr(minecraft_launcher_lib, "fabric"):
-                return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
-            if loader == "quilt" and hasattr(minecraft_launcher_lib, "quilt"):
-                return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
-            if loader == "optifine":
-                return get_optifine_files_for(mc_version)
-        except Exception as e:
-            print(f"[DEBUG] Error fetching loader versions: {e}")
-        return []
-    def _open_create_form(self):
-        self.current_mode = "create"
-        self.editing_instance_id = None
-        suggested_name = "New Profile"
-        index = 1
-        while self.instance_manager.get_instance_by_name(suggested_name):
-            index += 1
-            suggested_name = f"New Profile {index}"
-        self.name_var.set(suggested_name)
-        self.loader_var.set("vanilla")
-        self.version_var.set(self.version_values[0] if self.version_values else "")
-        self.loader_version_var.set("N/A")
-        self.form_title_var.set(self.parent._t("GAME_PROFILES_CREATE_TITLE"))
-        self.form_submit_btn.config(text=self.parent._t("PROFILE_CREATE_BTN"))
-        self._on_loader_change()
-        self._show_form_view()
-    def _open_edit_form(self, instance):
-        self.current_mode = "edit"
-        self.editing_instance_id = instance.instance_id
-        self.form_title_var.set(self.parent._t("GAME_PROFILES_EDIT_TITLE"))
-        self.form_submit_btn.config(text=self.parent._t("PROFILE_SAVE_BTN"))
-        self.name_var.set(instance.name)
-        self.loader_var.set(instance.mod_loader.lower())
-        self.version_var.set(instance.version)
-        self.loader_version_var.set(instance.installed_version_id or "Latest")
-        self._on_loader_change()
-        self._show_form_view()
-    def _open_settings_view(self, instance):
-        self.editing_instance_id = instance.instance_id
-        self.settings_name_var.set(instance.name)
-        self.settings_loader_var.set(instance.mod_loader.lower())
-        self.settings_version_var.set(instance.version)
-        self.settings_loader_version_var.set(instance.installed_version_id or "Latest")
-        saved_java = getattr(instance, 'java_path', '') or ''
-        self.java_install_var.set(saved_java if saved_java else "Auto")
-        if saved_java and saved_java not in list(self.java_install_combo['values']):
-            self.java_install_combo['values'] = list(self.java_install_combo['values']) + [saved_java]
-        self.instance_path_var.set(str(instance.base_path))
-        self.settings_env_vars_text.delete("1.0", "end")
-        self.settings_env_vars_text.insert("1.0", getattr(instance, 'env_vars', '') or '')
-
-        self._update_settings_loader_versions()
-        
-        icon_file = instance.base_path / "icon.txt"
-        if icon_file.exists():
+    def get_meta(self, version):
+        with self._lock:
+            if version in self._meta_cache:
+                return self._meta_cache[version]
+        meta_file = self.store_dir / f"{version}.json"
+        meta = None
+        if meta_file.exists():
             try:
-                with open(icon_file, 'r', encoding='utf-8') as f:
-                    self.icon_path_var.set(f.read().strip())
-            except:
-                self.icon_path_var.set("")
-        else:
-            self.icon_path_var.set("")
-        
-        ram_value = "16 GB"
-        if instance.java_args:
-            match = re.search(r'-Xmx(\d+)([GM])', instance.java_args)
-            if match:
-                amount, unit = match.groups()
-                ram_value = f"{amount} {unit}B"
-        self.ram_var.set(ram_value)
-        icon = None
-        if self.icon_path_var.get().strip() and Path(self.icon_path_var.get().strip()).exists():
-            try:
-                custom_icon = tk.PhotoImage(file=self.icon_path_var.get().strip())
-                width = custom_icon.width() or 64
-                scale = max(width // 64, 1)
-                if scale > 1:
-                    icon = custom_icon.subsample(scale, scale)
-                else:
-                    icon = custom_icon
-            except Exception as e:
-                print(f"Failed to load custom icon: {e}")
-        if not icon:
-            loader_lower = (instance.mod_loader or '').lower()
-            if loader_lower in ('vanilla', 'none', ''):
-                icon = self.icons.get('vanilla')
-            else:
-                icon = self.icons.get(loader_lower) or self.icons.get('modded')
-        if icon:
-            self.settings_icon_label.configure(image=icon)
-            self.settings_icon_label.image = icon  # type: ignore
-        self.list_view.pack_forget()
-        self.form_view.pack_forget()
-        self.settings_view.pack(fill="both", expand=True)
-    def _browse_java(self):
-        dir_path = filedialog.askdirectory(
-            title="Select Java Installation Directory",
-            mustexist=True
-        )
-        if dir_path:
-            self.java_install_var.set(dir_path)
-            current_values = list(self.java_install_combo['values'])
-            if dir_path not in current_values:
-                current_values.append(dir_path)
-                self.java_install_combo['values'] = current_values
-    
-    def _update_settings_loader_versions(self):
-        loader = self.settings_loader_var.get().lower()
-        version = self.settings_version_var.get()
-        
-        if loader == "vanilla":
-            self.settings_loader_version_combo.configure(state="disabled", values=["N/A"])
-            self.settings_loader_version_var.set("N/A")
-        else:
-            self.settings_loader_version_var.set("Loading…")
-            self.settings_loader_version_combo.configure(values=["Loading…"])
-            def _fetch_and_set(loader=loader, version=version):
-                versions = self._fetch_loader_versions(loader, version)
-                def _apply():
-                    if versions:
-                        self.settings_loader_version_combo.configure(state="readonly", values=versions)
-                        if self.settings_loader_version_var.get() not in versions:
-                            self.settings_loader_version_var.set(versions[0])
-                    else:
-                        self.settings_loader_version_combo.configure(state="readonly", values=["Latest"])
-                        self.settings_loader_version_var.set("Latest")
-                try:
-                    self.parent.after(0, _apply)
-                except Exception:
-                    pass
-            threading.Thread(target=_fetch_and_set, daemon=True).start()
-    
-    def _browse_icon(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Icon",
-            filetypes=[("PNG Images", "*.png"), ("All Files", "*.*")]
-        )
-        if file_path:
-            self.icon_path_var.set(file_path)
-    
-    def _open_instance_folder(self):
-        path = self.instance_path_var.get()
-        if path and Path(path).exists():
-            try:
-                if os.name == 'nt':
-                    os.startfile(path)
-                elif os.name == 'posix':
-                    subprocess.Popen(['xdg-open', path])
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to open folder: {e}")
-    def _show_form_view(self):
-        self.list_view.pack_forget()
-        self.settings_view.pack_forget()
-        self.form_view.pack(fill="both", expand=True)
-    def _show_list_view(self):
-        self.form_view.pack_forget()
-        self.settings_view.pack_forget()
-        self.list_view.pack(fill="both", expand=True)
-        self.current_mode = "list"
-        self._refresh_profiles_list()
-    def _validate_version(self, version: str) -> bool:
-        if version in self.version_values:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = None
+        if meta is None:
+            r = _http_session.get(LWJGL_META_VERSION_URL.format(ver=version), timeout=15)
+            r.raise_for_status()
+            meta = r.json()
+            meta_file.write_text(json.dumps(meta), encoding="utf-8")
+        with self._lock:
+            self._meta_cache[version] = meta
+        return meta
+
+    @staticmethod
+    def _rules_allow(rules):
+        if not rules:
             return True
-        suggestions = [v for v in self.version_values if version[:4] in v][:5]
-        hint = f"\n\nDid you mean: {', '.join(suggestions)}?" if suggestions else ""
-        messagebox.showerror("Unknown Version", f"'{version}' is not a valid Minecraft version.{hint}")
+        os_name = _lwjgl_os_name()
+        arch = _lwjgl_arch_suffix()
+        allowed = False
+        for rule in rules:
+            os_spec = rule.get("os") or {}
+            name = os_spec.get("name")
+            if name is None or name == os_name or (arch and name == f"{os_name}-{arch}"):
+                allowed = rule.get("action") == "allow"
+        return allowed
+
+    def applicable_libraries(self, meta):
+        os_name = _lwjgl_os_name()
+        arch = _lwjgl_arch_suffix()
+        libs = []
+        for lib in meta.get("libraries", []):
+            if not self._rules_allow(lib.get("rules")):
+                continue
+            name = lib.get("name", "")
+            artifact = (lib.get("downloads") or {}).get("artifact")
+            classifiers = (lib.get("downloads") or {}).get("classifiers") or {}
+            natives = lib.get("natives") or {}
+            if artifact and artifact.get("url"):
+                is_native = "natives-" in name
+                if is_native:
+                    tail = name.split(":")[1]
+                    marker = tail.split("natives-", 1)[1]
+                    wanted = os_name if not arch else f"{os_name}-{arch}"
+                    if os_name == "osx" and arch == "arm64":
+                        wanted = "macos-arm64"
+                    elif os_name == "osx":
+                        wanted = "macos"
+                    if marker != wanted:
+                        continue
+                libs.append((name, artifact["url"], artifact.get("sha1"), is_native))
+            if natives and classifiers:
+                key = natives.get(os_name)
+                if key and key in classifiers:
+                    cls = classifiers[key]
+                    if cls.get("url"):
+                        libs.append((name + ":" + key, cls["url"], cls.get("sha1"), True))
+        return libs
+
+    @staticmethod
+    def _sha1(path):
+        h = hashlib.sha1()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 16), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def ensure_version(self, version, log_fn=None, progress_fn=None):
+        log = log_fn or (lambda m: None)
+        meta = self.get_meta(version)
+        libs = self.applicable_libraries(meta)
+        dest_dir = self.store_dir / version
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        jars, natives_jars = [], []
+        total = len(libs)
+        for idx, (name, url, sha1, is_native) in enumerate(libs, 1):
+            filename = url.rsplit("/", 1)[-1]
+            target = dest_dir / filename
+            ok = target.exists() and (not sha1 or self._sha1(target) == sha1)
+            if not ok:
+                log(f"[LWJGL] Downloading {filename}")
+                for attempt in range(3):
+                    try:
+                        r = _http_session.get(url, timeout=60, stream=True)
+                        r.raise_for_status()
+                        tmp = target.with_suffix(target.suffix + ".part")
+                        with open(tmp, "wb") as f:
+                            for chunk in r.iter_content(1 << 16):
+                                if chunk:
+                                    f.write(chunk)
+                        if sha1 and self._sha1(tmp) != sha1:
+                            raise IOError("sha1 mismatch")
+                        tmp.replace(target)
+                        ok = True
+                        break
+                    except Exception as e:
+                        log(f"[LWJGL] retry {attempt + 1} for {filename}: {e}")
+                if not ok:
+                    raise RuntimeError(f"Could not download LWJGL library {filename}")
+            if progress_fn:
+                try:
+                    progress_fn(idx, total, filename)
+                except Exception:
+                    pass
+            (natives_jars if is_native else jars).append(str(target))
+        return {"version": version, "jars": jars, "natives_jars": natives_jars}
+
+    @staticmethod
+    def extract_natives(natives_jars, dest_dir):
+        dest = Path(dest_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        wanted = (".so", ".dll", ".dylib", ".jnilib")
+        for jar in natives_jars:
+            try:
+                with zipfile.ZipFile(jar) as z:
+                    for member in z.namelist():
+                        if member.endswith("/") or member.startswith("META-INF/"):
+                            continue
+                        if not member.lower().endswith(wanted):
+                            continue
+                        out = dest / os.path.basename(member)
+                        if out.exists() and out.stat().st_size == z.getinfo(member).file_size:
+                            continue
+                        with z.open(member) as src, open(out, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+            except Exception as e:
+                print(f"[LWJGL] natives extract failed for {jar}: {e}")
+        return str(dest)
+
+    @staticmethod
+    def stock_version(minecraft_directory, version_id):
+        seen = set()
+        current = version_id
+        while current and current not in seen:
+            seen.add(current)
+            json_path = Path(minecraft_directory) / "versions" / current / f"{current}.json"
+            if not json_path.exists():
+                break
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+            except Exception:
+                break
+            for lib in data.get("libraries", []):
+                name = lib.get("name", "")
+                if name.startswith("org.lwjgl:lwjgl:"):
+                    return name.split(":")[2], 3
+                if name.startswith("org.lwjgl.lwjgl:lwjgl:"):
+                    return name.split(":")[2], 2
+            current = data.get("inheritsFrom")
+        return None, 0
+
+    def choose_auto(self, stock_version, major):
+        if major != 3 or not stock_version:
+            return None
+        if _lwjgl_os_name() == "windows":
+            return None
+        if _version_tuple(stock_version) >= LWJGL_MIN_GOOD:
+            return None
+        candidates = [v for v in self.list_versions() if _version_tuple(v)[:2] == (3, 3)]
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def rewrite_command(command, jars, natives_dir):
+        out = []
+        for arg in command:
+            if arg.startswith("-Djava.library.path="):
+                arg = "-Djava.library.path=" + natives_dir
+            elif arg.startswith("-Dorg.lwjgl.system.SharedLibraryExtractPath="):
+                arg = "-Dorg.lwjgl.system.SharedLibraryExtractPath=" + natives_dir
+            out.append(arg)
+        try:
+            cp_index = out.index("-cp")
+        except ValueError:
+            cp_index = -1
+        if cp_index >= 0 and cp_index + 1 < len(out):
+            entries = out[cp_index + 1].split(os.pathsep)
+            entries = [e for e in entries if e and "/org/lwjgl/" not in e.replace("\\", "/")]
+            out[cp_index + 1] = os.pathsep.join(entries + list(jars))
+        out.insert(1, "-Dorg.lwjgl.librarypath=" + natives_dir)
+        return out
+
+
+_lwjgl_manager = None
+
+
+def get_lwjgl_manager():
+    global _lwjgl_manager
+    if _lwjgl_manager is None:
+        _lwjgl_manager = LwjglManager()
+    return _lwjgl_manager
+
+
+def _find_shared_library(names):
+    system = platform.system()
+    candidates = []
+    # it works on linux but idk if it works on macos
+    if system == "Linux":
+        dirs = ["/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu",
+                "/usr/local/lib", "/usr/lib/i386-linux-gnu", "/lib", "/lib64", "/run/current-system/sw/lib"]
+        for d in dirs:
+            for n in names:
+                candidates.append(os.path.join(d, n))
+        try:
+            out = subprocess.run(["/sbin/ldconfig", "-p"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                for n in names:
+                    if n in line and "=>" in line:
+                        candidates.append(line.split("=>", 1)[1].strip())
+        except Exception:
+            pass
+    elif system == "Darwin":
+        for d in ["/opt/homebrew/lib", "/usr/local/lib", "/opt/local/lib"]:
+            for n in names:
+                candidates.append(os.path.join(d, n))
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return ""
+
+
+def detect_system_glfw():
+    if platform.system() == "Linux":
+        return _find_shared_library(["libglfw.so.3", "libglfw.so"])
+    # tf is darwin doing with their library names
+    if platform.system() == "Darwin":
+        return _find_shared_library(["libglfw.3.dylib", "libglfw.dylib"])
+    return ""
+
+
+def detect_system_openal():
+    if platform.system() == "Linux":
+        return _find_shared_library(["libopenal.so.1", "libopenal.so"])
+    if platform.system() == "Darwin":
+        return _find_shared_library(["libopenal.1.dylib", "libopenal.dylib"])
+    return ""
+
+
+def _instance_or_global(instance, key, default=None):
+    if instance is not None:
+        value = instance.opt(key)
+        if value not in (None, "", "inherit"):
+            return value
+    return _adv_get(key, default)
+
+
+def resolve_lwjgl_override(instance, minecraft_directory, version_id, log_fn=None, progress_fn=None):
+    log = log_fn or (lambda m: None)
+    mgr = get_lwjgl_manager()
+    custom_dir = instance.opt("custom_lwjgl_dir") if instance is not None else None
+    if custom_dir and Path(custom_dir).is_dir():
+        jars = sorted(str(p) for p in Path(custom_dir).glob("*.jar"))
+        natives_jars = [j for j in jars if "natives" in os.path.basename(j)]
+        natives_dir = Path(minecraft_directory) / "versions" / version_id / "natives-custom"
+        LwjglManager.extract_natives(natives_jars, natives_dir)
+        for lib in Path(custom_dir).iterdir():
+            if lib.suffix.lower() in (".so", ".dll", ".dylib", ".jnilib"):
+                try:
+                    shutil.copy2(lib, natives_dir / lib.name)
+                except Exception:
+                    pass
+        log(f"[LWJGL] Using custom LWJGL folder: {custom_dir}")
+        return {"jars": jars, "natives_dir": str(natives_dir), "version": "custom"}
+    mode = _instance_or_global(instance, "lwjgl_mode", LWJGL_MODE_AUTO)
+    if mode == LWJGL_MODE_STOCK:
+        return None
+    stock, major = mgr.stock_version(minecraft_directory, version_id)
+    if mode == LWJGL_MODE_AUTO:
+        target = mgr.choose_auto(stock, major)
+        if not target:
+            return None
+    else:
+        target = mode
+        if major == 2:
+            log("[LWJGL] Stock LWJGL 2 version detected, override not applied")
+            return None
+    if stock == target:
+        return None
+    log(f"[LWJGL] Overriding LWJGL {stock or '?'} -> {target}")
+    info = mgr.ensure_version(target, log_fn=log, progress_fn=progress_fn)
+    natives_dir = Path(minecraft_directory) / "versions" / version_id / f"natives-lwjgl-{target}"
+    LwjglManager.extract_natives(info["natives_jars"], natives_dir)
+    return {"jars": info["jars"] + info["natives_jars"], "natives_dir": str(natives_dir), "version": target}
+
+
+def native_library_jvm_args(instance):
+    args = []
+    if _instance_or_global(instance, "use_system_glfw", False):
+        path = _instance_or_global(instance, "glfw_path", "") or detect_system_glfw()
+        if path and os.path.isfile(path):
+            args.append("-Dorg.lwjgl.glfw.libname=" + os.path.abspath(path))
+    if _instance_or_global(instance, "use_system_openal", False):
+        path = _instance_or_global(instance, "openal_path", "") or detect_system_openal()
+        if path and os.path.isfile(path):
+            args.append("-Dorg.lwjgl.openal.libname=" + os.path.abspath(path))
+    return args
+
+
+def _detect_cursor_env():
+    theme, size = "", ""
+    try:
+        kcm = Path.home() / ".config" / "kcminputrc"
+        if kcm.exists():
+            section = ""
+            for line in kcm.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1]
+                elif section == "Mouse" and "=" in line:
+                    k, _, v = line.partition("=")
+                    if k.strip() == "cursorTheme":
+                        theme = v.strip()
+                    elif k.strip() == "cursorSize":
+                        size = v.strip()
+    except Exception:
+        pass
+    if not theme and shutil.which("gsettings"):
+        try:
+            out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "cursor-theme"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip().strip("'")
+            if out:
+                theme = out
+            out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "cursor-size"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip()
+            if out.isdigit():
+                size = out
+        except Exception:
+            pass
+    if not theme:
+        try:
+            idx = Path.home() / ".icons" / "default" / "index.theme"
+            if not idx.exists():
+                idx = Path.home() / ".local" / "share" / "icons" / "default" / "index.theme"
+            if idx.exists():
+                for line in idx.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    if line.strip().startswith("Inherits="):
+                        theme = line.split("=", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+    return theme, size
+
+# cmon use wayland already, it's 2026/27 not 2000
+def _is_wayland_session():
+    return bool(os.environ.get("WAYLAND_DISPLAY")) or os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+
+# hell for nvidia
+def _nvidia_present():
+    return os.path.exists("/proc/driver/nvidia/version")
+
+
+def build_launch_env(instance, launcher=None):
+    # :D
+    env = os.environ.copy()
+    if env.get("ORANG_FC_PRELOAD") == "1":
+        env.pop("ORANG_FC_PRELOAD", None)
+        parts = [p for p in env.get("LD_PRELOAD", "").split(":") if p and "libfontconfig" not in p]
+        if parts:
+            env["LD_PRELOAD"] = ":".join(parts)
+        else:
+            env.pop("LD_PRELOAD", None)
+    for key in ("GDK_BACKEND", "PYGAME_HIDE_SUPPORT_PROMPT", "ORANG_FC_PRELOAD"):
+        env.pop(key, None)
+    if env.get("LD_LIBRARY_PATH_ORIG") is not None:
+        env["LD_LIBRARY_PATH"] = env.pop("LD_LIBRARY_PATH_ORIG")
+    elif getattr(sys, "frozen", False) or "__compiled__" in globals():
+        env.pop("LD_LIBRARY_PATH", None)
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        if env.get("ORANG_PROXY_SET") == "1":
+            env.pop(key, None)
+    env.pop("ORANG_PROXY_SET", None)
+    if platform.system() == "Linux":
+        backend = _instance_or_global(instance, "display_backend", "x11")
+        if backend == "x11" and _is_wayland_session():
+            env["XDG_SESSION_TYPE"] = "x11"
+        elif backend == "wayland":
+            env.pop("SDL_VIDEODRIVER", None)
+        theme, size = _detect_cursor_env()
+        if theme and not env.get("XCURSOR_THEME"):
+            env["XCURSOR_THEME"] = theme
+        if size and not env.get("XCURSOR_SIZE"):
+            env["XCURSOR_SIZE"] = size
+        if _instance_or_global(instance, "use_zink", False):
+            env["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
+            env["__GLX_VENDOR_LIBRARY_NAME"] = "mesa"
+        use_prime = _instance_or_global(instance, "use_prime", False)
+        if not use_prime and launcher is not None and getattr(launcher, "use_dri_prime", None):
+            try:
+                use_prime = bool(launcher.use_dri_prime.get())
+            except Exception:
+                use_prime = False
+        if use_prime:
+            env["DRI_PRIME"] = "1"
+            if _nvidia_present():
+                env["__NV_PRIME_RENDER_OFFLOAD"] = "1"
+                env["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
+                env["__VK_LAYER_NV_optimus"] = "NVIDIA_only"
+    if instance is not None and getattr(instance, "env_vars", None):
+        for line in instance.env_vars.splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+    return env
+
+
+def instance_command_vars(instance, java_exe="", version=""):
+    if instance is None:
+        return {}
+    return {
+        "INST_NAME": instance.name,
+        "INST_ID": instance.instance_id,
+        "INST_DIR": str(instance.base_path),
+        "INST_MC_DIR": str(instance.minecraft_dir),
+        "INST_JAVA": java_exe or "",
+        "INST_MC_VER": version or instance.version,
+    }
+
+
+def run_hook_command(command_text, cwd, env, log_fn=None, wait=True):
+    if not command_text or not command_text.strip():
+        return 0
+    log = log_fn or (lambda m: None)
+    try:
+        proc = subprocess.Popen(command_text, shell=True, cwd=cwd, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if not wait:
+            return 0
+        for line in proc.stdout:
+            log(f"[Hook] {line.rstrip()}")
+        proc.wait()
+        return proc.returncode
+    except Exception as e:
+        log(f"[Hook] failed: {e}")
+        return -1
+
+
+def apply_wrapper_command(command, wrapper_text):
+    if not wrapper_text or not wrapper_text.strip():
+        return command
+    try:
+        import shlex
+        return shlex.split(wrapper_text) + list(command)
+    except Exception:
+        return command
+
+
+def memory_jvm_args(instance, ram):
+    args = [f"-Xmx{ram}"]
+    min_mb = instance.opt("min_ram_mb") if instance is not None else None
+    if min_mb:
+        args.append(f"-Xms{int(min_mb)}M")
+    else:
+        args.append(f"-Xms{ram}")
+    permgen = instance.opt("permgen_mb") if instance is not None else None
+    if permgen:
+        args.append(f"-XX:MetaspaceSize={int(permgen)}M")
+    return args
+
+
+def extra_jvm_args(instance):
+    if instance is None:
+        return []
+    text = instance.opt("jvm_args", "") or ""
+    try:
+        import shlex
+        return [a for a in shlex.split(text) if a]
+    except Exception:
+        return text.split()
+
+
+def _options_txt_set(path, updates):
+    lines = []
+    if path.exists():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except Exception:
+            lines = []
+    seen = set()
+    out = []
+    for line in lines:
+        key = line.split(":", 1)[0] if ":" in line else None
+        if key in updates:
+            out.append(f"{key}:{updates[key]}")
+            seen.add(key)
+        else:
+            out.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            out.append(f"{key}:{value}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    except Exception as e:
+        print(f"[options.txt] write failed: {e}")
+
+
+def _options_txt_get(path, key, default=None):
+    if not path.exists():
+        return default
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith(key + ":"):
+                return line.split(":", 1)[1]
+    except Exception:
+        pass
+    return default
+
+# sodium pls
+def apply_video_options(instance):
+    if instance is None:
+        return
+    options = instance.minecraft_dir / "options.txt"
+    if options.is_symlink():
+        options = options.resolve()
+    updates = {}
+    if instance.opt("fullscreen", False):
+        updates["fullscreen"] = "true"
+        instance.set_opt("fullscreen_managed", True)
+    elif instance.opt("fullscreen_managed", False):
+        updates["fullscreen"] = "false"
+        instance.set_opt("fullscreen_managed", False)
+    width = instance.opt("res_width")
+    height = instance.opt("res_height")
+    if width and height:
+        updates["overrideWidth"] = str(int(width))
+        updates["overrideHeight"] = str(int(height))
+        instance.set_opt("res_managed", True)
+    elif instance.opt("res_managed", False):
+        updates["overrideWidth"] = "0"
+        updates["overrideHeight"] = "0"
+        instance.set_opt("res_managed", False)
+    if updates and (options.exists() or instance.opt("fullscreen", False) or (width and height)):
+        _options_txt_set(options, updates)
+
+# it may work
+def legacy_jvm_args(instance, mc_version, java_major):
+    args = []
+    if instance is None or not instance.opt("legacy_fixes", False):
+        return args
+    ver = _version_tuple(mc_version)
+    if ver and ver < (1, 13):
+        args.append("-Djava.util.Arrays.useLegacyMergeSort=true")
+        args.append("-Dfml.ignoreInvalidMinecraftCertificates=true")
+        args.append("-Dfml.ignorePatchDiscrepancies=true")
+    if platform.system() == "Linux" and ver and ver < (1, 13) and not shutil.which("xrandr"):
+        args.append("-DLWJGL_DISABLE_XRANDR=true")
+    if platform.system() == "Darwin" and ver and ver < (1, 13):
+        args.append("-XstartOnFirstThread")
+    return args
+
+
+_BLOCKLIST_SERVICE = "META-INF/services/com.mojang.blocklist.BlockListSupplier"
+_BLOCKLIST_JAR_CACHE = {}
+
+
+def _jar_provides_blocklist(path):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    key = (path, st.st_size, int(st.st_mtime))
+    cached = _BLOCKLIST_JAR_CACHE.get(key)
+    if cached is not None:
+        return cached
+    result = False
+    try:
+        with zipfile.ZipFile(path) as zf:
+            result = _BLOCKLIST_SERVICE in zf.namelist()
+    except Exception:
+        result = False
+    _BLOCKLIST_JAR_CACHE[key] = result
+    return result
+
+
+def strip_server_blocklist(command, instance, mc_version, log_fn=None):
+    if instance is None or not bool(instance.opt("anti_ban", True)):
+        return command
+    removed = []
+    out = []
+    for arg in command:
+        if "patchy" not in arg or os.pathsep not in arg and not arg.lower().endswith(".jar"):
+            out.append(arg)
+            continue
+        prefix = ""
+        body = arg
+        if arg.startswith("-") and "=" in arg:
+            prefix, body = arg.split("=", 1)
+            prefix += "="
+        entries = body.split(os.pathsep)
+        kept = []
+        for entry in entries:
+            name = os.path.basename(entry).lower()
+            if name.startswith("patchy-") and name.endswith(".jar") and _jar_provides_blocklist(entry):
+                removed.append(entry)
+                continue
+            kept.append(entry)
+        out.append(prefix + os.pathsep.join(kept))
+    if removed and log_fn:
+        log_fn(f"[ServerBlocklist] Removed Mojang's blocked-server list provider from the classpath ({os.path.basename(removed[0])})")
+    elif log_fn and _version_tuple(mc_version) and _version_tuple(mc_version) >= (1, 16, 4):
+        log_fn("[ServerBlocklist] No blocklist provider found in the classpath, nothing to bypass")
+    return out
+
+
+def find_installed_loader_version(minecraft_directory, mod_loader, mc_version, loader_version=""):
+    versions_dir = Path(minecraft_directory) / "versions"
+    if not versions_dir.exists():
+        return None
+    loader = (mod_loader or "").lower()
+    lv = loader_version or ""
+    candidates = []
+    for d in versions_dir.iterdir():
+        if not d.is_dir() or not (d / f"{d.name}.json").exists():
+            continue
+        name = d.name
+        low = name.lower()
+        if loader == "fabric" and low.startswith("fabric-loader-") and low.endswith(f"-{mc_version}".lower()):
+            if not lv or lv in name:
+                candidates.append(name)
+        elif loader == "quilt" and low.startswith("quilt-loader-") and low.endswith(f"-{mc_version}".lower()):
+            if not lv or lv in name:
+                candidates.append(name)
+        elif loader == "forge" and (low.startswith(f"{mc_version}-forge".lower()) or low.startswith(f"forge-{mc_version}".lower())):
+            if not lv or lv in name:
+                candidates.append(name)
+        elif loader == "neoforge" and (low.startswith("neoforge-") or low.startswith(f"{mc_version}-forge-")):
+            if not lv or lv in name:
+                candidates.append(name)
+        elif loader == "optifine" and low.startswith(f"{mc_version}-optifine".lower()):
+            if not lv or lv in name:
+                candidates.append(name)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda n: (versions_dir / n).stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+_PROXY_ENV_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+
+
+def _normalize_proxy_url(proxy):
+    proxy = (proxy or "").strip()
+    if not proxy:
+        return ""
+    if "://" not in proxy:
+        proxy = "http://" + proxy
+    return proxy
+
+
+def _proxy_scheme_supported(proxy):
+    scheme = urllib.parse.urlsplit(proxy).scheme.lower()
+    if scheme.startswith("socks"):
+        try:
+            return importlib.util.find_spec("socks") is not None, scheme
+        except Exception:
+            return False, scheme
+    return scheme in ("http", "https"), scheme
+
+
+def apply_launcher_proxy():
+    proxy = _normalize_proxy_url(_adv_get("proxy_url", ""))
+    if proxy:
+        supported, scheme = _proxy_scheme_supported(proxy)
+        if not supported:
+            _http_session.proxies.clear()
+            for k in _PROXY_ENV_KEYS:
+                if os.environ.get("ORANG_PROXY_SET") == "1":
+                    os.environ.pop(k, None)
+            os.environ.pop("ORANG_PROXY_SET", None)
+            if scheme.startswith("socks"):
+                return False, _qt_t("QT_PROXY_NEEDS_PYSOCKS", "SOCKS proxies need the PySocks package (pip install PySocks). Proxy not applied.")
+            return False, _qt_t("QT_PROXY_BAD_SCHEME", "Unsupported proxy type '{scheme}'. Use http://, https://, socks5:// or socks5h://.").format(scheme=scheme or "?")
+        _http_session.proxies.update({"http": proxy, "https": proxy})
+        _http_session.trust_env = True
+        for k in _PROXY_ENV_KEYS:
+            os.environ[k] = proxy
+        os.environ["ORANG_PROXY_SET"] = "1"
+        return True, _qt_t("QT_PROXY_ACTIVE", "Proxy active: {proxy}").format(proxy=proxy)
+    _http_session.proxies.clear()
+    if os.environ.get("ORANG_PROXY_SET") == "1":
+        for k in _PROXY_ENV_KEYS:
+            os.environ.pop(k, None)
+        os.environ.pop("ORANG_PROXY_SET", None)
+    return True, _qt_t("QT_PROXY_NONE", "No proxy configured.")
+
+
+def test_launcher_proxy(proxy):
+    proxy = _normalize_proxy_url(proxy)
+    if not proxy:
+        return False, _qt_t("QT_PROXY_EMPTY", "Enter a proxy address first.")
+    supported, scheme = _proxy_scheme_supported(proxy)
+    if not supported:
+        if scheme.startswith("socks"):
+            return False, _qt_t("QT_PROXY_NEEDS_PYSOCKS", "SOCKS proxies need the PySocks package (pip install PySocks). Proxy not applied.")
+        return False, _qt_t("QT_PROXY_BAD_SCHEME", "Unsupported proxy type '{scheme}'. Use http://, https://, socks5:// or socks5h://.").format(scheme=scheme or "?")
+    started = time.time()
+    try:
+        r = requests.get("https://api.modrinth.com/v2/", proxies={"http": proxy, "https": proxy}, timeout=15,
+                         headers={"User-Agent": "Orang-Studio/OrangLaunch (proxy test)"})
+        r.raise_for_status()
+    except Exception as e:
+        return False, _qt_t("QT_PROXY_TEST_FAIL", "Proxy test failed: {error}").format(error=e)
+    return True, _qt_t("QT_PROXY_TEST_OK", "Proxy works ({ms} ms to reach Modrinth).").format(ms=int((time.time() - started) * 1000))
+
+
+def open_with_browser(url):
+    custom = (_adv_get("custom_browser", "") or "").strip()
+    if custom:
+        try:
+            import shlex
+            subprocess.Popen(shlex.split(custom) + [url])
+            return True
+        except Exception as e:
+            print(f"[Browser] custom browser failed: {e}")
+    try:
+        return webbrowser.open(url)
+    except Exception:
         return False
 
-    def _submit_form(self):
-        name = self.name_var.get().strip()
-        loader = self.loader_var.get().strip().lower()
-        version = self.version_var.get().strip()
-        if not name or not version:
-            messagebox.showerror("Invalid Profile", "Name and version are required.")
-            return
-        if loader not in {"vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"}:
-            messagebox.showerror("Invalid Loader", "Please select a supported mod loader.")
-            return
-        if not self._validate_version(version):
-            return
-        # a modded loader with no build for this MC version cannot be created
-        if loader != "vanilla" and getattr(self, "_loader_incompatible", False):
-            messagebox.showerror(self.parent._t("LOADER_NOT_COMPATIBLE_TITLE"),
-                                 self.parent._t("LOADER_NOT_COMPATIBLE_MSG").format(loader=loader, version=version))
-            return
-        loader_ver = self.loader_version_var.get().strip()
-        if loader_ver in ("N/A", "Latest", "Loading…", "", self.parent._t("LOADER_NOT_COMPATIBLE")):
-            loader_ver = None
-        if self.current_mode == "create":
-            try:
-                new_instance = self.instance_manager.create_instance(name, version, loader, loader_version=loader_ver)
-            except ValueError as e:
-                messagebox.showerror(self.parent._t("GAME_PROFILES_CREATE_TITLE"), str(e))
-                return
-            except Exception as e:
-                messagebox.showerror(self.parent._t("GAME_PROFILES_CREATE_TITLE"), self.parent._t("GAME_PROFILES_CREATE_ERROR"))
-                return
-            self.selected_instance_id = new_instance.instance_id if new_instance else None
-            if new_instance and hasattr(self.parent, '_apply_sharing_for_instance'):
+
+def open_with_editor(path):
+    custom = (_adv_get("custom_editor", "") or "").strip()
+    if custom:
+        try:
+            import shlex
+            subprocess.Popen(shlex.split(custom) + [str(path)])
+            return True
+        except Exception as e:
+            print(f"[Editor] custom editor failed: {e}")
+    return open_path_native(path)
+
+
+def open_path_native(path):
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(path))
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+        return True
+    except Exception as e:
+        print(f"[Open] failed for {path}: {e}")
+        return False
+
+
+def _native_picker_tool():
+    if platform.system() != "Linux":
+        return None
+    if not _adv_get("native_file_picker", True):
+        return None
+    desktop = (os.environ.get("XDG_CURRENT_DESKTOP", "") + " " + os.environ.get("DESKTOP_SESSION", "")).lower()
+    if "kde" in desktop or "plasma" in desktop:
+        if shutil.which("kdialog"):
+            return "kdialog"
+    if shutil.which("zenity"):
+        return "zenity"
+    if shutil.which("kdialog"):
+        return "kdialog"
+    if shutil.which("yad"):
+        return "yad"
+    return None
+
+
+def _filetypes_to_kdialog(filetypes):
+    parts = []
+    for label, pattern in (filetypes or []):
+        pats = " ".join(pattern.split())
+        parts.append(f"{label} ({pats})")
+    return ";;".join(parts)
+
+
+def _filetypes_to_zenity(filetypes):
+    args = []
+    for label, pattern in (filetypes or []):
+        pats = " ".join(pattern.split())
+        args.append(f"--file-filter={label} | {pats}")
+    return args
+
+
+def _run_picker(cmd):
+    try:
+        env = dict(os.environ)
+        env.pop("GDK_BACKEND", None)
+        if QT_ACTIVE[0] and _qt_is_main_thread():
+            box = {}
+            done = threading.Event()
+
+            def run():
                 try:
-                    self.parent._apply_sharing_for_instance(new_instance)
+                    box["result"] = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
                 except Exception as e:
-                    print(f"[Sharing] Error applying symlinks to new instance: {e}")
+                    box["error"] = e
+                finally:
+                    done.set()
+            threading.Thread(target=run, daemon=True).start()
+            app = QtWidgets.QApplication.instance()
+            while not done.wait(0.02):
+                app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+            if "error" in box:
+                raise box["error"]
+            result = box["result"]
         else:
-            instance = self.instance_manager.get_instance(self.editing_instance_id)
-            if not instance:
-                messagebox.showerror(self.parent._t("GAME_PROFILES_EDIT_TITLE"), self.parent._t("GAME_PROFILES_NOT_FOUND"))
-                self._show_list_view()
-                return
-            version_changed = instance.version != version
-            loader_changed = instance.mod_loader.lower() != loader
-            instance.name = name
-            instance.version = version
-            instance.mod_loader = loader
-            instance.loader_version = loader_ver or ""
-            if version_changed or loader_changed:
-                instance.installed_version_id = None
-            try:
-                self.instance_manager.save_instances()
-            except Exception as e:
-                messagebox.showerror(self.parent._t("GAME_PROFILES_EDIT_TITLE"), self.parent._t("GAME_PROFILES_SAVE_ERROR"))
-                return
-            self.selected_instance_id = instance.instance_id
-        self._show_list_view()
-    def _submit_settings(self):
-        instance = self.instance_manager.get_instance(self.editing_instance_id)
-        if not instance:
-            messagebox.showerror(self.parent._t("GAME_PROFILES_EDIT_TITLE"), self.parent._t("GAME_PROFILES_NOT_FOUND"))
-            self._show_list_view()
-            return
-        
-        new_name = self.settings_name_var.get().strip()
-        new_loader = self.settings_loader_var.get().strip().lower()
-        new_version = self.settings_version_var.get().strip()
-        new_loader_version = self.settings_loader_version_var.get().strip()
-        
-        if not new_name or not new_version:
-            messagebox.showerror("Invalid Input", "Name and version are required.")
-            return
-        if not self._validate_version(new_version):
-            return
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+    except Exception as e:
+        print(f"[Picker] failed: {e}")
+        return None
 
-        version_changed = instance.version != new_version
-        loader_changed = instance.mod_loader.lower() != new_loader
-        
-        instance.name = new_name
-        instance.version = new_version
-        instance.mod_loader = new_loader
-        old_installed = instance.installed_version_id
-        
-        if version_changed or loader_changed:
-            instance.installed_version_id = None
-        elif new_loader_version and new_loader_version not in ("N/A", "Latest", ""):
-            instance.installed_version_id = new_loader_version
-        
-        instance.env_vars = self.settings_env_vars_text.get("1.0", "end").strip()
 
-        java_install = self.java_install_var.get().strip()
-        instance.java_path = "" if java_install == "Auto" else java_install
+def _pick_open_file(**kwargs):
+    tool = _native_picker_tool()
+    title = kwargs.get("title") or "Open"
+    initialdir = kwargs.get("initialdir") or str(Path.home())
+    filetypes = kwargs.get("filetypes")
+    if tool == "kdialog":
+        out = _run_picker(["kdialog", "--title", title, "--getopenfilename", initialdir, _filetypes_to_kdialog(filetypes)])
+        if out is not None:
+            return out
+    elif tool in ("zenity", "yad"):
+        cmd = [tool, "--file-selection", f"--title={title}", f"--filename={initialdir}/"] + _filetypes_to_zenity(filetypes)
+        out = _run_picker(cmd)
+        if out is not None:
+            return out
+    return filedialog.askopenfilename(**kwargs)
 
-        _rt = self.ram_var.get().strip().upper().replace(' ', '')
-        if _rt.endswith('GB'):
-            ram_match, ram_unit = _rt[:-2], 'G'
-        elif _rt.endswith('G'):
-            ram_match, ram_unit = _rt[:-1], 'G'
-        elif _rt.endswith('MB'):
-            ram_match, ram_unit = _rt[:-2], 'M'
-        elif _rt.endswith('M'):
-            ram_match, ram_unit = _rt[:-1], 'M'
-        else:
-            ram_match, ram_unit = _rt, 'G'
-        java_args = f"-Xmx{ram_match}{ram_unit}"
-        instance.java_args = java_args
-        instance.ram = f"{ram_match}{ram_unit}"
+
+def _pick_open_files(**kwargs):
+    tool = _native_picker_tool()
+    title = kwargs.get("title") or "Open"
+    initialdir = kwargs.get("initialdir") or str(Path.home())
+    filetypes = kwargs.get("filetypes")
+    if tool == "kdialog":
+        out = _run_picker(["kdialog", "--title", title, "--multiple", "--separate-output", "--getopenfilename", initialdir, _filetypes_to_kdialog(filetypes)])
+        if out is not None:
+            return tuple(l for l in out.splitlines() if l.strip())
+    elif tool in ("zenity", "yad"):
+        cmd = [tool, "--file-selection", "--multiple", "--separator=\n", f"--title={title}", f"--filename={initialdir}/"] + _filetypes_to_zenity(filetypes)
+        out = _run_picker(cmd)
+        if out is not None:
+            return tuple(l for l in out.splitlines() if l.strip())
+    return filedialog.askopenfilenames(**kwargs)
+
+
+def _pick_save_file(**kwargs):
+    tool = _native_picker_tool()
+    title = kwargs.get("title") or "Save"
+    initialdir = kwargs.get("initialdir") or str(Path.home())
+    initialfile = kwargs.get("initialfile") or ""
+    filetypes = kwargs.get("filetypes")
+    ext = kwargs.get("defaultextension") or ""
+    result = None
+    if tool == "kdialog":
+        out = _run_picker(["kdialog", "--title", title, "--getsavefilename", os.path.join(initialdir, initialfile), _filetypes_to_kdialog(filetypes)])
+        if out is not None:
+            result = out
+    elif tool in ("zenity", "yad"):
+        cmd = [tool, "--file-selection", "--save", "--confirm-overwrite", f"--title={title}", f"--filename={os.path.join(initialdir, initialfile)}"] + _filetypes_to_zenity(filetypes)
+        out = _run_picker(cmd)
+        if out is not None:
+            result = out
+    if result is None:
+        return filedialog.asksaveasfilename(**kwargs)
+    if result and ext and not os.path.splitext(result)[1]:
+        result += ext
+    return result
+
+
+def _pick_directory(**kwargs):
+    tool = _native_picker_tool()
+    title = kwargs.get("title") or "Select folder"
+    initialdir = kwargs.get("initialdir") or str(Path.home())
+    if tool == "kdialog":
+        out = _run_picker(["kdialog", "--title", title, "--getexistingdirectory", initialdir])
+        if out is not None:
+            return out
+    elif tool in ("zenity", "yad"):
+        out = _run_picker([tool, "--file-selection", "--directory", f"--title={title}", f"--filename={initialdir}/"])
+        if out is not None:
+            return out
+    return filedialog.askdirectory(**kwargs)
+
+
+def _levelname_from_level_dat(level_dat):
+    try:
+        import gzip
+        raw = gzip.open(level_dat, "rb").read()
+        marker = b"\x08\x00\x09LevelName"
+        idx = raw.find(marker)
+        if idx < 0:
+            return None
+        pos = idx + len(marker)
+        length = struct.unpack(">H", raw[pos:pos + 2])[0]
+        return raw[pos + 2:pos + 2 + length].decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
+def _set_levelname_in_level_dat(level_dat, new_name):
+    try:
+        import gzip
+        raw = gzip.open(level_dat, "rb").read()
+        marker = b"\x08\x00\x09LevelName"
+        idx = raw.find(marker)
+        if idx < 0:
+            return False
+        pos = idx + len(marker)
+        length = struct.unpack(">H", raw[pos:pos + 2])[0]
+        encoded = new_name.encode("utf-8")
+        patched = raw[:pos] + struct.pack(">H", len(encoded)) + encoded + raw[pos + 2 + length:]
+        backup = Path(str(level_dat) + "_old")
+        try:
+            shutil.copy2(level_dat, backup)
+        except Exception:
+            pass
+        with gzip.open(level_dat, "wb") as f:
+            f.write(patched)
+        return True
+    except Exception as e:
+        print(f"[World] rename failed: {e}")
+        return False
+
+
+def list_instance_worlds(instance):
+    worlds = []
+    saves = instance.saves_dir
+    if saves.is_symlink():
+        saves = saves.resolve()
+    if not saves.exists():
+        return worlds
+    for d in sorted(saves.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not d.is_dir():
+            continue
+        level = d / "level.dat"
+        if not level.exists():
+            continue
+        size = 0
+        try:
+            for f in d.rglob("*"):
+                if f.is_file():
+                    size += f.stat().st_size
+        except Exception:
+            pass
+        worlds.append({
+            "folder": d.name,
+            "path": d,
+            "name": _levelname_from_level_dat(level) or d.name,
+            "size": size,
+            "modified": datetime.fromtimestamp(d.stat().st_mtime),
+            "icon": d / "icon.png" if (d / "icon.png").exists() else None,
+        })
+    return worlds
+
+
+ORANGPACK_EXT = ".orangpack"
+ORANGPACK_INDEX = "orangpack.json"
+MODRINTH_DEFAULT_LOADERS = {"fabric": "fabric-loader", "quilt": "quilt-loader", "forge": "forge", "neoforge": "neoforge"}
+
+
+def _modrinth_lookup_hashes(hashes, algorithm="sha1"):
+    if not hashes:
+        return {}
+    result = {}
+    for i in range(0, len(hashes), 400):
+        chunk = hashes[i:i + 400]
+        try:
+            r = _http_session.post(f"{MODRINTH_API_URL}/version_files", json={"hashes": chunk, "algorithm": algorithm}, timeout=30)
+            r.raise_for_status()
+            result.update(r.json() or {})
+        except Exception as e:
+            print(f"[Modrinth] hash lookup failed: {e}")
+    return result
+
+
+def _modrinth_update_hashes(hashes, loaders, game_versions, algorithm="sha1"):
+    if not hashes:
+        return {}
+    result = {}
+    for i in range(0, len(hashes), 400):
+        chunk = hashes[i:i + 400]
+        try:
+            r = _http_session.post(f"{MODRINTH_API_URL}/version_files/update", json={
+                "hashes": chunk, "algorithm": algorithm,
+                "loaders": loaders, "game_versions": game_versions}, timeout=40)
+            r.raise_for_status()
+            result.update(r.json() or {})
+        except Exception as e:
+            print(f"[Modrinth] update lookup failed: {e}")
+    return result
+
+
+def _sha1_file(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _sha512_file(path):
+    h = hashlib.sha512()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _collect_export_tree(root):
+    entries = []
+    root = Path(root)
+    skip_names = {"instance.json", ".orangpack_tmp"}
+    for p in sorted(root.rglob("*")):
+        if p.is_symlink():
+            continue
+        rel = p.relative_to(root)
+        if rel.parts and rel.parts[0] in skip_names:
+            continue
+        if any(part.startswith("natives") for part in rel.parts) and "versions" in rel.parts:
+            continue
+        entries.append((str(rel).replace("\\", "/"), p))
+    return entries
+
+
+DEFAULT_EXPORT_SKIP_DIRS = {".minecraft/versions", ".minecraft/libraries", ".minecraft/assets", ".minecraft/logs",
+                            ".minecraft/crash-reports", ".minecraft/runtime", ".minecraft/saves", ".minecraft/screenshots",
+                            ".minecraft/.fabric", ".minecraft/.mixin.out", ".minecraft/.cache", ".minecraft/usercache.json",
+                            ".minecraft/usernamecache.json", ".minecraft/servers.dat_old", ".minecraft/options.txt"}
+
+
+def export_instance_pack(instance, out_path, fmt, selected_relpaths, log_fn=None, progress_fn=None):
+    log = log_fn or (lambda m: None)
+    out_path = Path(out_path)
+    base = instance.base_path
+    mc_root = ".minecraft/"
+    files = []
+    for rel in selected_relpaths:
+        p = base / rel
+        if p.is_file() and not p.is_symlink():
+            files.append((rel, p))
+    if fmt == "zip":
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("instance.json", json.dumps(instance.to_dict(), indent=2, ensure_ascii=False))
+            for i, (rel, p) in enumerate(files, 1):
+                zf.write(p, rel)
+                if progress_fn:
+                    progress_fn(i, len(files), rel)
+        return str(out_path)
+    hash_candidates = [(rel, p) for rel, p in files if rel.startswith(mc_root) and p.suffix.lower() in (".jar", ".zip") and
+                       any(rel[len(mc_root):].startswith(d + "/") for d in ("mods", "resourcepacks", "shaderpacks", "datapacks"))]
+    sha1_map = {}
+    for rel, p in hash_candidates:
+        try:
+            sha1_map[_sha1_file(p)] = (rel, p)
+        except Exception:
+            pass
+    log(f"[Export] Looking up {len(sha1_map)} files on Modrinth")
+    found = _modrinth_lookup_hashes(list(sha1_map.keys()))
+    remote_files = []
+    remote_rels = set()
+    for sha1, version in found.items():
+        rel, p = sha1_map[sha1]
+        vf = None
+        for f in version.get("files", []):
+            if (f.get("hashes") or {}).get("sha1") == sha1:
+                vf = f
+                break
+        if not vf:
+            continue
+        remote_rels.add(rel)
+        remote_files.append({
+            "path": rel[len(mc_root):],
+            "hashes": {"sha1": sha1, "sha512": (vf.get("hashes") or {}).get("sha512") or _sha512_file(p)},
+            "env": {"client": "required", "server": "required" if rel[len(mc_root):].startswith("mods/") else "unsupported"},
+            "downloads": [vf.get("url")],
+            "fileSize": p.stat().st_size,
+        })
+    deps = {"minecraft": instance.version}
+    loader_key = MODRINTH_DEFAULT_LOADERS.get((instance.mod_loader or "").lower())
+    if loader_key and instance.loader_version:
+        deps[loader_key] = instance.loader_version
+    elif loader_key and instance.installed_version_id:
+        m = re.search(r"(\d+\.\d+\.\d+(?:[-.][\w.]+)?)", instance.installed_version_id.replace(instance.version, ""))
+        if m:
+            deps[loader_key] = m.group(1)
+    index = {
+        "formatVersion": 1,
+        "game": "minecraft",
+        "versionId": "1.0.0",
+        "name": instance.name,
+        "summary": f"Exported from OrangLauncher {CURRENT_VERSION}",
+        "files": remote_files,
+        "dependencies": deps,
+    }
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if fmt == "orangpack":
+            index["orangpack"] = {
+                "launcher": CURRENT_VERSION,
+                "instance": {k: v for k, v in instance.to_dict().items() if k in ("name", "version", "mod_loader", "loader_version", "ram", "java_args", "env_vars", "opts")},
+            }
+            zf.writestr(ORANGPACK_INDEX, json.dumps(index, indent=2, ensure_ascii=False))
+        zf.writestr("modrinth.index.json", json.dumps(index, indent=2, ensure_ascii=False))
         icon_file = instance.base_path / "icon.txt"
-        icon_path = self.icon_path_var.get().strip()
-        if icon_path:
+        if icon_file.exists():
             try:
-                with open(icon_file, 'w', encoding='utf-8') as f:
-                    f.write(icon_path)
-            except Exception as e:
-                print(f"Failed to save icon path: {e}")
-        elif icon_file.exists():
-            try:
-                icon_file.unlink()
-            except:
+                icon_path = Path(icon_file.read_text(encoding="utf-8").strip())
+                if icon_path.exists():
+                    zf.write(icon_path, "icon" + icon_path.suffix.lower())
+            except Exception:
                 pass
-        try:
-            self.instance_manager.save_instances()
-            messagebox.showinfo("Settings Saved", "Profile settings have been saved successfully.")
-            if hasattr(self.parent, '_refresh_game_profiles'):
-                self.parent._refresh_game_profiles()
-            if hasattr(self.parent, 'version_label'):
-                instance = self.instance_manager.get_instance(self.editing_instance_id)
-                if instance:
-                    self.parent.version_label.config(
-                        text=f"Instance: {instance.name} | {instance.version} ({instance.mod_loader})"
-                    )
-        except Exception as e:
-            messagebox.showerror("Edit Settings", f"Failed to save changes: {e}")
-            return
-        self._show_list_view()
-    def _show_screenshots(self, instance):
-        ss_dir = instance.minecraft_dir / "screenshots"
-        if ss_dir.is_symlink():
-            ss_dir = ss_dir.resolve()
-        if not ss_dir.exists():
-            messagebox.showinfo("Screenshots", "No screenshots folder found for this instance.")
-            return
-        pngs = sorted(ss_dir.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not pngs:
-            messagebox.showinfo("Screenshots", "No screenshots found.")
-            return
-        dlg = tk.Toplevel(self.parent)
-        dlg.title(f"Screenshots - {instance.name}")
-        dlg.geometry("760x520")
-        dlg.configure(bg=self.theme_manager.get_color('bg_primary'))
-        toolbar = tk.Frame(dlg, bg=self.theme_manager.get_color('bg_secondary'))
-        toolbar.pack(fill="x", padx=8, pady=(8, 0))
-        tk.Label(toolbar, text=f"{len(pngs)} screenshot(s)", bg=self.theme_manager.get_color('bg_secondary'),
-                 fg=self.theme_manager.get_color('fg_secondary'), font=("Segoe UI", 9)).pack(side="left", padx=8, pady=4)
-        tk.Button(toolbar, text="Open folder", bg=self.theme_manager.get_color('bg_tertiary'),
-                  fg=self.theme_manager.get_color('fg_primary'), bd=0, padx=10, pady=4, cursor="hand2", relief="flat",
-                  command=lambda: subprocess.Popen(["xdg-open", str(ss_dir)])).pack(side="right", padx=8, pady=4)
-        canvas = tk.Canvas(dlg, bg=self.theme_manager.get_color('bg_primary'), highlightthickness=0)
-        vsb = ttk.Scrollbar(dlg, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
-        canvas.pack(fill="both", expand=True, padx=8, pady=8)
-        grid_frame = tk.Frame(canvas, bg=self.theme_manager.get_color('bg_primary'))
-        canvas.create_window((0, 0), window=grid_frame, anchor="nw")
-        grid_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        thumb_refs = []
-        COLS = 4
-        THUMB = 160
-        def _load_thumbs():
-            for i, png in enumerate(pngs[:60]):
-                try:
-                    img = Image.open(png)
-                    img.thumbnail((THUMB, THUMB))
-                    photo = ImageTk.PhotoImage(img)
-                    thumb_refs.append(photo)
-                    row, col = divmod(i, COLS)
-                    def _make_cell(photo=photo, png=png, r=row, c=col):
-                        cell = tk.Frame(grid_frame, bg=self.theme_manager.get_color('bg_secondary'), bd=1, relief="solid")
-                        cell.grid(row=r, column=c, padx=6, pady=6)
-                        lbl = tk.Label(cell, image=photo, bg=self.theme_manager.get_color('bg_secondary'), cursor="hand2")
-                        lbl.pack(padx=4, pady=4)
-                        lbl.bind("<Button-1>", lambda e, p=png: subprocess.Popen(["xdg-open", str(p)]))
-                        tk.Label(cell, text=png.name[:20], bg=self.theme_manager.get_color('bg_secondary'),
-                                 fg=self.theme_manager.get_color('fg_tertiary'), font=("Segoe UI", 7)).pack()
-                    dlg.after(0, _make_cell)
-                except Exception:
-                    pass
-        threading.Thread(target=_load_thumbs, daemon=True).start()
+        total = len(files)
+        for i, (rel, p) in enumerate(files, 1):
+            if rel in remote_rels:
+                continue
+            if rel.startswith(mc_root):
+                zf.write(p, "overrides/" + rel[len(mc_root):])
+            elif fmt == "orangpack":
+                zf.write(p, "instance/" + rel)
+            if progress_fn:
+                progress_fn(i, total, rel)
+    log(f"[Export] {len(remote_files)} files referenced remotely, rest packed as overrides")
+    return str(out_path)
 
-    def _export_instance(self, instance):
-        path = filedialog.asksaveasfilename(
-            title=f"Export {instance.name}",
-            defaultextension=".zip",
-            filetypes=[("Zip archive", "*.zip")],
-            initialfile=f"{instance.name.replace(' ', '_')}.zip"
-        )
-        if not path:
-            return
-        if hasattr(self.parent, 'status_bar_progress'):
-            self.parent.status_bar_progress.config(mode='indeterminate')
-            self.parent.status_bar_progress.start(15)
-        def _do_export():
-            try:
-                with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for f in instance.base_path.rglob("*"):
-                        if f.is_symlink() or not f.is_file():
-                            continue
-                        zf.write(f, f.relative_to(instance.base_path))
-                def done():
-                    if hasattr(self.parent, 'status_bar_progress'):
-                        self.parent.status_bar_progress.stop()
-                        self.parent.status_bar_progress.config(mode='determinate')
-                        if hasattr(self.parent, 'progress'):
-                            self.parent.progress.set(0)
-                    messagebox.showinfo("Export", f"Exported to:\n{path}")
-                self.parent.after(0, done)
-            except Exception as e:
-                def err():
-                    if hasattr(self.parent, 'status_bar_progress'):
-                        self.parent.status_bar_progress.stop()
-                        self.parent.status_bar_progress.config(mode='determinate')
-                    messagebox.showerror("Export Failed", str(e))
-                self.parent.after(0, err)
-        threading.Thread(target=_do_export, daemon=True).start()
 
-    def _import_instance(self):
-        path = filedialog.askopenfilename(
-            title="Import Instance",
-            filetypes=[("Zip archive", "*.zip"), ("All files", "*.*")]
-        )
-        if not path:
-            return
-        if hasattr(self.parent, 'status_bar_progress'):
-            self.parent.status_bar_progress.config(mode='indeterminate')
-            self.parent.status_bar_progress.start(15)
-        def _do_import():
-            try:
-                new_id = str(_uuid.uuid4())
-                dest = InstanceManager.get_instances_dir() / new_id
-                dest.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(path, 'r') as zf:
-                    zf.extractall(dest)
-                inst_json = dest / "instance.json"
-                if not inst_json.exists():
-                    raise FileNotFoundError("instance.json not found in zip - not a valid OrangLauncher export.")
-                with open(inst_json, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                data['instance_id'] = new_id
-                data['base_path'] = str(dest)
-                data['minecraft_dir'] = str(dest / ".minecraft")
-                with open(inst_json, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2)
-                instance = MinecraftInstance.from_dict(data)
-                self.instance_manager.instances[new_id] = instance
-                self.instance_manager.save_instances()
-                if hasattr(self.parent, '_apply_sharing_for_instance'):
-                    self.parent._apply_sharing_for_instance(instance)
-                def done():
-                    if hasattr(self.parent, 'status_bar_progress'):
-                        self.parent.status_bar_progress.stop()
-                        self.parent.status_bar_progress.config(mode='determinate')
-                        if hasattr(self.parent, 'progress'):
-                            self.parent.progress.set(0)
-                    self._refresh_profiles_list()
-                    if hasattr(self.parent, '_refresh_game_profiles'):
-                        self.parent._refresh_game_profiles()
-                    messagebox.showinfo("Import", f"Imported: {data.get('name', new_id)}")
-                self.parent.after(0, done)
-            except Exception as e:
-                def err():
-                    if hasattr(self.parent, 'status_bar_progress'):
-                        self.parent.status_bar_progress.stop()
-                        self.parent.status_bar_progress.config(mode='determinate')
-                    messagebox.showerror("Import Failed", str(e))
-                self.parent.after(0, err)
-        threading.Thread(target=_do_import, daemon=True).start()
-
-    def _import_mrpack(self):
-        mrpack_path = filedialog.askopenfilename(
-            title=self.parent._t("MODS_IMPORT_TITLE"),
-            filetypes=[("Modrinth Modpack", "*.mrpack"), ("All files", "*.*")]
-        )
-        if not mrpack_path:
-            return
-        old_status = self.parent.status_label.cget("text") if hasattr(self.parent, 'status_label') else ""
-        if hasattr(self.parent, 'status_label'):
-            self.parent.status_label.config(text="Importing modpack...")
-        if hasattr(self.parent, 'status_bar_progress'):
-            self.parent.status_bar_progress.config(mode='indeterminate')
-            self.parent.status_bar_progress.start(15)
-        def _restore():
-            if hasattr(self.parent, 'status_bar_progress'):
-                self.parent.status_bar_progress.stop()
-                self.parent.status_bar_progress.config(mode='determinate')
-                if hasattr(self.parent, 'progress'):
-                    self.parent.progress.set(0)
-            if hasattr(self.parent, 'status_label'):
-                self.parent.status_label.config(text=old_status or "Ready")
-        def _do():
-            try:
-                success, message, profile_name = import_modpack(mrpack_path, self.parent)
-                def done():
-                    _restore()
-                    if success:
-                        messagebox.showinfo(
-                            self.parent._t("MODS_IMPORT_SUCCESS_TITLE"),
-                            self.parent._t("MODS_IMPORT_SUCCESS_MSG").format(message=message, profile_name=profile_name)
-                        )
-                        self._refresh_profiles_list()
-                        if hasattr(self.parent, '_refresh_game_profiles'):
-                            self.parent._refresh_game_profiles()
-                    else:
-                        messagebox.showerror(self.parent._t("MODS_IMPORT_FAIL_TITLE"), message)
-                self.parent.after(0, done)
-            except Exception as e:
-                self.parent.after(0, lambda: (_restore(), messagebox.showerror(self.parent._t("MODS_IMPORT_ERROR_TITLE"), str(e))))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def _delete_instance(self, instance):
-        if not messagebox.askyesno("Delete Profile", f"Delete profile '{instance.name}'?"):
-            return
-        try:
-            self.instance_manager.remove_instance(instance.instance_id)
-            if hasattr(self.parent, '_refresh_game_profiles'):
-                self.parent._refresh_game_profiles()
-        except Exception as e:
-            messagebox.showerror("Delete Profile", f"Failed to delete profile: {e}")
-        self._refresh_profiles_list()
-    def _duplicate_selected(self):
-        if not self.selected_instance_id:
-            messagebox.showinfo("Duplicate Profile", "Select a profile first.")
-            return
-        source = self.instance_manager.get_instance(self.selected_instance_id)
-        if not source:
-            messagebox.showerror("Duplicate Profile", "Selected profile not found.")
-            return
-        base_name = f"{source.name} Copy"
-        candidate = base_name
-        index = 2
-        while self.instance_manager.get_instance_by_name(candidate):
-            candidate = f"{base_name} {index}"
-            index += 1
-        try:
-            dup = self.instance_manager.create_instance(candidate, source.version, source.mod_loader, ram=source.ram, java_args=source.java_args)
-        except Exception as e:
-            messagebox.showerror("Duplicate Profile", f"Failed to duplicate profile: {e}")
-            return
-        self.selected_instance_id = dup.instance_id if dup else None
-        self._refresh_profiles_list()
-    def _delete_selected(self):
-        if not self.selected_instance_id:
-            messagebox.showinfo("Delete Profile", "Select a profile first.")
-            return
-        instance = self.instance_manager.get_instance(self.selected_instance_id)
-        if not instance:
-            self._refresh_profiles_list()
-            return
-        self._delete_instance(instance)
-def build_game_profiles_tab(parent, notebook):
-    tab = GameProfilesTab(parent, notebook)
-    tab.build_tab()
-    parent.game_profiles_tab = tab
 # mmh all the COLORS of the themes!!
 class ThemeManager:
     def __init__(self):
@@ -6742,115 +4553,6 @@ class ThemeManager:
         if self.theme_data:
             return self.theme_data.get('fonts', {}).get(font_key, 'Segoe UI')
         return 'Segoe UI'
-    def apply_to_style(self, style: ttk.Style):
-        if not self.theme_data:
-            return
-        colors = self.theme_data.get('colors', {})
-        style.configure("TNotebook", 
-                       background=colors.get('bg_primary'),
-                       borderwidth=0, 
-                       tabmargins=0)
-        style.configure("TNotebook.Tab", 
-                       padding=(8, 4), 
-                       borderwidth=0)
-        style.map("TNotebook.Tab", 
-                 background=[("selected", colors.get('tab_selected')), 
-                           ("!selected", colors.get('tab_unselected'))], 
-                 foreground=[("selected", colors.get('fg_primary')), 
-                           ("!selected", colors.get('fg_tertiary'))])
-        style.configure("TFrame", background=colors.get('bg_primary'))
-        style.configure("TLabelframe", 
-                       background=colors.get('bg_primary'),
-                       borderwidth=0, 
-                       relief="flat")
-        style.configure("TLabelframe.Label",
-                       background=colors.get('bg_primary'),
-                       foreground=colors.get('accent_primary'))
-        style.configure("TLabel", 
-                       background=colors.get('bg_primary'),
-                       foreground=colors.get('fg_secondary'))
-        style.configure("Header.TLabel", 
-                       font=(self.get_font(), 10, "bold"),
-                       background=colors.get('bg_primary'),
-                       foreground=colors.get('fg_primary'))
-        style.configure("News.TLabel", 
-                       font=(self.get_font(), 9),
-                       background=colors.get('bg_primary'),
-                       foreground=colors.get('fg_secondary'))
-        style.configure("TButton", 
-                       background=colors.get('button_bg'),
-                       foreground=colors.get('button_fg'),
-                       borderwidth=1)
-        style.map("TButton", 
-                 background=[("active", colors.get('bg_hover')), 
-                           ("pressed", colors.get('bg_pressed'))],
-                 foreground=[("active", colors.get('fg_primary')),
-                           ("pressed", colors.get('fg_primary'))])
-        style.configure("Play.TButton", 
-                       background=colors.get('play_button_bg', colors.get('accent_primary')),
-                       foreground=colors.get('play_button_fg', colors.get('fg_primary')),
-                       borderwidth=0, 
-                       font=(self.get_font(), 11, "bold"))
-        style.map("Play.TButton", 
-                 background=[("active", colors.get('play_button_hover', colors.get('accent_hover'))), 
-                           ("pressed", colors.get('play_button_pressed', colors.get('accent_pressed')))])
-        style.configure("Settings.TButton",
-                       background=colors.get('button_bg'),
-                       foreground=colors.get('button_fg'),
-                       borderwidth=1,
-                       focuscolor="none",
-                       font=(self.get_font(), 9))
-        style.map("Settings.TButton",
-                 background=[("active", colors.get('bg_hover')), 
-                           ("pressed", colors.get('bg_pressed'))],
-                 foreground=[("active", colors.get('fg_primary')),
-                           ("pressed", colors.get('fg_primary'))])
-        style.configure("TCombobox", 
-                       fieldbackground=colors.get('bg_input'),
-                       background=colors.get('bg_input'),
-                       foreground=colors.get('fg_primary'),
-                       borderwidth=0, 
-                       selectbackground=colors.get('bg_section'),
-                       selectforeground=colors.get('fg_primary'))
-        style.map("TCombobox", 
-                 fieldbackground=[("readonly", colors.get('bg_input'))],
-                 selectbackground=[("readonly", colors.get('bg_section'))])
-        style.configure("TEntry", 
-                       fieldbackground=colors.get('bg_input'),
-                       background=colors.get('bg_input'),
-                       foreground=colors.get('fg_primary'),
-                       borderwidth=0, 
-                       highlightthickness=0)
-        style.configure("Settings.TEntry",
-                       fieldbackground=colors.get('bg_input'),
-                       background=colors.get('bg_input'),
-                       foreground=colors.get('fg_primary'),
-                       borderwidth=1,
-                       insertcolor=colors.get('fg_primary'))
-        style.configure("TProgressbar", 
-                       background=colors.get('progress_bar'),
-                       troughcolor=colors.get('progress_track'),
-                       borderwidth=0, 
-                       lightcolor=colors.get('progress_bar'),
-                       darkcolor=colors.get('progress_bar'))
-        style.configure("TScrollbar", 
-                       background=colors.get('scrollbar_thumb'),
-                       troughcolor=colors.get('scrollbar_track'),
-                       arrowcolor=colors.get('fg_primary'),
-                       borderwidth=0)
-        style.configure("Settings.TCheckbutton",
-                       background=colors.get('bg_tertiary'),
-                       foreground=colors.get('fg_secondary'),
-                       focuscolor="none",
-                       font=(self.get_font(), 9))
-        style.map("Settings.TCheckbutton",
-                 background=[("active", colors.get('bg_tertiary'))],
-                 foreground=[("active", colors.get('fg_primary'))])
-        
-        try:
-            _configure_enhanced_styles(style)
-        except Exception:
-            pass
 
 _theme_manager = None
 def get_theme_manager():
@@ -6890,379 +4592,8 @@ def save_theme_preference(theme_name):
         return False
 
 # plugin system (i hate it kinda with hooking - adasjusk)
-class PluginSecurityError(Exception):
-    pass
+# nah it's good
 
-
-class PluginSandbox:
-    BLOCKED_MODULES = frozenset([
-        'requests', 'urllib', 'urllib2', 'urllib3', 'httplib', 'httplib2',
-        'http.client', 'socket', 'socketserver', 'ssl', 'ftplib', 'smtplib',
-        'poplib', 'imaplib', 'nntplib', 'telnetlib', 'xmlrpc', 'aiohttp',
-        'httpx', 'pycurl', 'websocket', 'websockets', 'asyncio',
-        'subprocess', 'popen2', 'commands',
-        'code', 'codeop', 'compile', 'exec', 'eval',
-        'ctypes', 'cffi', 'multiprocessing', 'pty', 'tty', 'termios',
-        'pickle', 'shelve', 'marshal', 'dill',
-        'webview', 'pywebview',
-        'webbrowser', 'selenium', 'playwright',
-    ])
-    BLOCKED_OS_FUNCTIONS = frozenset([
-        'system', 'popen', 'popen2', 'popen3', 'popen4',
-        'spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
-        'spawnv', 'spawnve', 'spawnvp', 'spawnvpe',
-        'execl', 'execle', 'execlp', 'execlpe',
-        'execv', 'execve', 'execvp', 'execvpe',
-        'startfile',
-        'fork', 'forkpty', 'kill', 'killpg',
-    ])
-    BLOCKED_BUILTINS = frozenset([
-        'exec', 'eval', 'compile', '__import__', 'open',
-    ])
-    
-    _original_import = None
-    _original_os_funcs = {}
-    _original_tk_toplevel = None
-    _original_tk_tk = None
-    _sandbox_active = False
-    _plugin_context = None
-    
-    @classmethod
-    def _create_safe_open(cls, plugin_dir):
-        original_open = builtins.open
-        
-        def safe_open(file, mode='r', *args, **kwargs):
-            if any(m in mode for m in ['w', 'a', 'x', '+']):
-                try:
-                    file_path = Path(file).resolve()
-                    plugin_path = Path(plugin_dir).resolve()
-                    if not str(file_path).startswith(str(plugin_path)):
-                        raise PluginSecurityError(
-                            f"Plugin cannot write to files outside plugin directory: {file}"
-                        )
-                except Exception as e:
-                    if isinstance(e, PluginSecurityError):
-                        raise
-                    raise PluginSecurityError(f"Invalid file path: {file}")
-            return original_open(file, mode, *args, **kwargs)
-        return safe_open
-    
-    @classmethod
-    def _block_new_windows(cls):
-        cls._original_tk_toplevel = tk.Toplevel.__init__
-        def blocked_toplevel(self, *args, **kwargs):
-            raise PluginSecurityError(
-                "Plugins cannot create new windows (Toplevel). "
-                "Use the provided notebook/frames instead."
-            )
-        
-        tk.Toplevel.__init__ = blocked_toplevel
-        cls._original_tk_tk = tk.Tk.__init__
-        def blocked_tk(self, *args, **kwargs):
-            raise PluginSecurityError(
-                "Plugins cannot create new Tk root windows. "
-                "Use the provided launcher interface instead."
-            )
-        
-        tk.Tk.__init__ = blocked_tk
-    
-    @classmethod
-    def _restore_windows(cls):
-        if cls._original_tk_toplevel:
-            tk.Toplevel.__init__ = cls._original_tk_toplevel
-            cls._original_tk_toplevel = None
-        if cls._original_tk_tk:
-            tk.Tk.__init__ = cls._original_tk_tk
-            cls._original_tk_tk = None
-    
-    @classmethod
-    def _create_restricted_import(cls):
-        original_import = builtins.__import__
-        
-        def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
-            top_module = name.split('.')[0]
-            if top_module in cls.BLOCKED_MODULES or name in cls.BLOCKED_MODULES:
-                raise PluginSecurityError(
-                    f"Plugin attempted to import blocked module: {name}"
-                )
-            if name.startswith('http.') or name.startswith('urllib.'):
-                raise PluginSecurityError(
-                    f"Plugin attempted to import blocked module: {name}"
-                )
-            
-            return original_import(name, globals, locals, fromlist, level)
-        
-        return restricted_import, original_import
-    
-    @classmethod
-    def _block_os_functions(cls):
-        for func_name in cls.BLOCKED_OS_FUNCTIONS:
-            if hasattr(os, func_name):
-                cls._original_os_funcs[func_name] = getattr(os, func_name)
-                
-                def blocked_func(*args, func_name=func_name, **kwargs):
-                    raise PluginSecurityError(
-                        f"Plugin attempted to call blocked function: os.{func_name}"
-                    )
-                
-                setattr(os, func_name, blocked_func)
-    
-    @classmethod
-    def _restore_os_functions(cls):
-        for func_name, original_func in cls._original_os_funcs.items():
-            setattr(os, func_name, original_func)
-        cls._original_os_funcs.clear()
-    
-    @classmethod
-    def activate(cls, plugin_dir: str):
-        if cls._sandbox_active:
-            return
-        
-        cls._plugin_context = plugin_dir
-        restricted_import, cls._original_import = cls._create_restricted_import()
-        builtins.__import__ = restricted_import
-        cls._block_os_functions()
-        cls._original_open = builtins.open
-        builtins.open = cls._create_safe_open(plugin_dir)
-        cls._block_new_windows()
-        cls._sandbox_active = True
-        print("[Plugin Security] Sandbox activated")
-    
-    @classmethod
-    def deactivate(cls):
-        if not cls._sandbox_active:
-            return
-        if cls._original_import:
-            builtins.__import__ = cls._original_import
-            cls._original_import = None
-        cls._restore_os_functions()
-        if hasattr(cls, '_original_open'):
-            builtins.open = cls._original_open
-        cls._restore_windows()
-        cls._sandbox_active = False
-        cls._plugin_context = None
-        print("[Plugin Security] Sandbox deactivated")
-    
-    @classmethod
-    def validate_plugin_code(cls, plugin_path: str) -> tuple:
-        warnings = []
-        
-        try:
-            with open(plugin_path, 'r', encoding='utf-8') as f:
-                source = f.read()
-        except Exception as e:
-            return False, [f"Cannot read plugin file: {e}"]
-        dangerous_patterns = [
-            (r'\bimport\s+requests\b', "imports 'requests' module (network)"),
-            (r'\bimport\s+urllib\b', "imports 'urllib' module (network)"),
-            (r'\bimport\s+socket\b', "imports 'socket' module (network)"),
-            (r'\bimport\s+http\b', "imports 'http' module (network)"),
-            (r'\bimport\s+asyncio\b', "imports 'asyncio' module (async/network)"),
-            (r'\bfrom\s+urllib', "imports from 'urllib' (network)"),
-            (r'\bfrom\s+http', "imports from 'http' (network)"),
-            (r'\bimport\s+aiohttp\b', "imports 'aiohttp' module (network)"),
-            (r'\bimport\s+websocket', "imports 'websocket' module (network)"),
-            (r'\bimport\s+subprocess\b', "imports 'subprocess' module (process execution)"),
-            (r'\bfrom\s+subprocess\b', "imports from 'subprocess' (process execution)"),
-            (r'\bos\.system\s*\(', "calls os.system() (command execution)"),
-            (r'\bos\.popen\s*\(', "calls os.popen() (command execution)"),
-            (r'\bos\.exec', "calls os.exec*() (process execution)"),
-            (r'\bos\.spawn', "calls os.spawn*() (process execution)"),
-            (r'\bos\.startfile\s*\(', "calls os.startfile() (file execution)"),
-            (r'["\']powershell', "contains powershell command"),
-            (r'["\']pwsh', "contains pwsh command"),
-            (r'["\']bash\s+-c', "contains bash -c command"),
-            (r'["\']sh\s+-c', "contains sh -c command"),
-            (r'\bexec\s*\(', "calls exec() (code execution)"),
-            (r'\beval\s*\(', "calls eval() (code execution)"),
-            (r'\bcompile\s*\(', "calls compile() (code compilation)"),
-            (r'__import__\s*\(', "calls __import__() (dynamic import)"),
-            (r'\bimport\s+ctypes\b', "imports 'ctypes' module (low-level access)"),
-            (r'\bimport\s+pickle\b', "imports 'pickle' module (arbitrary code execution)"),
-            (r'\bToplevel\s*\(', "creates Toplevel window (potential phishing)"),
-            (r'\btk\.Tk\s*\(', "creates new Tk root window (potential phishing)"),
-            (r'\btkinter\.Tk\s*\(', "creates new Tk root window (potential phishing)"),
-            (r'\bimport\s+webview\b', "imports 'webview' module (phishing risk)"),
-            (r'\bfrom\s+webview', "imports from 'webview' (phishing risk)"),
-            (r'\bimport\s+webbrowser\b', "imports 'webbrowser' module (can open URLs)"),
-            (r'password', "contains 'password' keyword (potential credential theft)"),
-            (r'login\.live\.com', "references Microsoft login URL (phishing risk)"),
-            (r'login\.microsoftonline', "references Microsoft login URL (phishing risk)"),
-            (r'microsoft.*auth', "references Microsoft auth (phishing risk)"),
-            (r'oauth.*microsoft', "references Microsoft OAuth (phishing risk)"),
-            (r'enter.*(password|credential|token)', "asks for password/credentials (phishing)"),
-            (r'(password|token|secret).*entry', "has password entry field (phishing)"),
-            (r'\.bind\s*\(', "calls .bind() (opens network port)"),
-            (r'\.listen\s*\(', "calls .listen() (opens server socket)"),
-            (r'\.accept\s*\(', "calls .accept() (accepts connections)"),
-            (r'socketserver', "uses socketserver (network server)"),
-            (r'BaseHTTPServer|HTTPServer|SimpleHTTPServer', "creates HTTP server"),
-        ]
-        for pattern, description in dangerous_patterns:
-            if re.search(pattern, source, re.IGNORECASE):
-                warnings.append(f"Plugin {description}")
-        
-        is_safe = len(warnings) == 0
-        return is_safe, warnings
-
-
-class PluginBase:
-    def __init__(self):
-        self.name = "Unnamed Plugin"
-        self.version = "1.0.0"
-        self.author = "Unknown"
-        self.description = "No description provided"
-        self.launcher = None
-    def on_load(self):
-        pass
-    def on_enable(self):
-        pass
-    def on_disable(self):
-        pass
-    def on_launcher_start(self, launcher):
-        self.launcher = launcher
-    def on_game_launch(self, profile_name: str, minecraft_version: str):
-        pass
-    def on_game_close(self, profile_name: str):
-        pass
-    def add_custom_tab(self, notebook):
-        return None
-    def add_menu_item(self, menu):
-        pass
-    def get_settings(self) -> Dict[str, Any]:
-        return {}
-    def set_settings(self, settings: Dict[str, Any]):
-        pass
-class PluginManager:
-    def __init__(self, plugin_dir: str):
-        self.plugin_dir = Path(plugin_dir)
-        self.plugins: List[PluginBase] = []
-        self.enabled_plugins: List[PluginBase] = []
-        self.plugin_errors: Dict[str, str] = {}
-        self.plugin_dir.mkdir(parents=True, exist_ok=True)
-    def discover_plugins(self) -> List[str]:
-        plugin_files = []
-        if not self.plugin_dir.exists():
-            return plugin_files
-        for file_path in self.plugin_dir.glob("*.py"):
-            if file_path.name.startswith("_"):
-                continue
-            if file_path.name == "plugin_manager.py":
-                continue
-            plugin_files.append(str(file_path))
-        return plugin_files
-    def load_plugin(self, plugin_path: str) -> PluginBase:
-        try:
-            plugin_path = Path(plugin_path)
-            is_safe, warnings = PluginSandbox.validate_plugin_code(str(plugin_path))
-            if not is_safe:
-                warning_text = "\n  - ".join(warnings)
-                error_msg = f"[Plugin Security] Blocked potentially dangerous plugin: {plugin_path.name}\n  - {warning_text}"
-                print(error_msg)
-                self.plugin_errors[str(plugin_path)] = error_msg
-                return None
-            
-            PluginSandbox.activate(str(self.plugin_dir))
-            
-            try:
-                module_name = f"oranglauncher_plugin_{plugin_path.stem}"
-                spec = importlib.util.spec_from_file_location(module_name, plugin_path)
-                if spec is None or spec.loader is None:
-                    raise ImportError(f"Could not load spec from {plugin_path}")
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
-                plugin_class = None
-                for item_name in dir(module):
-                    item = getattr(module, item_name)
-                    if (isinstance(item, type) and 
-                        issubclass(item, PluginBase) and 
-                        item is not PluginBase):
-                        plugin_class = item
-                        break
-                if plugin_class is None:
-                    raise ValueError(f"No plugin class found in {plugin_path}")
-                plugin = plugin_class()
-                plugin.on_load()
-                print(f"[Plugin] Loaded: {plugin.name} v{plugin.version} by {plugin.author}")
-                return plugin
-            finally:
-                PluginSandbox.deactivate()
-                
-        except PluginSecurityError as e:
-            error_msg = f"[Plugin Security] Blocked: {plugin_path.name} - {str(e)}"
-            print(error_msg)
-            self.plugin_errors[str(plugin_path)] = error_msg
-            PluginSandbox.deactivate()
-            return None
-        except Exception as e:
-            error_msg = f"Failed to load plugin {plugin_path}: {str(e)}\n{tb.format_exc()}"
-            print(error_msg)
-            self.plugin_errors[str(plugin_path)] = error_msg
-            PluginSandbox.deactivate()
-            return None
-    def load_all_plugins(self):
-        plugin_files = self.discover_plugins()
-        print(f"[Plugin] Discovering plugins in: {self.plugin_dir}")
-        print(f"[Plugin] Found {len(plugin_files)} plugin file(s)")
-        for plugin_file in plugin_files:
-            plugin = self.load_plugin(plugin_file)
-            if plugin:
-                self.plugins.append(plugin)
-                self.enabled_plugins.append(plugin)
-                plugin.on_enable()
-        print(f"[Plugin] Successfully loaded {len(self.plugins)} plugin(s)")
-    def call_on_launcher_start(self, launcher):
-        for plugin in self.enabled_plugins:
-            try:
-                plugin.on_launcher_start(launcher)
-            except Exception as e:
-                print(f"[Plugin] Error in {plugin.name}.on_launcher_start: {e}")
-    def call_on_game_launch(self, profile_name: str, minecraft_version: str):
-        for plugin in self.enabled_plugins:
-            try:
-                plugin.on_game_launch(profile_name, minecraft_version)
-            except Exception as e:
-                print(f"[Plugin] Error in {plugin.name}.on_game_launch: {e}")
-    def call_on_game_close(self, profile_name: str):
-        for plugin in self.enabled_plugins:
-            try:
-                plugin.on_game_close(profile_name)
-            except Exception as e:
-                print(f"[Plugin] Error in {plugin.name}.on_game_close: {e}")
-    def add_custom_tabs(self, notebook):
-        for plugin in self.enabled_plugins:
-            try:
-                plugin.add_custom_tab(notebook)
-            except Exception as e:
-                print(f"[Plugin] Error in {plugin.name}.add_custom_tab: {e}")
-    def add_menu_items(self, menu):
-        for plugin in self.enabled_plugins:
-            try:
-                plugin.add_menu_item(menu)
-            except Exception as e:
-                print(f"[Plugin] Error in {plugin.name}.add_menu_item: {e}")
-    def disable_plugin(self, plugin: PluginBase):
-        if plugin in self.enabled_plugins:
-            try:
-                plugin.on_disable()
-                self.enabled_plugins.remove(plugin)
-            except Exception as e:
-                print(f"[Plugin] Error disabling {plugin.name}: {e}")
-    def enable_plugin(self, plugin: PluginBase):
-        if plugin not in self.enabled_plugins:
-            try:
-                plugin.on_enable()
-                self.enabled_plugins.append(plugin)
-            except Exception as e:
-                print(f"[Plugin] Error enabling {plugin.name}: {e}")
-    def get_all_plugins(self) -> List[PluginBase]:
-        return self.plugins.copy()
-    def get_enabled_plugins(self) -> List[PluginBase]:
-        return self.enabled_plugins.copy()
-    def cleanup(self):
-        for plugin in self.enabled_plugins.copy():
-            self.disable_plugin(plugin)
 # resource packs and shaders
 class ResourceShaderManager:
     def __init__(self, instance_manager=None):
@@ -7502,1070 +4833,9 @@ def get_resource_shader_manager(instance_manager=None):
     if _resource_shader_manager is None:
         _resource_shader_manager = ResourceShaderManager(instance_manager)
     return _resource_shader_manager
-class ResourceShaderTab:
-    def __init__(self, parent, instance_manager=None):
-        self.parent = parent
-        self.instance_manager = instance_manager
-        self.manager = get_resource_shader_manager(instance_manager)
-        self.theme_manager = parent.theme_manager
-        self.resourcepacks_listbox = None
-        self.shaderpacks_listbox = None
-        self.profile_info_label = None
-        self.rp_count_label = None
-        self.sp_count_label = None
-        self.rp_info_label = None
-        self.sp_info_label = None
-        self.manager.register_change_callback(self.refresh_ui)
-    def build_tab(self):
-        rs_frame = ttk.Frame(self.parent.notebook)
-        self.parent.notebook.add(rs_frame, text=self.parent._t('RES_SH_TAB_TITLE'))
-        header_frame = ttk.Frame(rs_frame)
-        header_frame.pack(fill="x", padx=20, pady=20)
-
-        ttk.Label(header_frame, text=self.parent._t("RES_SH_HEADER"),
-                  style="Header.TLabel", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        profile_info_frame = ttk.Frame(rs_frame)
-        profile_info_frame.pack(fill="x", padx=20, pady=(0, 10))
-        self.profile_info_label = ttk.Label(
-            profile_info_frame,
-            text=self.parent._t("RES_SH_PROFILE_LOADING"),
-            style="Header.TLabel"
-        )
-        self.profile_info_label.pack(anchor="w")
-        container = ttk.Frame(rs_frame)
-        container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        self._build_resourcepacks_section(container)
-        self._build_shaderpacks_section(container)
-        self.refresh_ui()
-    def _build_resourcepacks_section(self, parent):
-        left_frame = ttk.Frame(parent)
-        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
-        rp_list_frame = ttk.LabelFrame(left_frame, text=self.parent._t("RES_SH_RP_TITLE"), style="TLabelframe")
-        rp_list_frame.pack(fill="both", expand=True, pady=(0, 10))
-        self.rp_count_label = ttk.Label(
-            rp_list_frame,
-            text=self.parent._t("RES_SH_RP_COUNT_0"),
-            style="News.TLabel"
-        )
-        self.rp_count_label.pack(anchor="w", padx=10, pady=(5, 0))
-        rp_listbox_frame = ttk.Frame(rp_list_frame)
-        rp_listbox_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        self.resourcepacks_listbox = tk.Listbox(
-            rp_listbox_frame,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            selectbackground=self.theme_manager.get_color('bg_hover'),
-            selectforeground=self.theme_manager.get_color('fg_primary'),
-            selectmode=tk.EXTENDED
-        )
-        rp_scrollbar = ttk.Scrollbar(
-            rp_listbox_frame,
-            orient="vertical",
-            command=self.resourcepacks_listbox.yview,
-            style="Modern.Vertical.TScrollbar"
-        )
-        self.resourcepacks_listbox.configure(yscrollcommand=rp_scrollbar.set)
-        self.resourcepacks_listbox.pack(side="left", fill="both", expand=True)
-        rp_scrollbar.pack(side="right", fill="y")
-        self.resourcepacks_listbox.bind("<<ListboxSelect>>", self.on_resourcepack_selected)
-        rp_info_frame = ttk.Frame(rp_list_frame)
-        rp_info_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self.rp_info_label = ttk.Label(
-            rp_info_frame,
-            text=self.parent._t("RES_SH_RP_SELECT_INFO"),
-            style="News.TLabel"
-        )
-        self.rp_info_label.pack(anchor="w")
-        rp_btn_frame = ttk.Frame(left_frame)
-        rp_btn_frame.pack(fill="x", pady=(0, 10))
-        
-        def get_icon(name): return self.parent._load_themed_icon(name, size=(16, 16))
-
-        add_icon = get_icon("plus")
-        add_btn = tk.Button(
-            rp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_RP_ADD')}",
-            image=add_icon,
-            compound="left",
-            command=self.add_resourcepacks,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        add_btn._icon = add_icon
-        add_btn.pack(side="left", padx=(0, 5))
-
-        rem_icon = get_icon("trash")
-        rem_btn = tk.Button(
-            rp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_REMOVE_SELECTED')}",
-            image=rem_icon,
-            compound="left",
-            command=self.remove_selected_resourcepacks,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        rem_btn._icon = rem_icon
-        rem_btn.pack(side="left", padx=(0, 5))
-
-        folder_icon = get_icon("folder")
-        folder_btn = tk.Button(
-            rp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_OPEN_FOLDER')}",
-            image=folder_icon,
-            compound="left",
-            command=self.open_resourcepacks_folder,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        folder_btn._icon = folder_icon
-        folder_btn.pack(side="left")
-    def _build_shaderpacks_section(self, parent):
-        right_frame = ttk.Frame(parent)
-        right_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        
-        sp_list_frame = ttk.LabelFrame(right_frame, text=self.parent._t("RES_SH_SP_TITLE"), style="TLabelframe")
-        sp_list_frame.pack(fill="both", expand=True, pady=(0, 10))
-        
-        self.sp_count_label = ttk.Label(
-            sp_list_frame,
-            text=self.parent._t("RES_SH_SP_COUNT_0"),
-            style="News.TLabel"
-        )
-        self.sp_count_label.pack(anchor="w", padx=10, pady=(5, 0))
-
-        list_container = ttk.Frame(sp_list_frame)
-        list_container.pack(fill="both", expand=True, padx=10, pady=5)
-
-        self.shaderpacks_listbox = tk.Listbox(
-            list_container,
-            selectmode=tk.SINGLE,
-            activestyle="none",
-            highlightthickness=0,
-            bd=0,
-            bg=self.theme_manager.get_color('bg_input'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 10)
-        )
-        
-        sp_scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.shaderpacks_listbox.yview, style="Modern.Vertical.TScrollbar")
-        self.shaderpacks_listbox.configure(yscrollcommand=sp_scrollbar.set)
-        
-        self.shaderpacks_listbox.pack(side="left", fill="both", expand=True)
-        sp_scrollbar.pack(side="right", fill="y")
-        self.shaderpacks_listbox.bind("<<ListboxSelect>>", self.on_shaderpack_selected)
-
-        sp_info_frame = ttk.Frame(sp_list_frame)
-        sp_info_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self.sp_info_label = ttk.Label(
-            sp_info_frame,
-            text=self.parent._t("RES_SH_SP_SELECT_INFO"),
-            style="News.TLabel"
-        )
-        self.sp_info_label.pack(anchor="w")
-
-        sp_btn_frame = ttk.Frame(right_frame)
-        sp_btn_frame.pack(fill="x", pady=(0, 10))
-
-        def get_icon(name): return self.parent._load_themed_icon(name, size=(16, 16))
-
-        add_icon = get_icon("plus")
-        add_btn = tk.Button(
-            sp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_SP_ADD')}",
-            image=add_icon,
-            compound="left",
-            command=self.add_shaderpacks,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        add_btn._icon = add_icon
-        add_btn.pack(side="left", padx=(0, 5))
-
-        rem_icon = get_icon("trash")
-        rem_btn = tk.Button(
-            sp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_REMOVE_SELECTED')}",
-            image=rem_icon,
-            compound="left",
-            command=self.remove_selected_shaderpacks,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        rem_btn._icon = rem_icon
-        rem_btn.pack(side="left", padx=(0, 5))
-
-        folder_icon = get_icon("folder")
-        folder_btn = tk.Button(
-            sp_btn_frame,
-            text=f"  {self.parent._t('RES_SH_OPEN_FOLDER')}",
-            image=folder_icon,
-            compound="left",
-            command=self.open_shaderpacks_folder,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9), bd=0, padx=12, pady=6, cursor="hand2", relief="flat"
-        )
-        folder_btn._icon = folder_icon
-        folder_btn.pack(side="left")
-
-    def refresh_ui(self):
-        context_name = self.manager.get_current_context_name()
-        self.profile_info_label.config(text=self.parent._t("RES_SH_PROFILE_CURRENT", context_name=context_name))
-        self.refresh_resourcepacks_list()
-        self.refresh_shaderpacks_list()
-    def refresh_resourcepacks_list(self):
-        self.resourcepacks_listbox.delete(0, tk.END)
-        packs = self.manager.get_resourcepacks()
-        if not packs:
-            self.resourcepacks_listbox.insert(tk.END, self.parent._t("RES_SH_RP_NONE"))
-            self.rp_count_label.config(text=self.parent._t("RES_SH_RP_COUNT_0"))
-        else:
-            for pack in packs:
-                self.resourcepacks_listbox.insert(tk.END, pack)
-            if len(packs) == 1:
-                pack_text = self.parent._t("RES_SH_RP_COUNT_1")
-            else:
-                pack_text = self.parent._t("RES_SH_RP_COUNT", count=len(packs))
-            self.rp_count_label.config(text=pack_text)
-    def refresh_shaderpacks_list(self):
-        self.shaderpacks_listbox.delete(0, tk.END)
-        packs = self.manager.get_shaderpacks()
-        if not packs:
-            self.shaderpacks_listbox.insert(tk.END, self.parent._t("RES_SH_SP_NONE"))
-            self.sp_count_label.config(text=self.parent._t("RES_SH_SP_COUNT_0"))
-        else:
-            for pack in packs:
-                self.shaderpacks_listbox.insert(tk.END, pack)
-            if len(packs) == 1:
-                pack_text = self.parent._t("RES_SH_SP_COUNT_1")
-            else:
-                pack_text = self.parent._t("RES_SH_SP_COUNT", count=len(packs))
-            self.sp_count_label.config(text=pack_text)
-    def on_resourcepack_selected(self, event):
-        selection = self.resourcepacks_listbox.curselection()
-        if not selection:
-            self.rp_info_label.config(text=self.parent._t("RES_SH_RP_SELECT_INFO"))
-            return
-        if len(selection) == 1:
-            pack_name = self.resourcepacks_listbox.get(selection[0])
-            if pack_name != self.parent._t("RES_SH_RP_NONE"):
-                pack_info = self.manager.get_pack_info(pack_name, 'resource')
-                if pack_info:
-                    info_text = self.parent._t("RES_SH_SELECTED_INFO", pack_name=pack_name, size=f"{pack_info['size_mb']:.2f}", type=pack_info['type'])
-                    self.rp_info_label.config(text=info_text)
-                else:
-                    self.rp_info_label.config(text=self.parent._t("RES_SH_SELECTED_INFO_SIMPLE", pack_name=pack_name))
-        else:
-            self.rp_info_label.config(text=self.parent._t("RES_SH_RP_SELECTED_COUNT", count=len(selection)))
-    def on_shaderpack_selected(self, event):
-        selection = self.shaderpacks_listbox.curselection()
-        if not selection:
-            self.sp_info_label.config(text=self.parent._t("RES_SH_SP_SELECT_INFO"))
-            return
-        if len(selection) == 1:
-            pack_name = self.shaderpacks_listbox.get(selection[0])
-            if pack_name != self.parent._t("RES_SH_SP_NONE"):
-                pack_info = self.manager.get_pack_info(pack_name, 'shader')
-                if pack_info:
-                    info_text = self.parent._t("RES_SH_SELECTED_INFO", pack_name=pack_name, size=f"{pack_info['size_mb']:.2f}", type=pack_info['type'])
-                    self.sp_info_label.config(text=info_text)
-                else:
-                    self.sp_info_label.config(text=self.parent._t("RES_SH_SELECTED_INFO_SIMPLE", pack_name=pack_name))
-        else:
-            self.sp_info_label.config(text=self.parent._t("RES_SH_SP_SELECTED_COUNT", count=len(selection)))
-    def add_resourcepacks(self):
-        if self.manager.get_current_context_name() == "None":
-            messagebox.showwarning(self.parent._t("RES_SH_NO_PROFILE_TITLE"), self.parent._t("RES_SH_NO_PROFILE_MSG"))
-            return
-        filetypes = [
-            ("Resource Pack files", "*.zip"),
-            ("All files", "*.*")
-        ]
-        file_paths = filedialog.askopenfilenames(
-            title=self.parent._t("RES_SH_RP_SELECT_DIALOG"),
-            filetypes=filetypes
-        )
-        if not file_paths:
-            return
-        added_count, failed_count = self.manager.add_resourcepacks(file_paths)
-        if added_count > 0:
-            if failed_count > 0:
-                    def done_ui():
-                        messagebox.showinfo(self.parent._t("MODS_UPDATE_DONE_TITLE") if hasattr(self.parent, '_t') else "Update Mods")
-                        self.refresh_mods_list()
-            messagebox.showinfo(
-                    self.parent._t("SUCCESS"),
-                    self.parent._t("RES_SH_RP_ADDED_SUCCESS", count=added_count)
-                )
-            self.refresh_resourcepacks_list()
-        elif failed_count > 0:
-            messagebox.showerror(
-                self.parent._t("ERROR"),
-                self.parent._t("RES_SH_RP_ADDED_FAIL", count=failed_count)
-            )
-    def add_shaderpacks(self):
-        if self.manager.get_current_context_name() == "None":
-            messagebox.showwarning(self.parent._t("RES_SH_NO_PROFILE_TITLE"), self.parent._t("RES_SH_NO_PROFILE_MSG"))
-            return
-        filetypes = [
-            ("Shader Pack files", "*.zip"),
-            ("All files", "*.*")
-        ]
-        file_paths = filedialog.askopenfilenames(
-            title=self.parent._t("RES_SH_SP_SELECT_DIALOG"),
-            filetypes=filetypes
-        )
-        if not file_paths:
-            return
-        added_count, failed_count = self.manager.add_shaderpacks(file_paths)
-        if added_count > 0:
-            if failed_count > 0:
-                messagebox.showinfo(
-                    self.parent._t("RES_SH_SP_ADDED_TITLE"),
-                    self.parent._t("RES_SH_SP_ADDED_SUCCESS", count=added_count) + "\n" +
-                    self.parent._t("RES_SH_SP_ADDED_FAIL", count=failed_count)
-                )
-            else:
-                messagebox.showinfo(
-                    self.parent._t("SUCCESS"),
-                    self.parent._t("RES_SH_SP_ADDED_SUCCESS", count=added_count)
-                )
-            self.refresh_shaderpacks_list()
-        elif failed_count > 0:
-            messagebox.showerror(
-                self.parent._t("ERROR"),
-                self.parent._t("RES_SH_SP_ADDED_FAIL", count=failed_count)
-            )
-    def remove_selected_resourcepacks(self):
-        selection = self.resourcepacks_listbox.curselection()
-        if not selection:
-            messagebox.showinfo(self.parent._t("RES_SH_RP_REMOVE_TITLE"), self.parent._t("RES_SH_RP_REMOVE_NONE"))
-            return
-        pack_names = [self.resourcepacks_listbox.get(i) for i in selection]
-        pack_names = [name for name in pack_names if name != self.parent._t("RES_SH_RP_NONE")]
-        if not pack_names:
-            return
-        if len(pack_names) == 1:
-            confirm_msg = self.parent._t("RES_SH_DELETE_CONFIRM_SINGLE", name=pack_names[0])
-        else:
-            confirm_msg = self.parent._t("RES_SH_RP_DELETE_CONFIRM_MULTI", count=len(pack_names))
-        confirm = messagebox.askyesno(self.parent._t("CONFIRM_REMOVE"), confirm_msg)
-        if not confirm:
-            return
-        removed_count = self.manager.remove_resourcepacks(pack_names)
-        if removed_count > 0:
-            self.refresh_resourcepacks_list()
-            messagebox.showinfo(
-                self.parent._t("SUCCESS"),
-                self.parent._t("RES_SH_RP_REMOVED_SUCCESS", count=removed_count)
-            )
-    def remove_selected_shaderpacks(self):
-        selection = self.shaderpacks_listbox.curselection()
-        if not selection:
-            messagebox.showinfo(self.parent._t("RES_SH_SP_REMOVE_TITLE"), self.parent._t("RES_SH_SP_REMOVE_NONE"))
-            return
-        pack_names = [self.shaderpacks_listbox.get(i) for i in selection]
-        pack_names = [name for name in pack_names if name != self.parent._t("RES_SH_SP_NONE")]
-        if not pack_names:
-            return
-        if len(pack_names) == 1:
-            confirm_msg = self.parent._t("RES_SH_DELETE_CONFIRM_SINGLE", name=pack_names[0])
-        else:
-            confirm_msg = self.parent._t("RES_SH_SP_DELETE_CONFIRM_MULTI", count=len(pack_names))
-        confirm = messagebox.askyesno(self.parent._t("CONFIRM_REMOVE"), confirm_msg)
-        if not confirm:
-            return
-        removed_count = self.manager.remove_shaderpacks(pack_names)
-        if removed_count > 0:
-            self.refresh_shaderpacks_list()
-            messagebox.showinfo(
-                self.parent._t("SUCCESS"),
-                self.parent._t("RES_SH_SP_REMOVED_SUCCESS", count=removed_count)
-            )
-    def browse_resourcepacks_location(self):
-        folder_path = filedialog.askdirectory(
-            title=self.parent._t("RES_SH_RP_BROWSE_TITLE")
-        )
-        if folder_path:
-            messagebox.showinfo(
-                self.parent._t("RES_SH_RP_LOCATION_TITLE"),
-                self.parent._t("RES_SH_RP_BROWSE_MSG", path=folder_path)
-            )
-    def browse_shaderpacks_location(self):
-        folder_path = filedialog.askdirectory(
-            title=self.parent._t("RES_SH_SP_BROWSE_TITLE")
-        )
-        if folder_path:
-            messagebox.showinfo(
-                self.parent._t("RES_SH_SP_LOCATION_TITLE"),
-                self.parent._t("RES_SH_SP_BROWSE_MSG", path=folder_path)
-            )
-    def open_resourcepacks_folder(self):
-        if self.manager.get_current_context_name() == "None":
-            messagebox.showwarning(self.parent._t("RES_SH_NO_PROFILE_TITLE"), self.parent._t("RES_SH_NO_PROFILE_MSG"))
-            return
-        if not self.manager.open_resourcepacks_folder():
-            messagebox.showerror(self.parent._t("ERROR"), self.parent._t("RES_SH_RP_OPEN_FAIL"))
-    def open_shaderpacks_folder(self):
-        if self.manager.get_current_context_name() == "None":
-            messagebox.showwarning(self.parent._t("RES_SH_NO_PROFILE_TITLE"), self.parent._t("RES_SH_NO_PROFILE_MSG"))
-            return
-        if not self.manager.open_shaderpacks_folder():
-            messagebox.showerror(self.parent._t("ERROR"), self.parent._t("RES_SH_SP_OPEN_FAIL"))
-def build_res_sh_tab(launcher, notebook, instance_manager=None):
-    rs_tab = ResourceShaderTab(launcher, instance_manager)
-    rs_tab.build_tab()
-    launcher.res_sh_tab = rs_tab
 
 
 MODRINTH_API_URL = "https://api.modrinth.com/v2"
-
-
-class ContentStoreTab:
-    """Modrinth content browser (mods / resource packs / data packs / shaders),
-    ported from the Windows launcher's Content page. Installs are filtered by
-    the target instance's mod loader and game version so the matching file is
-    downloaded instead of the newest release."""
-
-    PAGE_SIZE = 20
-
-    def __init__(self, launcher, instance_manager=None):
-        self.parent = launcher
-        self.theme_manager = launcher.theme_manager
-        self.instance_manager = instance_manager or get_instance_manager()
-        self.content_type = "mod"
-        self.offset = 0
-        self.total_hits = 0
-        self.instances = []
-        self._icon_refs = []
-        self._type_buttons = {}
-    def _color(self, key):
-        return self.theme_manager.get_color(key)
-
-    def _t(self, key, **kwargs):
-        return self.parent._t(key, **kwargs)
-
-    def _target_instance(self):
-        idx = self.instance_combo.current() if hasattr(self, 'instance_combo') else -1
-        if 0 <= idx < len(self.instances):
-            return self.instances[idx]
-        return None
-
-    @staticmethod
-    def _normalized_loader(instance):
-        loader = (instance.mod_loader or "").lower() if instance else ""
-        return loader if loader in ("fabric", "forge", "quilt", "neoforge") else None
-
-    @staticmethod
-    def _is_vanilla(instance):
-        loader = (instance.mod_loader or "vanilla").lower() if instance else "vanilla"
-        return loader in ("vanilla", "none", "")
-
-    def _set_status(self, text):
-        try:
-            self.status_label.config(text=text)
-        except Exception:
-            pass
-
-    def _set_btn(self, button, **kw):
-        try:
-            if button.winfo_exists():
-                button.config(**kw)
-        except tk.TclError:
-            pass
-
-    def build_tab(self, notebook):
-        tab_frame = ttk.Frame(notebook)
-        notebook.add(tab_frame, text=self.parent._t('CONTENT_TAB') if self.parent._t('CONTENT_TAB') != 'CONTENT_TAB' else 'Content')
-        bg = self._color('bg_primary')
-        self.container = tk.Frame(tab_frame, bg=bg)
-        self.container.pack(fill="both", expand=True, padx=14, pady=14)
-        types_row = tk.Frame(self.container, bg=bg)
-        types_row.pack(fill="x", pady=(0, 8))
-        for tag, label in (("mod", self.parent._t('CONTENT_TYPE_MODS')),
-                           ("resourcepack", self.parent._t('CONTENT_TYPE_RESOURCEPACKS')),
-                           ("datapack", self.parent._t('CONTENT_TYPE_DATAPACKS')),
-                           ("shader", self.parent._t('CONTENT_TYPE_SHADERS')),
-                           ("modpack", self.parent._t('CONTENT_TYPE_MODPACKS'))):
-            btn = tk.Button(types_row, text=label, relief="flat", padx=14, pady=6,
-                            bg=self._color('bg_secondary'), fg=self._color('fg_primary'),
-                            activebackground=self._color('accent_primary'),
-                            command=lambda t=tag: self._on_type_change(t))
-            btn.pack(side="left", padx=(0, 6))
-            self._type_buttons[tag] = btn
-        self.import_mrpack_btn = tk.Button(types_row, text=self.parent._t('CONTENT_IMPORT_MRPACK'),
-                                           relief="flat", padx=12, pady=6,
-                                           bg=self._color('bg_tertiary'), fg=self._color('fg_primary'),
-                                           cursor="hand2", command=self._import_local_mrpack)
-        self.modrinth_section = tk.Frame(self.container, bg=bg)
-        controls = tk.Frame(self.modrinth_section, bg=bg)
-        controls.pack(fill="x", pady=(0, 8))
-        self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(controls, textvariable=self.search_var)
-        search_entry.pack(side="left", fill="x", expand=True)
-        search_entry.bind("<Return>", lambda e: self._on_search())
-        ttk.Button(controls, text=self.parent._t('CONTENT_SEARCH'), command=self._on_search).pack(side="left", padx=(8, 0))
-        self.sort_var = tk.StringVar(value="relevance")
-        sort_combo = ttk.Combobox(controls, textvariable=self.sort_var, state="readonly", width=16,
-                                  values=("relevance", "downloads", "newest", "updated"))
-        sort_combo.pack(side="left", padx=(8, 0))
-        sort_combo.bind("<<ComboboxSelected>>", lambda e: self._on_search())
-        self.instance_combo = ttk.Combobox(controls, state="readonly", width=28)
-        self.instance_combo.pack(side="left", padx=(8, 0))
-        self.instance_combo.bind("<<ComboboxSelected>>", lambda e: self._on_search())
-
-        self.status_label = tk.Label(self.modrinth_section, text="", anchor="w", bg=bg,
-                                     fg=self._color('fg_secondary'))
-        self.status_label.pack(fill="x", pady=(0, 6))
-
-        # scrollable results
-        results_holder = tk.Frame(self.modrinth_section, bg=bg)
-        results_holder.pack(fill="both", expand=True)
-        self.results_canvas = tk.Canvas(results_holder, bg=bg, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(results_holder, orient="vertical", command=self.results_canvas.yview)
-        self.results_frame = tk.Frame(self.results_canvas, bg=bg)
-        self.results_frame.bind(
-            "<Configure>", lambda e: self.results_canvas.configure(scrollregion=self.results_canvas.bbox("all")))
-        self._results_window = self.results_canvas.create_window((0, 0), window=self.results_frame, anchor="nw")
-        self.results_canvas.bind(
-            "<Configure>", lambda e: self.results_canvas.itemconfigure(self._results_window, width=e.width))
-        self.results_canvas.configure(yscrollcommand=scrollbar.set)
-        self.results_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        paging = tk.Frame(self.modrinth_section, bg=bg)
-        paging.pack(pady=(8, 0))
-        self.prev_btn = ttk.Button(paging, text=self._t('CONTENT_PREV'), command=self._prev_page, state="disabled")
-        self.prev_btn.pack(side="left")
-        self.page_label = tk.Label(paging, text=self._t('CONTENT_PAGE').format(n=1), bg=bg, fg=self._color('fg_secondary'))
-        self.page_label.pack(side="left", padx=10)
-        self.next_btn = ttk.Button(paging, text=self._t('CONTENT_NEXT'), command=self._next_page, state="disabled")
-        self.next_btn.pack(side="left")
-        self._highlight_type_button()
-        self.refresh_instances()
-        self._update_sections()
-        self._run_search()
-
-    def _update_sections(self):
-        self.modrinth_section.pack(fill="both", expand=True)
-        if self.content_type == "modpack":
-            self.import_mrpack_btn.pack(side="right")
-            try:
-                self.instance_combo.pack_forget()
-            except Exception:
-                pass
-        else:
-            self.import_mrpack_btn.pack_forget()
-            try:
-                self.instance_combo.pack(side="left", padx=(8, 0))
-            except Exception:
-                pass
-
-    def _import_local_mrpack(self):
-        path = filedialog.askopenfilename(
-            title=self.parent._t('CONTENT_IMPORT_MRPACK'),
-            filetypes=[("Modrinth modpack", "*.mrpack"), ("All files", "*.*")])
-        if not path:
-            return
-        self._set_status(f"Installing {os.path.basename(path)}...")
-
-        def worker():
-            try:
-                success, message, profile_name = import_modpack(str(path), self.parent)
-                if success:
-                    self.parent.after(0, lambda: messagebox.showinfo(
-                        "Content", f"Installed modpack.\n\nProfile: {profile_name}\n{message}"))
-                    if hasattr(self.parent, '_refresh_game_profiles'):
-                        self.parent.after(0, self.parent._refresh_game_profiles)
-                    self.parent.after(0, lambda: self._set_status(f"Installed {profile_name}"))
-                else:
-                    self.parent.after(0, lambda: messagebox.showerror("Content", f"Import failed:\n{message}"))
-                    self.parent.after(0, lambda: self._set_status("Import failed"))
-            except Exception as exc:
-                self.parent.after(0, lambda: messagebox.showerror("Content", f"Import failed:\n{exc}"))
-                self.parent.after(0, lambda: self._set_status(f"Import failed: {exc}"))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def refresh_instances(self):
-        try:
-            self.instances = list(self.instance_manager.instances.values())
-        except Exception:
-            self.instances = []
-        names = [f"{i.name} ({i.mod_loader} {i.version})" for i in self.instances]
-        self.instance_combo['values'] = names
-        if names:
-            selected = self.instance_manager.get_selected_instance()
-            idx = 0
-            if selected is not None:
-                for n, inst in enumerate(self.instances):
-                    if inst.instance_id == selected.instance_id:
-                        idx = n
-                        break
-            self.instance_combo.current(idx)
-
-    def _highlight_type_button(self):
-        for tag, btn in self._type_buttons.items():
-            active = tag == self.content_type
-            btn.config(bg=self._color('accent_primary') if active else self._color('bg_secondary'),
-                       fg='#ffffff' if active else self._color('fg_primary'))
-
-    def _on_type_change(self, tag):
-        self.content_type = tag
-        self.offset = 0
-        self._highlight_type_button()
-        self._update_sections()
-        self._run_search()
-
-    def _on_search(self):
-        self.offset = 0
-        self._run_search()
-
-    def _prev_page(self):
-        self.offset = max(0, self.offset - self.PAGE_SIZE)
-        self._run_search()
-
-    def _next_page(self):
-        self.offset += self.PAGE_SIZE
-        self._run_search()
-
-    def _update_paging(self):
-        self.prev_btn.config(state="normal" if self.offset > 0 else "disabled")
-        self.next_btn.config(state="normal" if self.offset + self.PAGE_SIZE < self.total_hits else "disabled")
-        self.page_label.config(text=self._t('CONTENT_PAGE').format(n=self.offset // self.PAGE_SIZE + 1))
-    def _run_search(self):
-        for child in self.results_frame.winfo_children():
-            child.destroy()
-        self._icon_refs = []
-        instance = self._target_instance()
-        if self.content_type == "mod" and instance is not None and self._is_vanilla(instance):
-            self._set_status(self._t("CONTENT_VANILLA_WARNING"))
-            self._update_paging()
-            return
-        query = self.search_var.get().strip()
-        sort = self.sort_var.get() or "relevance"
-        is_modpack = self.content_type == "modpack"
-        # modpacks bring their own MC version/loader, so don't constrain by the instance
-        version = None if is_modpack else (instance.version if instance else None)
-        loader = self._normalized_loader(instance) if self.content_type == "mod" else None
-        self._set_status(self._t("CONTENT_SEARCHING"))
-
-        def worker():
-            try:
-                facets = [[f"project_type:{self.content_type}"]]
-                if version:
-                    facets.append([f"versions:{version}"])
-                if loader:
-                    facets.append([f"categories:{loader}"])
-                params = {
-                    "query": query,
-                    "facets": json.dumps(facets),
-                    "index": sort,
-                    "offset": self.offset,
-                    "limit": self.PAGE_SIZE,
-                }
-                response = _http_session.get(f"{MODRINTH_API_URL}/search", params=params, timeout=25)
-                response.raise_for_status()
-                payload = response.json()
-                hits = payload.get("hits", [])
-                total = payload.get("total_hits", 0)
-                self.parent.after(0, lambda: self._apply_results(hits, total, version, loader))
-            except Exception as exc:
-                self.parent.after(0, lambda: self._set_status(f"Search failed: {exc}"))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_results(self, hits, total, version, loader):
-        self.total_hits = total
-        bg = self._color('bg_primary')
-        row_bg = self._color('bg_secondary')
-        for hit in hits:
-            row = tk.Frame(self.results_frame, bg=row_bg, padx=8, pady=6)
-            row.pack(fill="x", pady=3)
-            icon_label = tk.Label(row, bg=row_bg, width=48, height=48)
-            icon_label.pack(side="left")
-            self._load_icon_async(icon_label, hit.get("icon_url"))
-            text_frame = tk.Frame(row, bg=row_bg)
-            text_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
-            author = hit.get("author") or ""
-            title_row = tk.Frame(text_frame, bg=row_bg)
-            title_row.pack(fill="x")
-            tk.Label(title_row, text=hit.get("title", "?"), font=("TkDefaultFont", 10, "bold"),
-                     bg=row_bg, fg=self._color('fg_primary'), anchor="w").pack(side="left")
-            if author:
-                tk.Label(title_row, text=f"by {author}", bg=row_bg,
-                         fg=self._color('fg_secondary'), anchor="w").pack(side="left", padx=(6, 0))
-            desc = (hit.get("description") or "").replace("\n", " ")
-            if len(desc) > 160:
-                desc = desc[:157] + "..."
-            tk.Label(text_frame, text=desc, bg=row_bg, fg=self._color('fg_secondary'),
-                     anchor="w", justify="left", wraplength=620).pack(fill="x")
-            categories = ", ".join((hit.get("categories") or [])[:4])
-            meta = f"{hit.get('downloads', 0):,} downloads" + (f"  |  {categories}" if categories else "")
-            tk.Label(text_frame, text=meta, bg=row_bg, fg=self._color('fg_secondary'),
-                     anchor="w").pack(fill="x")
-            slug = hit.get("slug") or hit.get("project_id")
-            install_btn = ttk.Button(row, text=self._t("CONTENT_INSTALL_BTN"))
-            install_btn.config(command=lambda s=slug, b=install_btn, t=hit.get("title", "?"): self._install(s, b, t))
-            install_btn.pack(side="right", padx=(10, 0))
-        if total == 0:
-            self._set_status(self._t("CONTENT_NO_RESULTS"))
-        else:
-            suffix = (f" for {version}" if version else "") + (f" ({loader})" if loader else "")
-            self._set_status(self._t("CONTENT_RESULTS_COUNT").format(count=f"{total:,}") + suffix)
-        self.results_canvas.yview_moveto(0)
-        self._update_paging()
-
-    def _load_icon_async(self, label, icon_url):
-        if not icon_url:
-            return
-
-        def worker():
-            try:
-                data = _cached_image_get(icon_url)
-                img = Image.open(io.BytesIO(data)).convert("RGBA").resize((48, 48), Image.LANCZOS)
-
-                def apply():
-                    try:
-                        photo = ImageTk.PhotoImage(img)
-                        self._icon_refs.append(photo)
-                        label.config(image=photo, width=48, height=48)
-                    except Exception:
-                        pass
-                self.parent.after(0, apply)
-            except Exception:
-                pass
-
-        threading.Thread(target=worker, daemon=True).start()
-    def _install(self, slug, button, title):
-        if self.content_type == "modpack":
-            self._install_modpack(slug, button, title)
-            return
-        instance = self._target_instance()
-        if instance is None:
-            messagebox.showwarning("Content", self._t("CONTENT_NEED_PROFILE"))
-            return
-        if self.content_type == "mod" and self._is_vanilla(instance):
-            messagebox.showwarning("Content", self._t("CONTENT_VANILLA_NO_MODS"))
-            return
-        dest_dir = {
-            "mod": instance.mods_dir,
-            "resourcepack": instance.resourcepacks_dir,
-            "shader": instance.shaderpacks_dir,
-        }.get(self.content_type, instance.minecraft_dir / "datapacks")
-        version = instance.version
-        loader = self._normalized_loader(instance) if self.content_type == "mod" else None
-        self._set_btn(button, state="disabled", text=self._t("CONTENT_INSTALLING_BTN"))
-
-        def worker():
-            try:
-                params = {}
-                if version:
-                    params["game_versions"] = json.dumps([version])
-                if loader:
-                    params["loaders"] = json.dumps([loader])
-                response = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version",
-                                             params=params, timeout=25)
-                response.raise_for_status()
-                versions = response.json() or []
-                chosen = pick_modrinth_version(versions)
-                files = (chosen or {}).get("files", [])
-                file_info = next((f for f in files if f.get("primary")), files[0] if files else None)
-                if not file_info:
-                    target = version + (f" ({loader})" if loader else "")
-                    self.parent.after(0, lambda: (
-                        self._set_btn(button, state="normal", text=self._t("CONTENT_NOT_COMPATIBLE_BTN")),
-                        self._set_status(self._t("CONTENT_NOT_COMPATIBLE_MSG").format(title=title, target=target)),
-                        messagebox.showwarning(self._t("CONTENT_NOT_COMPATIBLE_TITLE"),
-                                               self._t("CONTENT_NOT_COMPATIBLE_MSG").format(title=title, target=target))))
-                    return
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                dest_path = Path(dest_dir) / file_info["filename"]
-                with _http_session.get(file_info["url"], stream=True, timeout=60) as dl:
-                    dl.raise_for_status()
-                    with open(dest_path, "wb") as out:
-                        for chunk in dl.iter_content(chunk_size=1024 * 128):
-                            if chunk:
-                                out.write(chunk)
-                if self.content_type in ("resourcepack", "shader") and hasattr(self.parent, '_apply_sharing_for_instance'):
-                    try:
-                        self.parent._apply_sharing_for_instance(instance)
-                    except Exception:
-                        pass
-                self.parent.after(0, lambda: (
-                    self._set_btn(button, text=self._t("CONTENT_INSTALLED_BTN")),
-                    self._set_status(self._t("CONTENT_INSTALLED_STATUS").format(name=dest_path.name))))
-            except Exception as exc:
-                self.parent.after(0, lambda: (
-                    self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
-                    self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=exc))))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _install_modpack(self, slug, button, title):
-        self._set_btn(button, state="disabled", text=self._t("CONTENT_INSTALLING_BTN"))
-
-        def worker():
-            try:
-                response = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version", timeout=25)
-                response.raise_for_status()
-                versions = order_modrinth_versions(response.json() or [])
-                file_info = None
-                for v in versions:
-                    files = v.get("files", [])
-                    primary = next((f for f in files if f.get("primary")), files[0] if files else None)
-                    if primary and (primary.get("filename", "").lower().endswith(".mrpack")):
-                        file_info = primary
-                        break
-                if not file_info:
-                    self.parent.after(0, lambda: (
-                        self._set_btn(button, state="normal", text=self._t("CONTENT_NOT_COMPATIBLE_BTN")),
-                        self._set_status(self._t("CONTENT_NO_MRPACK").format(title=title))))
-                    return
-                self.parent.after(0, lambda: self._set_status(self._t("CONTENT_DOWNLOADING").format(title=title)))
-                tmp_dir = Path(tempfile.gettempdir())
-                dest_path = tmp_dir / file_info["filename"]
-                with _http_session.get(file_info["url"], stream=True, timeout=120) as dl:
-                    dl.raise_for_status()
-                    with open(dest_path, "wb") as out:
-                        for chunk in dl.iter_content(chunk_size=1024 * 128):
-                            if chunk:
-                                out.write(chunk)
-                self.parent.after(0, lambda: self._set_status(self._t("CONTENT_INSTALLING_STATUS").format(title=title)))
-                success, message, profile_name = import_modpack(str(dest_path), self.parent)
-                try:
-                    dest_path.unlink()
-                except Exception:
-                    pass
-                if success:
-                    self.parent.after(0, lambda: (
-                        self._set_btn(button, text=self._t("CONTENT_INSTALLED_BTN")),
-                        self._set_status(self._t("CONTENT_INSTALLED_STATUS").format(name=profile_name)),
-                        messagebox.showinfo("Content", self._t("CONTENT_MODPACK_DONE").format(profile=profile_name, message=message))))
-                    if hasattr(self.parent, '_refresh_game_profiles'):
-                        self.parent.after(0, self.parent._refresh_game_profiles)
-                else:
-                    self.parent.after(0, lambda: (
-                        self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
-                        self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=message)),
-                        messagebox.showerror("Content", self._t("CONTENT_MODPACK_FAIL").format(message=message))))
-            except Exception as exc:
-                self.parent.after(0, lambda: (
-                    self._set_btn(button, state="normal", text=self._t("CONTENT_FAILED_BTN")),
-                    self._set_status(self._t("CONTENT_INSTALL_FAILED").format(error=exc))))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-
-def build_content_store_tab(launcher, notebook, instance_manager=None):
-    content_tab = ContentStoreTab(launcher, instance_manager)
-    content_tab.build_tab(notebook)
-    launcher.content_store_tab = content_tab
-
-
-_WEBKIT_MODS = None
-
-def _load_webkit():
-    global _WEBKIT_MODS
-    if _WEBKIT_MODS is not None:
-        return _WEBKIT_MODS or None
-    os.environ.setdefault("GDK_BACKEND", "x11")
-    try:
-        
-        gi.require_version("Gtk", "3.0")
-        gi.require_version("GdkX11", "3.0")
-        try:
-            gi.require_version("WebKit2", "4.1")
-        except ValueError:
-            gi.require_version("WebKit2", "4.0")
-        _WEBKIT_MODS = (Gtk, WebKit2, GdkX11)
-    except Exception as e:
-        print(f"[news] WebKitGTK unavailable, falling back: {e}")
-        _WEBKIT_MODS = False
-    return _WEBKIT_MODS or None
-
-
-class ChromiumWidget(tk.Frame):
-    NEWS_URL = "https://oranges.lt/launcher.html"
-
-    def __init__(self, parent):
-        tm = get_theme_manager()
-        super().__init__(parent, bg=tm.get_color('bg_primary'), bd=0, highlightthickness=0)
-        self.parent = parent
-        self.browser = None          # WebKit2.WebView
-        self._gtk_win = None         # decorationless Gtk.Window reparented into us
-        self._pump_id = None
-        self._embedded = False
-        self._destroyed = False
-        self.main_window = parent.winfo_toplevel()
-        self.placeholder = tk.Label(
-            self,
-            text="Loading news...",
-            bg=tm.get_color('bg_primary'),
-            fg=tm.get_color('text_primary'),
-            font=('Segoe UI', 12)
-        )
-        self.placeholder.pack(fill="both", expand=True)
-        self.bind("<Configure>", self._on_configure)
-        self.after(300, self._create_browser)
-    def _pump(self):
-        if self._destroyed:
-            return
-        mods = _WEBKIT_MODS
-        if mods:
-            Gtk = mods[0]
-            try:
-                while Gtk.events_pending():
-                    Gtk.main_iteration_do(False)
-            except Exception:
-                pass
-        self._pump_id = self.after(30, self._pump)
-
-    def _on_configure(self, event):
-        if self._gtk_win is not None and event.width > 1 and event.height > 1:
-            try:
-                self._gtk_win.resize(event.width, event.height)
-            except Exception:
-                pass
-
-    def _create_browser(self):
-        if self.browser or self._destroyed:
-            return
-        mods = _load_webkit()
-        if mods:
-            try:
-                self._create_webkit(mods)
-                return
-            except Exception as e:
-                print(f"[news] WebKit embed failed, using fallback: {e}")
-                tb.print_exc()
-                self._gtk_win = None
-        self._create_fallback()
-
-    def _create_webkit(self, mods):
-        Gtk, WebKit2, GdkX11 = mods
-        self.update_idletasks()
-        xid = self.winfo_id()
-        w = max(self.winfo_width(), 1)
-        h = max(self.winfo_height(), 1)
-        gtk_win = Gtk.Window()
-        gtk_win.set_decorated(False)
-        web = WebKit2.WebView()
-        gtk_win.add(web)
-        gtk_win.realize()
-        web.realize()
-        display = GdkX11.X11Display.get_default()
-        parent = GdkX11.X11Window.foreign_new_for_display(display, xid)
-        gtk_win.get_window().reparent(parent, 0, 0)
-        gtk_win.move(0, 0)
-        gtk_win.resize(w, h)
-        gtk_win.show_all()
-        web.load_uri(self.NEWS_URL)
-        self.browser = web
-        self._gtk_win = gtk_win
-        self._embedded = True
-        self.placeholder.pack_forget()
-        if self._pump_id is None:
-            self._pump_id = self.after(30, self._pump)
-
-    def _create_fallback(self):
-        tm = get_theme_manager()
-        try:
-            self.browser = tkinterweb.HtmlFrame(self, messages_enabled=False)
-            self.browser.load_website(self.NEWS_URL)
-            self.browser.pack(fill="both", expand=True)
-            self.placeholder.pack_forget()
-        except Exception as e:
-            print(f"[news] tkinterweb fallback failed: {e}")
-            self.browser = tk.Text(self, wrap=tk.WORD, bg=tm.get_color('bg_primary'),
-                                   fg=tm.get_color('text_primary'), bd=0)
-            self.browser.pack(fill="both", expand=True)
-            self.browser.insert("1.0", "Minecraft News\n\nVisit: https://oranges.lt/launcher.html\n\nFor the latest Minecraft news and updates.")
-            self.browser.config(state=tk.DISABLED)
-            self.placeholder.pack_forget()
-
-    def enable_embed(self):
-        if not self.browser:
-            self.placeholder.pack(fill="both", expand=True)
-            self._create_browser()
-            return
-        if self._embedded and self._gtk_win is not None:
-            try:
-                self._gtk_win.show()
-            except Exception:
-                pass
-            if self._pump_id is None:
-                self._pump_id = self.after(30, self._pump)
-
-    def disable_embed(self):
-        if self._embedded and self._gtk_win is not None:
-            try:
-                self._gtk_win.hide()
-            except Exception:
-                pass
-            return
-        if self.browser and not self._embedded:
-            try:
-                self.browser.destroy()
-            except Exception:
-                pass
-            self.browser = None
-
-    def _start_following_window(self):
-        pass
-    def _stop_following_window(self):
-        pass
-    def _follow_main_window(self):
-        pass
-    def _position_qt_window(self, should_be_visible=True):
-        pass
-
-    def load_url(self, url):
-        if self._embedded and self.browser is not None:
-            try:
-                self.browser.load_uri(url)
-            except Exception:
-                pass
-        elif self.browser and hasattr(self.browser, 'load_website'):
-            self.browser.load_website(url)
-
-    def reload_content(self):
-        if self._embedded and self.browser is not None:
-            try:
-                self.browser.reload()
-            except Exception:
-                pass
-        elif self.browser and hasattr(self.browser, 'load_website'):
-            try:
-                self.browser.load_website(self.NEWS_URL)
-            except Exception as e:
-                print(f"[news] reload failed: {e}")
-
-    def destroy(self):
-        self._destroyed = True
-        if self._pump_id is not None:
-            try:
-                self.after_cancel(self._pump_id)
-            except Exception:
-                pass
-            self._pump_id = None
-        if self._gtk_win is not None:
-            try:
-                self._gtk_win.destroy()
-            except Exception:
-                pass
-            self._gtk_win = None
-        if hasattr(self, "browser") and self.browser and not self._embedded:
-            try:
-                self.browser.destroy()
-            except Exception:
-                pass
-        self.browser = None
-        super().destroy()
 
 
 # minecraft server list ping thingy
@@ -8636,7 +4906,6 @@ def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
         sock.sendall(_write_varint(len(handshake_data)) + handshake_data)
 
         sock.sendall(b'\x01\x00')
-
         read_varint_from_file(f)          # packet length ignored
         read_varint_from_file(f)          # packet id is 0x00
         str_len = read_varint_from_file(f)
@@ -8647,7 +4916,6 @@ def _slp_ping(host: str, port: int = 25565, timeout: int = 3):
 
         latency = int((time.monotonic() - t0) * 1000)
         sock.close()
-
         info = json.loads(data.decode('utf-8'))
         players = info.get('players', {})
         description = info.get('description', '')
@@ -8668,7 +4936,6 @@ def _strip_mc_formatting(text: str) -> str:
     
     return re.sub(r'§[0-9a-fk-or]', '', text, flags=re.IGNORECASE)
 
-
 class ServersNBT:
     TAG_END = 0
     TAG_BYTE = 1
@@ -8683,7 +4950,6 @@ class ServersNBT:
     TAG_COMPOUND = 10
     TAG_INT_ARRAY = 11
     TAG_LONG_ARRAY = 12
-
     @staticmethod
     def read_servers_dat(path: Path) -> list:
         if not path.exists():
@@ -8691,6 +4957,8 @@ class ServersNBT:
         try:
             with open(path, 'rb') as f:
                 data = f.read()
+            if not data:
+                return []
             return ServersNBT._parse_nbt(data)
         except Exception as e:
             print(f"[ServersNBT] Error reading servers.dat: {e}")
@@ -8761,18 +5029,14 @@ class ServersNBT:
 
     @staticmethod
     def write_servers_dat(path: Path, servers: list):
-        
         out = bytearray()
 
         def write_byte(val):
             out.append(val & 0xFF)
-
         def write_short(val):
             out.extend(struct.pack('>h', val))
-
         def write_ushort(val):
             out.extend(struct.pack('>H', val))
-
         def write_int(val):
             out.extend(struct.pack('>i', val))
 
@@ -8816,938 +5080,164 @@ class ServersNBT:
         write_string('servers')
         write_tag(ServersNBT.TAG_LIST, servers)
         write_byte(ServersNBT.TAG_END)
-
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, 'wb') as f:
             f.write(out)
 
 
-class ServersTab:
-    def __init__(self, parent):
-        self.parent = parent
-        self.theme_manager = get_theme_manager()
-        self.servers = []
-        self.servers_dat_path = None
-        self._ping_cache: dict = {}
-        self._server_status_labels: list = []
-        self._server_latency_labels: list = []
-        self._server_latency_rows: list = []
-        self._server_icon_labels: list = []
-        self._server_motd_labels: list = []
-        self._server_rows: list = []
-        self._server_favicon_refs: dict = {}  # idx -> PhotoImage replaces on update           
-
-    def build_tab(self, notebook):
-        tab_frame = ttk.Frame(notebook)
-        notebook.add(tab_frame, text=self.parent._t('SERVERS'))
-
-        container = tk.Frame(tab_frame, bg=self.theme_manager.get_color('bg_primary'))
-        container.pack(fill="both", expand=True, padx=14, pady=14)
-
-        header = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
-        header.pack(fill="x", pady=(0, 10))
-
-        title = tk.Label(
-            header,
-            text=self.parent._t('SERVERS_TITLE'),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 14, "bold")
-        )
-        title.pack(side="left")
-
-        btn_frame = tk.Frame(header, bg=self.theme_manager.get_color('bg_primary'))
-        btn_frame.pack(side="right")
-
-        refresh_btn = tk.Button(
-            btn_frame,
-            text=self.parent._t('SERVERS_REFRESH'),
-            command=self.refresh_servers,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        refresh_btn.pack(side="left", padx=(0, 8))
-
-        ping_all_btn = tk.Button(
-            btn_frame,
-            text=self.parent._t('SERVERS_PING_ALL'),
-            command=self._ping_all_servers,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        ping_all_btn.pack(side="left", padx=(0, 8))
-
-        add_btn = tk.Button(
-            btn_frame,
-            text=self.parent._t('SERVERS_ADD'),
-            command=self.add_server,
-            bg=self.theme_manager.get_color('accent_primary'),
-            fg="#ffffff",
-            font=("Segoe UI", 9, "bold"),
-            bd=0,
-            padx=12,
-            pady=6,
-            cursor="hand2",
-            relief="flat"
-        )
-        add_btn.pack(side="left")
-
-        body = tk.Frame(container, bg=self.theme_manager.get_color('bg_primary'))
-        body.pack(fill="both", expand=True)
-
-        list_wrap = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
-        list_wrap.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.servers_canvas = tk.Canvas(
-            list_wrap,
-            bg=self.theme_manager.get_color('bg_input'),
-            highlightthickness=0,
-            borderwidth=0
-        )
-        self.servers_scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.servers_canvas.yview)
-        self.servers_canvas.configure(yscrollcommand=self.servers_scroll.set)
-        self.servers_canvas.pack(side="left", fill="both", expand=True)
-        self.servers_scroll.pack(side="right", fill="y")
-        self.servers_inner = tk.Frame(self.servers_canvas, bg=self.theme_manager.get_color('bg_input'))
-        self.servers_canvas.create_window((0, 0), window=self.servers_inner, anchor="nw")
-        self.servers_inner.bind("<Configure>", lambda e: self.servers_canvas.configure(scrollregion=self.servers_canvas.bbox("all")))
-        self.server_icon_images = [] 
-        action_bar = tk.Frame(body, bg=self.theme_manager.get_color('bg_primary'))
-        action_bar.pack(fill="x", padx=10, pady=(0, 10))
-
-        self.edit_btn = tk.Button(
-            action_bar,
-            text=self.parent._t('SERVERS_EDIT'),
-            command=self.edit_server,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg=self.theme_manager.get_color('fg_primary'),
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=14,
-            pady=8,
-            cursor="hand2",
-            relief="flat",
-            state="disabled"
-        )
-        self.edit_btn.pack(side="left", padx=(0, 8))
-
-        self.delete_btn = tk.Button(
-            action_bar,
-            text=self.parent._t('SERVERS_DELETE'),
-            command=self.delete_server,
-            bg=self.theme_manager.get_color('bg_tertiary'),
-            fg="#ff6b6b",
-            font=("Segoe UI", 9),
-            bd=0,
-            padx=14,
-            pady=8,
-            cursor="hand2",
-            relief="flat",
-            state="disabled"
-        )
-        self.delete_btn.pack(side="left")
-
-        self.info_label = tk.Label(
-            action_bar,
-            text=self.parent._t('SERVERS_SELECT_INSTANCE'),
-            bg=self.theme_manager.get_color('bg_primary'),
-            fg=self.theme_manager.get_color('fg_secondary'),
-            font=("Segoe UI", 9)
-        )
-        self.info_label.pack(side="right")
-
-        self.refresh_servers()
-
-    def _get_servers_dat_path(self) -> Path:
-        instance_mgr = get_instance_manager()
-        if instance_mgr.selected_instance_id:
-            instance = instance_mgr.instances.get(instance_mgr.selected_instance_id)
-            if instance:
-                return instance.minecraft_dir / "servers.dat"
-        return None
-
-    def refresh_servers(self):
-        self.servers_dat_path = self._get_servers_dat_path()
-        if not self.servers_dat_path:
-            self.servers = []
-            self.info_label.config(text=self.parent._t('SERVERS_NO_INSTANCE'))
-        else:
-            self.servers = ServersNBT.read_servers_dat(self.servers_dat_path)
-            self.info_label.config(text=self.parent._t('SERVERS_LOADED', count=len(self.servers), name=self.servers_dat_path.parent.name))
-        self._render_servers()
-        if self.servers:
-            self._ping_all_servers()
-
-    def _render_servers(self):
-        
-        for widget in self.servers_inner.winfo_children():
-            widget.destroy()
-        self.server_icon_images.clear()
-        self._server_favicon_refs.clear()
-        self._server_status_labels.clear()
-        self._server_latency_labels.clear()
-        self._server_latency_rows.clear()
-        self._server_icon_labels.clear()
-        self._server_motd_labels.clear()
-        self._server_rows.clear()
-
-        card_bg = self.theme_manager.get_color('bg_secondary')
-        fg1 = self.theme_manager.get_color('fg_primary')
-        fg3 = self.theme_manager.get_color('fg_tertiary')
-        fg_dim = self.theme_manager.get_color('fg_disabled')
-
-        for idx, server in enumerate(self.servers):
-            name = server.get('name', 'Unknown')
-            ip = server.get('ip', '?')
-            hidden = server.get('hidden', 0)
-            if hidden:
-                name += "  [hidden]"
-
-            icon_img = None
-            icon_data = server.get('icon')
-            if icon_data:
-                try:
-                    icon_bytes = base64.b64decode(icon_data.split(',')[-1])
-                    image = Image.open(io.BytesIO(icon_bytes)).resize((64, 64), Image.Resampling.LANCZOS)
-                    icon_img = ImageTk.PhotoImage(image)
-                    self.server_icon_images.append(icon_img)
-                except Exception:
-                    icon_img = None
-
-            
-            row = tk.Frame(self.servers_inner, bg=card_bg)
-            row.pack(fill="x", padx=4, pady=3)
-            row.columnconfigure(1, weight=1)
-            self._server_rows.append(row)
-
-            if icon_img:
-                icon_lbl = tk.Label(row, image=icon_img, bg=card_bg)
-            else:
-                placeholder = self.parent._load_themed_icon("server", size=(64, 64))
-                self.server_icon_images.append(placeholder)
-                icon_lbl = tk.Label(row, image=placeholder, bg=card_bg)
-            icon_lbl.grid(row=0, column=0, rowspan=3, padx=(12, 10), pady=10, sticky="w")
-            self._server_icon_labels.append(icon_lbl)
-
-            name_lbl = tk.Label(row, text=name, anchor="w", bg=card_bg, fg=fg1,
-                                font=("Segoe UI", 12, "bold"))
-            name_lbl.grid(row=0, column=1, sticky="sw", padx=(0, 8), pady=(10, 0))
-
-            host_part, _, port_str = ip.partition(':')
-            cache_key = f"{host_part}:{int(port_str) if port_str.isdigit() else 25565}"
-            cached = self._ping_cache.get(cache_key)
-            motd_text = ""
-            if isinstance(cached, dict) and cached.get('motd'):
-                motd_text = _strip_mc_formatting(cached['motd'])
-            motd_lbl = tk.Label(row, text=motd_text, anchor="w", bg=card_bg, fg=fg3,
-                                font=("Segoe UI", 9))
-            motd_lbl.grid(row=1, column=1, sticky="w", padx=(0, 8))
-            self._server_motd_labels.append(motd_lbl)
-
-            addr_lbl = tk.Label(row, text=ip, anchor="w", bg=card_bg, fg=fg_dim,
-                                font=("Segoe UI", 8))
-            addr_lbl.grid(row=2, column=1, sticky="nw", padx=(0, 8), pady=(0, 10))
-
-            status_frame = tk.Frame(row, bg=card_bg)
-            status_frame.grid(row=0, column=2, rowspan=3, sticky="e", padx=(0, 14), pady=10)
-
-            if isinstance(cached, dict):
-                players_text = f"{cached['online']}/{cached['max']}"
-                players_fg = fg1
-                lat_text, lat_fg, bar_count = self._format_latency(cached['latency'])
-            elif cached is None and cache_key in self._ping_cache:
-                players_text = "Offline"
-                players_fg = "#ff6b6b"
-                lat_text, lat_fg, bar_count = "", fg_dim, 0
-            else:
-                players_text = "..."
-                players_fg = fg_dim
-                lat_text, lat_fg, bar_count = "Pinging", fg_dim, 0
-
-            players_lbl = tk.Label(status_frame, text=players_text, anchor="e",
-                                   bg=card_bg, fg=players_fg, font=("Segoe UI", 10))
-            players_lbl.pack(anchor="e")
-            self._server_status_labels.append(players_lbl)
-
-            latency_row = tk.Frame(status_frame, bg=card_bg)
-            latency_row.pack(anchor="e")
-            self._server_latency_rows.append(latency_row)
-
-            latency_lbl = tk.Label(latency_row, text=lat_text, anchor="e",
-                                   bg=card_bg, fg=lat_fg, font=("Segoe UI", 9))
-            latency_lbl.pack(side="left", padx=(0, 4))
-            self._server_latency_labels.append(latency_lbl)
-
-            if bar_count > 0:
-                bars_canvas = self._create_signal_bars(latency_row, bar_count, lat_fg, card_bg)
-                bars_canvas.pack(side="left")
-
-            # quick play only enabled for MC >= 1.20.1
-            qp_supported = self._quickplay_supported()
-            try:
-                accent = self.theme_manager.get_color('accent')
-            except Exception:
-                accent = "#e8772e"
-            qp_btn = tk.Button(
-                status_frame,
-                text=self.parent._t('SERVERS_QUICKPLAY'),
-                command=(lambda i=idx: self._quick_play(i)),
-                bg=accent if qp_supported else self.theme_manager.get_color('bg_tertiary'),
-                fg="#ffffff" if qp_supported else fg_dim,
-                font=("Segoe UI", 9), bd=0, padx=10, pady=4, relief="flat",
-                cursor="hand2" if qp_supported else "arrow",
-                state="normal" if qp_supported else "disabled"
-            )
-            qp_btn.pack(anchor="e", pady=(4, 0))
-
-            def on_row_click(event, i=idx):
-                self._select_server(i)
-
-            click_widgets = [row, icon_lbl, name_lbl, motd_lbl, addr_lbl,
-                             status_frame, players_lbl, latency_lbl, latency_row]
-            for child in latency_row.winfo_children():
-                click_widgets.append(child)
-            for w in click_widgets:
-                w.bind("<Button-1>", on_row_click)
-
-        self.selected_server_idx = None
-        self.edit_btn.config(state="disabled")
-        self.delete_btn.config(state="disabled")
-
-    @staticmethod
-    def _format_latency(ms):
-        if ms < 100:
-            n, color = 5, "#249737"
-        elif ms < 200:
-            n, color = 4, "#94d82d"
-        elif ms < 400:
-            n, color = 3, "#fcc419"
-        elif ms < 800:
-            n, color = 2, "#ff922b"
-        else:
-            n, color = 1, "#d51414"
-        return f"{ms}ms", color, n
-
-    @staticmethod
-    def _create_signal_bars(parent, bar_count, color, bg_color):
-        total_bars = 5
-        bar_width = 4
-        bar_gap = 2
-        max_height = 18
-        min_height = 4
-        canvas_width = total_bars * bar_width + (total_bars - 1) * bar_gap
-        canvas = tk.Canvas(parent, width=canvas_width, height=max_height,
-                           bg=bg_color, highlightthickness=0, borderwidth=0)
-        for i in range(total_bars):
-            h = min_height + int((max_height - min_height) * (i / (total_bars - 1)))
-            x = i * (bar_width + bar_gap)
-            y = max_height - h
-            fill = color if i < bar_count else "#555555"
-            canvas.create_rectangle(x, y, x + bar_width, max_height, fill=fill, outline="")
-        return canvas
-
-    def _current_launch_version(self):
-        try:
-            inst = self.parent.instance_manager.get_selected_instance()
-            if inst and getattr(inst, 'version', ''):
-                return inst.version
-        except Exception:
-            pass
-        try:
-            prof = self.parent.game_profile_manager.get_selected_profile()
-            if prof and getattr(prof, 'version', ''):
-                return prof.version
-        except Exception:
-            pass
-        return ""
-
-    def _quickplay_supported(self):
-        ver = self._current_launch_version()
-        if not ver:
-            return False
-        return _mc_version_tuple(ver) >= (1, 20, 1)
-
-    def _quick_play(self, idx):
-        if not self._quickplay_supported():
-            messagebox.showinfo(
-                self.parent._t('SERVERS_QUICKPLAY'),
-                "Quick Play requires Minecraft 1.20.1 or newer."
-            )
-            return
-        if idx is None or idx < 0 or idx >= len(self.servers):
-            return
-        ip = self.servers[idx].get('ip', '').strip()
-        if not ip:
-            return
-        self._select_server(idx)
-        self.parent._pending_quickplay = ip
-        self.parent._launch_game()
-
-    def _set_row_bg(self, widget, color):
-        try:
-            widget.config(bg=color)
-        except tk.TclError:
-            pass
-        for child in widget.winfo_children():
-            self._set_row_bg(child, color)
-
-    def _select_server(self, idx):
-        card_bg = self.theme_manager.get_color('bg_secondary')
-        sel_bg = self.theme_manager.get_color('bg_hover')
-        self.selected_server_idx = idx
-        for i, row in enumerate(self._server_rows):
-            if not row.winfo_exists():
-                continue
-            self._set_row_bg(row, sel_bg if i == idx else card_bg)
-        self.edit_btn.config(state="normal")
-        self.delete_btn.config(state="normal")
-
-    def _get_selected_server_idx(self):
-        return getattr(self, 'selected_server_idx', None)
-
-    def _on_select(self):
-        idx = self._get_selected_server_idx()
-        if idx is not None:
-            self.edit_btn.config(state="normal")
-            self.delete_btn.config(state="normal")
-        else:
-            self.edit_btn.config(state="disabled")
-            self.delete_btn.config(state="disabled")
-
-    def add_server(self):
-        self._show_server_dialog()
-
-    def edit_server(self):
-        idx = self._get_selected_server_idx()
-        if idx is None or idx >= len(self.servers):
-            return
-        self._show_server_dialog(idx)
-
-    def delete_server(self):
-        idx = self._get_selected_server_idx()
-        if idx is None or idx >= len(self.servers):
-            return
-        server = self.servers[idx]
-        if messagebox.askyesno(self.parent._t('SERVERS_DELETE_TITLE'), self.parent._t('SERVERS_DELETE_CONFIRM', name=server.get('name', 'Unknown'))):
-            self.servers.pop(idx)
-            self._save_and_refresh()
-
-    def _show_server_dialog(self, edit_idx=None):
-        dialog = tk.Toplevel(self.parent)
-        dialog.title(self.parent._t('SERVERS_EDIT_TITLE') if edit_idx is not None else self.parent._t('SERVERS_ADD_TITLE'))
-        dialog.geometry("400x320")
-        dialog.configure(bg=self.theme_manager.get_color('bg_secondary'))
-        dialog.transient(self.parent)
-        dialog.grab_set()
-
-        is_edit = edit_idx is not None
-        server = self.servers[edit_idx] if is_edit else {}
-
-        tk.Label(dialog, text=self.parent._t('SERVERS_NAME_LABEL'), bg=self.theme_manager.get_color('bg_secondary'),
-                 fg=self.theme_manager.get_color('fg_primary'), font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(20, 5))
-        name_entry = tk.Entry(dialog, bg=self.theme_manager.get_color('bg_input'),
-                              fg=self.theme_manager.get_color('fg_primary'),
-                              insertbackground=self.theme_manager.get_color('fg_primary'),
-                              relief="flat", font=("Segoe UI", 10))
-        name_entry.pack(fill="x", padx=20, ipady=6)
-        name_entry.insert(0, server.get('name', ''))
-
-        tk.Label(dialog, text=self.parent._t('SERVERS_ADDRESS_LABEL'), bg=self.theme_manager.get_color('bg_secondary'),
-                 fg=self.theme_manager.get_color('fg_primary'), font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(15, 5))
-        ip_entry = tk.Entry(dialog, bg=self.theme_manager.get_color('bg_input'),
-                            fg=self.theme_manager.get_color('fg_primary'),
-                            insertbackground=self.theme_manager.get_color('fg_primary'),
-                            relief="flat", font=("Segoe UI", 10))
-        ip_entry.pack(fill="x", padx=20, ipady=6)
-        ip_entry.insert(0, server.get('ip', ''))
-
-        def save():
-            name = name_entry.get().strip()
-            ip = ip_entry.get().strip()
-            if not name or not ip:
-                messagebox.showwarning(self.parent._t('SERVERS_INVALID_TITLE'), self.parent._t('SERVERS_INVALID_MSG'))
-                return
-            new_server = {'name': name, 'ip': ip}
-            if is_edit:
-                if 'icon' in self.servers[edit_idx]:
-                    new_server['icon'] = self.servers[edit_idx]['icon']
-                if 'hidden' in self.servers[edit_idx]:
-                    new_server['hidden'] = self.servers[edit_idx]['hidden']
-                self.servers[edit_idx] = new_server
-            else:
-                self.servers.append(new_server)
-            dialog.destroy()
-            self._save_and_refresh()
-
-        btn_frame = tk.Frame(dialog, bg=self.theme_manager.get_color('bg_secondary'))
-        btn_frame.pack(fill="x", padx=20, pady=20)
-
-        tk.Button(btn_frame, text=self.parent._t('SERVERS_CANCEL'), command=dialog.destroy,
-                  bg=self.theme_manager.get_color('bg_tertiary'),
-                  fg=self.theme_manager.get_color('fg_primary'),
-                  font=("Segoe UI", 9), bd=0, padx=14, pady=6, cursor="hand2", relief="flat").pack(side="right", padx=(8, 0))
-        tk.Button(btn_frame, text=self.parent._t('SERVERS_SAVE'), command=save,
-                  bg=self.theme_manager.get_color('accent_primary'),
-                  fg="#ffffff", font=("Segoe UI", 9, "bold"), bd=0, padx=14, pady=6, cursor="hand2", relief="flat").pack(side="right")
-
-    def _ping_all_servers(self):
-        for i, srv in enumerate(self.servers):
-            ip = srv.get('ip', '')
-            host, _, port_str = ip.partition(':')
-            port = int(port_str) if port_str.isdigit() else 25565
-            cache_key = f"{host}:{port}"
-            self._ping_cache[cache_key] = True
-            if i < len(self._server_status_labels):
-                lbl = self._server_status_labels[i]
-                if lbl.winfo_exists():
-                    lbl.config(
-                        text="⏳ …",
-                        fg=self.theme_manager.get_color('fg_secondary')
-                    )
-            threading.Thread(
-                target=self._ping_worker,
-                args=(i, host, port, cache_key),
-                daemon=True
-            ).start()
-
-    def _ping_worker(self, idx: int, host: str, port: int, cache_key: str):
-        result = _slp_ping(host, port)
-        self._ping_cache[cache_key] = result  # dict or None
-        try:
-            self.parent.after(0, lambda i=idx, r=result: self._update_status_label(i, r))
-        except RuntimeError:
-            pass
-
-    def _update_status_label(self, idx: int, result):
-        if idx >= len(self._server_status_labels):
-            return
-        players_lbl = self._server_status_labels[idx]
-        if not players_lbl.winfo_exists():
-            return
-
-        fg1 = self.theme_manager.get_color('fg_primary')
-        fg_dim = self.theme_manager.get_color('fg_disabled')
-
-        if result:
-            players_lbl.config(text=f"{result['online']}/{result['max']}", fg=fg1)
-
-            if idx < len(self._server_latency_labels) and idx < len(self._server_latency_rows):
-                lat_lbl = self._server_latency_labels[idx]
-                lat_row = self._server_latency_rows[idx]
-                if lat_lbl.winfo_exists() and lat_row.winfo_exists():
-                    lat_text, lat_fg, bar_count = self._format_latency(result['latency'])
-                    lat_lbl.config(text=lat_text, fg=lat_fg)
-                    for child in lat_row.winfo_children():
-                        if isinstance(child, tk.Canvas):
-                            child.destroy()
-                    card_bg = self.theme_manager.get_color('bg_secondary')
-                    bars_canvas = self._create_signal_bars(lat_row, bar_count, lat_fg, card_bg)
-                    bars_canvas.pack(side="left")
-
-            if idx < len(self._server_motd_labels):
-                motd_lbl = self._server_motd_labels[idx]
-                if motd_lbl.winfo_exists() and result.get('motd'):
-                    motd_lbl.config(text=_strip_mc_formatting(result['motd']))
-
-            favicon = result.get('favicon', '')
-            if favicon and idx < len(self._server_icon_labels):
-                icon_lbl = self._server_icon_labels[idx]
-                if icon_lbl.winfo_exists():
-                    try:
-                        icon_bytes = base64.b64decode(favicon.split(',')[-1])
-                        img = Image.open(io.BytesIO(icon_bytes)).resize((64, 64), Image.Resampling.LANCZOS)
-                        photo = ImageTk.PhotoImage(img)
-                        self._server_favicon_refs[idx] = photo
-                        icon_lbl.config(image=photo)
-                    except Exception:
-                        pass
-        else:
-            players_lbl.config(text="Offline", fg="#ff6b6b")
-            if idx < len(self._server_latency_labels):
-                lat_lbl = self._server_latency_labels[idx]
-                if lat_lbl.winfo_exists():
-                    lat_lbl.config(text="", fg=fg_dim)
-            if idx < len(self._server_latency_rows):
-                lat_row = self._server_latency_rows[idx]
-                if lat_row.winfo_exists():
-                    for child in lat_row.winfo_children():
-                        if isinstance(child, tk.Canvas):
-                            child.destroy()
-
-    def _save_and_refresh(self):
-        if self.servers_dat_path:
-            ServersNBT.write_servers_dat(self.servers_dat_path, self.servers)
-        self.refresh_servers()
-
-
-def build_servers_tab(launcher, notebook):
-    servers_tab = ServersTab(launcher)
-    servers_tab.build_tab(notebook)
-    launcher.servers_tab = servers_tab
-
-
-def build_news_tab(launcher, notebook: ttk.Notebook):
-    tm = get_theme_manager()
-    bg_color = tm.get_color('bg_primary')
-    style = ttk.Style()
-    style.configure("TNotebook", borderwidth=0, padding=0, background=bg_color)
-    style.layout("TNotebook", [("Notebook.client", {"sticky": "nswe"})])
-    style.configure("TFrame", borderwidth=0, background=bg_color)
-    style.configure("TNotebook.Tab", background=bg_color)
-    news_frame = tk.Frame(
-        notebook, bg=bg_color,
-        bd=0, highlightthickness=0, relief="flat"
-    )
-    news_frame.pack_propagate(False)
-    notebook.add(news_frame, text=launcher._t('UPDATE_NOTES'))
-    launcher.news_viewer = ChromiumWidget(news_frame)
-    launcher.news_viewer.pack(fill="both", expand=True)
-
-    news_frame.update_idletasks()
-    news_frame.update()
-def build_launcher_log_tab(launcher, notebook):
-    log_frame = ttk.Frame(notebook)
-    notebook.add(log_frame, text=launcher._t('LAUNCHER_LOG'))
-
-    bg       = launcher._get_theme_color('bg_primary')
-    bg_input = launcher._get_theme_color('bg_input')
-    fg       = launcher._get_theme_color('fg_primary')
-    fg_sec   = launcher._get_theme_color('fg_secondary')
-    toolbar = tk.Frame(log_frame, bg=bg, pady=6)
-    toolbar.pack(fill="x", padx=10, pady=(8, 0))
-
-    search_frame = tk.Frame(toolbar, bg=bg_input, highlightbackground=launcher._get_theme_color('bg_hover'),
-                            highlightthickness=1)
-    search_frame.pack(side="left", fill="x", expand=True, padx=(0, 10), ipady=3)
-    tk.Label(search_frame, text="⌕", bg=bg_input, fg=fg_sec, font=("Segoe UI", 11)).pack(side="left", padx=(6, 2))
-    launcher._log_search_var = tk.StringVar()
-    search_entry = tk.Entry(search_frame, textvariable=launcher._log_search_var,
-                            bg=bg_input, fg=fg, insertbackground=fg,
-                            relief="flat", font=("Consolas", 9), bd=0,
-                            highlightthickness=0)
-    search_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
-    search_entry.insert(0, launcher._t("LOGS_SEARCH_PLACEHOLDER"))
-    search_entry.config(fg=fg_sec)
-    def _on_search_focus_in(e):
-        if search_entry.get() == launcher._t("LOGS_SEARCH_PLACEHOLDER"):
-            search_entry.delete(0, tk.END)
-            search_entry.config(fg=fg)
-    def _on_search_focus_out(e):
-        if not search_entry.get():
-            search_entry.insert(0, launcher._t("LOGS_SEARCH_PLACEHOLDER"))
-            search_entry.config(fg=fg_sec)
-    search_entry.bind("<FocusIn>",  _on_search_focus_in)
-    search_entry.bind("<FocusOut>", _on_search_focus_out)
-    _log_search_debounce_id = [None]
-    def _debounced_filter(*_):
-        if _log_search_debounce_id[0]:
-            try:
-                launcher.after_cancel(_log_search_debounce_id[0])
-            except Exception:
-                pass
-        _log_search_debounce_id[0] = launcher.after(250, lambda: launcher._apply_log_filters() if hasattr(launcher, '_apply_log_filters') else None)
-    launcher._log_search_var.trace_add("write", _debounced_filter)
-
-    FILTERS = [
-        (launcher._t("LOGS_FILTER_ERROR"),   "error",   "#f20000"),
-        (launcher._t("LOGS_FILTER_WARN"),    "warning", "#ffc107"),
-        (launcher._t("LOGS_FILTER_INFO"),    "info",    "#74c0fc"),
-        (launcher._t("LOGS_FILTER_SUCCESS"), "success", "#3bc652"),
-        (launcher._t("LOGS_FILTER_OTHER"),   None,      fg_sec),
-    ]
-    launcher._log_filter_vars = {}
-
-    def _export_log():
-        if not getattr(launcher, '_log_buffer', None):
-            messagebox.showinfo(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_NO_ENTRIES"))
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            initialfile="launcher_log.txt",
-            title=launcher._t("LOGS_EXPORT_TITLE")
-        )
-        if not path:
-            return
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                for msg, _ in launcher._log_buffer:
-                    f.write(msg + "\n")
-            messagebox.showinfo(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_EXPORT_SUCCESS") + f"\n{path}")
-        except Exception as e:
-            messagebox.showerror(launcher._t("LOGS_EXPORT_TITLE"), launcher._t("LOGS_EXPORT_FAIL") + f"\n{e}")
-
-    def _upload_mclogs():
-        if not getattr(launcher, '_log_buffer', None):
-            messagebox.showinfo("mclo.gs", launcher._t("LOGS_NO_ENTRIES"))
-            return
-        lines = [msg for msg, _ in launcher._log_buffer][-25000:]
-        content = "\n".join(lines)
-        if len(content.encode("utf-8")) > 10 * 1024 * 1024:
-            content = content.encode("utf-8")[-10 * 1024 * 1024:].decode("utf-8", "ignore")
-        mclogs_btn.config(state="disabled", text=launcher._t("LOGS_MCLOGS_UPLOADING"))
-
-        def worker():
-            try:
-                r = _http_session.post("https://api.mclo.gs/1/log",
-                                       data={"content": content, "source": "OrangLauncher"}, timeout=20)
-                data = r.json()
-            except Exception as exc:
-                data = {"success": False, "error": str(exc)}
-
-            def done():
-                mclogs_btn.config(state="normal", text=launcher._t("LOGS_MCLOGS_BTN"))
-                if data.get("success") and data.get("url"):
-                    url = data["url"]
-                    try:
-                        launcher.clipboard_clear()
-                        launcher.clipboard_append(url)
-                    except Exception:
-                        pass
-                    if messagebox.askyesno(
-                            "mclo.gs",
-                            f"{launcher._t('LOGS_MCLOGS_SUCCESS')}\n\n{url}\n\n{launcher._t('LOGS_MCLOGS_OPEN')}"):
-                        webbrowser.open(url)
-                else:
-                    messagebox.showerror("mclo.gs",
-                                         launcher._t("LOGS_MCLOGS_FAIL").format(error=data.get("error", "?")))
-            try:
-                launcher.after(0, done)
-            except RuntimeError:
-                pass
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    save_btn = tk.Button(toolbar, text=launcher._t("LOGS_SAVE_BTN"), command=_export_log,
-                         bg=bg_input, fg=fg, font=("Segoe UI", 9),
-                         relief="flat", bd=0, padx=10, pady=4,
-                         cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
-                         activeforeground=fg)
-    save_btn.pack(side="right", padx=(0, 8))
-
-    mclogs_btn = tk.Button(toolbar, text=launcher._t("LOGS_MCLOGS_BTN"), command=_upload_mclogs,
-                           bg=bg_input, fg=fg, font=("Segoe UI", 9),
-                           relief="flat", bd=0, padx=10, pady=4,
-                           cursor="hand2", activebackground=launcher._get_theme_color('bg_hover'),
-                           activeforeground=fg)
-    mclogs_btn.pack(side="right", padx=(0, 8))
-
-    filter_bar = tk.Frame(toolbar, bg=bg)
-    filter_bar.pack(side="right")
-
-    for label, tag, color in FILTERS:
-        var = tk.BooleanVar(value=True)
-        launcher._log_filter_vars[tag] = var
-
-        btn_frame = tk.Frame(filter_bar, bg=bg)
-        btn_frame.pack(side="left", padx=3)
-
-        dot = tk.Label(btn_frame, text="●", fg=color, bg=bg, font=("Segoe UI", 8))
-        dot.pack(side="left")
-
-        cb = tk.Checkbutton(btn_frame, text=label, variable=var,
-                            bg=bg, fg=fg, activebackground=bg, activeforeground=fg,
-                            selectcolor=bg, font=("Segoe UI", 9),
-                            command=launcher._apply_log_filters if hasattr(launcher, '_apply_log_filters') else lambda: None,
-                            relief="flat", bd=0, cursor="hand2",
-                            highlightthickness=0)
-        cb.pack(side="left")
-        cb._filter_tag = tag
-    container = tk.Frame(log_frame, bg=bg_input)
-    container.pack(fill="both", expand=True, padx=10, pady=(6, 10))
-
-    scrollbar = ttk.Scrollbar(container, orient="vertical", style="Modern.Vertical.TScrollbar")
-
-    launcher.log_text = tk.Text(
-        container,
-        bg=bg_input, fg=fg,
-        insertbackground=fg,
-        selectbackground=launcher._get_theme_color('bg_hover'),
-        selectforeground=fg,
-        font=("Consolas", 9),
-        wrap=tk.WORD,
-        yscrollcommand=scrollbar.set,
-        relief="flat", bd=0, highlightthickness=0
-    )
-
-    scrollbar.config(command=launcher.log_text.yview)
-    launcher.log_text.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    launcher.log_text.tag_configure("error",   foreground="#ff0000")
-    launcher.log_text.tag_configure("warning", foreground="#ffc107")
-    launcher.log_text.tag_configure("success", foreground="#51cf66")
-    launcher.log_text.tag_configure("info",    foreground="#74c0fc")
-
-    launcher._log_buffer = deque(maxlen=2000)
-    launcher._ansi_tags_configured = set()
-
-    _ANSI_COLORS = {
-        '0': None, '': None,
-        '30': '#4d4d4d', '31': '#ff6b6b', '32': '#51cf66', '33': '#ffc107',
-        '34': '#74c0fc', '35': '#cc5de8', '36': '#22d3ee', '37': '#d4d4d4',
-        '90': '#808080', '91': '#ff8787', '92': '#69db7c', '93': '#ffd43b',
-        '94': '#91a7ff', '95': '#f783ac', '96': '#66d9e8', '97': '#ffffff',
-    }
-    
-
-    def _ensure_ansi_tag(color_hex):
-        tag_name = f"ansi_{color_hex[1:]}"
-        if tag_name not in launcher._ansi_tags_configured:
-            launcher.log_text.tag_configure(tag_name, foreground=color_hex)
-            launcher._ansi_tags_configured.add(tag_name)
-        return tag_name
-
-    def _insert_ansi_line(msg, filter_tag):
-        segments = []
-        current_color = None
-        last_end = 0
-        for m in _re_ansi.finditer(r'(?:\x1b|\033)\[([0-9;]*)m|\[([0-9;]+)m', msg):
-            if m.start() > last_end:
-                segments.append((msg[last_end:m.start()], current_color))
-            code = m.group(1) if m.group(1) is not None else (m.group(2) or '')
-            current_color = _ANSI_COLORS.get(code, current_color)
-            last_end = m.end()
-        if last_end < len(msg):
-            segments.append((msg[last_end:], current_color))
-
-        has_ansi = any(color is not None for _, color in segments)
-        if not has_ansi:
-            launcher.log_text.insert(tk.END, f"{msg}\n", filter_tag or "")
-            return
-
-        for text, color in segments:
-            if not text:
-                continue
-            tags = tuple(filter(None, [filter_tag,
-                                       _ensure_ansi_tag(color) if color else None]))
-            launcher.log_text.insert(tk.END, text, tags)
-        launcher.log_text.insert(tk.END, "\n", filter_tag or "")
-
-    launcher._insert_ansi_line = _insert_ansi_line
-
-    launcher.log_text.insert("1.0", launcher._t("NO_LOGS"))
-    launcher.log_text.config(state="disabled")
-
-    def _apply_log_filters():
-        search = launcher._log_search_var.get()
-        if search == "Type to filter logs...":
-            search = ""
-        search = search.lower()
-        active_tags = {tag for tag, var in launcher._log_filter_vars.items() if var.get()}
-
-        launcher.log_text.config(state="normal")
-        launcher.log_text.delete("1.0", tk.END)
-        for msg, tag in launcher._log_buffer:
-            if tag not in active_tags:
-                continue
-            if search and search not in msg.lower():
-                continue
-            _insert_ansi_line(msg, tag)
-        launcher.log_text.see(tk.END)
-        launcher.log_text.config(state="disabled")
-
-    launcher._apply_log_filters = _apply_log_filters
-
-    for widget in filter_bar.winfo_children():
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Checkbutton):
-                child.config(command=_apply_log_filters)
-# discord presence 
+# discord presence (raw IPC, no pypresence)
 class DiscordRPCManager:
+    OP_HANDSHAKE = 0
+    OP_FRAME = 1
+    OP_CLOSE = 2
+
     def __init__(self, app_id: str, on_connected=None):
         self.app_id = app_id
         self.on_connected = on_connected
-        self.loop = None
         self.thread = None
-        self.client = None
+        self.sock = None
+        self.lock = threading.Lock()
         self.stop_event = threading.Event()
+        self.connected = False
+
+    @staticmethod
+    def _ipc_paths():
+        if platform.system() == "Windows":
+            return [f"\\\\?\\pipe\\discord-ipc-{i}" for i in range(10)]
+        bases = []
+        for var in ("XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"):
+            val = os.environ.get(var)
+            if val:
+                bases.append(val)
+        bases.append("/tmp")
+        paths = []
+        for base in bases:
+            for sub in ("", "app/com.discordapp.Discord", "snap.discord", "snap.discord-canary"):
+                d = os.path.join(base, sub) if sub else base
+                for i in range(10):
+                    paths.append(os.path.join(d, f"discord-ipc-{i}"))
+        return paths
+
+    def _connect(self):
+        for path in self._ipc_paths():
+            try:
+                if platform.system() == "Windows":
+                    sock = open(path, "r+b", buffering=0)
+                else:
+                    if not os.path.exists(path):
+                        continue
+                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    sock.settimeout(5)
+                    sock.connect(path)
+                return sock
+            except Exception:
+                continue
+        return None
+
+    def _send_raw(self, data):
+        if hasattr(self.sock, "sendall"):
+            self.sock.sendall(data)
+        else:
+            self.sock.write(data)
+
+    def _recv_raw(self, n):
+        buf = b""
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf)) if hasattr(self.sock, "recv") else self.sock.read(n - len(buf))
+            if not chunk:
+                raise ConnectionError("Discord IPC closed")
+            buf += chunk
+        return buf
+
+    def _send(self, op, payload):
+        data = json.dumps(payload).encode("utf-8")
+        with self.lock:
+            self._send_raw(struct.pack("<II", op, len(data)) + data)
+
+    def _recv(self):
+        op, length = struct.unpack("<II", self._recv_raw(8))
+        body = self._recv_raw(length) if length else b""
+        try:
+            return op, json.loads(body.decode("utf-8") or "{}")
+        except Exception:
+            return op, {}
+
     def start(self):
         if self.thread and self.thread.is_alive():
             return
-        def _thread_main():
-            try:
-                loop = asyncio.new_event_loop()
-                self.loop = loop
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self._runner())
-            finally:
-                try:
-                    pending = asyncio.all_tasks(self.loop)
-                    for t in pending:
-                        t.cancel()
-                    self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-                except Exception:
-                    pass
-                try:
-                    self.loop.close()
-                except Exception:
-                    pass
         self.stop_event.clear()
+
+        def _thread_main():
+            self.sock = self._connect()
+            if self.sock is None:
+                print("[Discord] no IPC socket found, Rich Presence disabled")
+                return
+            try:
+                self._send(self.OP_HANDSHAKE, {"v": 1, "client_id": self.app_id})
+                op, reply = self._recv()
+                if op == self.OP_CLOSE or (reply.get("evt") == "ERROR"):
+                    raise ConnectionError(reply.get("data", {}).get("message", "handshake rejected"))
+                self.connected = True
+                if self.on_connected:
+                    try:
+                        self.on_connected()
+                    except Exception:
+                        pass
+                if hasattr(self.sock, "settimeout"):
+                    self.sock.settimeout(0.5)
+                while not self.stop_event.is_set():
+                    try:
+                        op, _ = self._recv()
+                        if op == self.OP_CLOSE:
+                            break
+                    except (socket.timeout, TimeoutError):
+                        continue
+                    except Exception:
+                        break
+            except Exception as e:
+                print(f"[Discord] RPC connection failed: {e}")
+            finally:
+                self.connected = False
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
         self.thread = threading.Thread(target=_thread_main, name="DiscordRPC", daemon=True)
         self.thread.start()
-    async def _runner(self):
-        try:
-            from pypresence.presence import AioPresence
-        except Exception:
+
+    def _set_activity(self, activity):
+        if not self.connected or self.sock is None:
             return
+        payload = {"cmd": "SET_ACTIVITY", "args": {"pid": os.getpid(), "activity": activity}, "nonce": str(uuid_module.uuid4())}
         try:
-            self.client = AioPresence(self.app_id)
-            try:
-                await self.client.connect()
-            except Exception:
-                self.client = None
-                return
-            if self.on_connected:
-                try:
-                    self.on_connected()
-                except Exception:
-                    pass
-            while not self.stop_event.is_set() and self.client:
-                try:
-                    await asyncio.sleep(0.2)
-                except asyncio.CancelledError:
-                    break
+            self._send(self.OP_FRAME, payload)
         except Exception:
             pass
-        finally:
-            if self.client:
-                try:
-                    await self.client.clear()
-                except Exception:
-                    pass
-                try:
-                    await self.client.close()
-                except Exception:
-                    pass
-    def update(self, **presence_data):
-        if not self.loop or not self.client:
-            return
-        async def _do_update():
-            try:
-                await self.client.update(**presence_data)
-            except Exception:
-                pass
-        try:
-            if self.loop and not self.loop.is_closed():
-                asyncio.run_coroutine_threadsafe(_do_update(), self.loop)
-        except Exception:
-            pass
+
+    def update(self, state=None, details=None, start=None, end=None, large_image=None, large_text=None,
+               small_image=None, small_text=None, buttons=None, **_):
+        activity = {}
+        if state:
+            activity["state"] = state
+        if details:
+            activity["details"] = details
+        if start or end:
+            activity["timestamps"] = {k: int(v) for k, v in (("start", start), ("end", end)) if v}
+        assets = {k: v for k, v in (("large_image", large_image), ("large_text", large_text),
+                                    ("small_image", small_image), ("small_text", small_text)) if v}
+        if assets:
+            activity["assets"] = assets
+        if buttons:
+            activity["buttons"] = buttons
+        self._set_activity(activity)
+
+    def clear(self):
+        self._set_activity(None)
+
     def stop(self):
         try:
+            self.clear()
             self.stop_event.set()
             if self.thread:
                 self.thread.join(timeout=3)
@@ -9762,57 +5252,14 @@ def _atexit_cleanup():
                 app._stop_discord_rpc()
     except Exception:
         pass
-    try:
-        mixer = getattr(_pg, "mixer", None)
-        if mixer and mixer.get_init():
-            try:
-                mixer.music.stop()
-            except Exception:
-                pass
-            try:
-                mixer.quit()
-            except Exception:
-                pass
-        _pg.quit()
-    except Exception:
-        pass
 atexit.register(_atexit_cleanup)
-def build_tab(launcher, notebook):
-    log_frame = ttk.Frame(notebook)
-    notebook.add(log_frame, text=launcher._t("LAUNCHER_LOG"))
-    launcher.log_text = scrolledtext.ScrolledText(
-        log_frame, 
-        bg=launcher._get_theme_color('bg_input'),
-        fg=launcher._get_theme_color('fg_primary'),
-        insertbackground=launcher._get_theme_color('fg_primary'),
-        selectbackground=launcher._get_theme_color('bg_hover'),
-        selectforeground=launcher._get_theme_color('fg_primary'),
-        font=("Consolas", 9),
-        wrap=tk.WORD
-    )
-    launcher.log_text.pack(fill="both", expand=True, padx=10, pady=10)
-    launcher.log_text.tag_configure("error",   foreground="#ff6b6b")
-    launcher.log_text.tag_configure("warning", foreground="#ffc107")
-    launcher.log_text.tag_configure("success", foreground="#51cf66")
-    launcher.log_text.tag_configure("info",    foreground="#74c0fc")
-    if not _has_logs():
-        launcher.log_text.insert("1.0", launcher._t("NO_LOGS"))
-    launcher.log_text.config(state="disabled")
-def _has_logs():
-    log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
-    if log_dir.exists() and any(log_dir.glob("launcher_*.log")):
-        return True
-    spawn_log = Path(tempfile.gettempdir()) / "OrangLauncher_spawn.log"
-    return spawn_log.exists()
 try:
-    from cryptography.fernet import Fernet
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    ENCRYPTION_AVAILABLE = True
-except ImportError:
+    ENCRYPTION_AVAILABLE = importlib.util.find_spec("cryptography") is not None
+except Exception:
     ENCRYPTION_AVAILABLE = False
 PROFILE_FILENAME = "profiles.json"
 CLIENT_ID = "00000000402B5328"
+DEVICE_CLIENT_ID = "00000000441cc96b"
 REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf"
 SCOPE = "service::user.auth.xboxlive.com::MBI_SSL"
 _TOKEN_ENCRYPTION_VERSION = "v2"
@@ -9828,7 +5275,8 @@ def _get_machine_key():
 
     if not ENCRYPTION_AVAILABLE:
         return None
-
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -9842,6 +5290,7 @@ def _get_cipher():
         return None
     key = _get_machine_key()
     if key:
+        from cryptography.fernet import Fernet
         return Fernet(key)
     return None
 def encrypt_token(token):
@@ -9939,44 +5388,13 @@ def save_profiles(profiles_data):
     with open(p, "w") as f:
         json.dump(profiles_to_save, f, indent=2)
     _set_secure_file_permissions(p)
-def get_profile_names():
-    result = []
-    for p in load_profiles():
-        if p["type"] == "offline":
-            result.append(f"{p['username']} (Offline)")
-        elif p["type"] == "microsoft":
-            result.append(f"{p['username']} (Microsoft)")
-        else:
-            result.append(p['username'])
-    return result
-def select_profile(index):
-    profiles_data = load_profiles()
-    if 0 <= index < len(profiles_data):
-        profile = profiles_data.pop(index)
-        profiles_data.insert(0, profile)
-        save_profiles(profiles_data)
-        return True
-    return False
-def _ensure_tk():
-    root = tk._default_root
-    if root is None:
-        root = tk.Tk()
-        root.withdraw()
-    return root
 def ms_token_flow_interactive():
-    try:
-        return _ms_token_flow_webview()
-    except Exception as e:
-        msg = str(e).lower()
-        if 'cancelled' in msg:
-            raise Exception(f"Embedded browser login failed: {e}")
-        print(f"[DEBUG] Webview login failed ({e}); falling back to system browser")
-        return _ms_token_flow_browser()
+    if QT_ACTIVE[0]:
+        return _ms_token_flow_qt()
+    return _ms_token_flow_browser()
 
 
 def _extract_code_from_redirect(text):
-    """Accepts the pasted redirect URL (login.live.com/oauth20_desktop.srf?code=...)
-    or the bare code value itself. Returns the auth code or None."""
     if not text:
         return None
     text = text.strip()
@@ -9993,8 +5411,6 @@ def _extract_code_from_redirect(text):
 
 
 def _ms_token_flow_browser():
-    """Browser-based fallback: opens the OAuth page in the default browser and
-    asks the user to paste the redirect address (or just the code) back."""
     oauth_url = (
         "https://login.live.com/oauth20_authorize.srf"
         f"?client_id={CLIENT_ID}"
@@ -10003,10 +5419,9 @@ def _ms_token_flow_browser():
         f"&scope={SCOPE}"
     )
     try:
-        webbrowser.open(oauth_url)
+        open_with_browser(oauth_url)
     except Exception as e:
         raise Exception(f"Could not open browser for login: {e}")
-    parent = _ensure_tk()
     prompt = (
         "The embedded browser is unavailable, so your web browser was opened instead.\n"
         "1. Sign in with your Microsoft account in the browser.\n"
@@ -10014,7 +5429,7 @@ def _ms_token_flow_browser():
         "    the code is removed from the address a moment after the page loads.\n"
         "3. Paste that address (or just the code=... value) below."
     )
-    pasted = themed_askstring("Sign in with your browser", prompt, parent=parent)
+    pasted = _qt_askstring("Sign in with your browser", prompt)
     if not pasted:
         raise Exception("Login cancelled or failed")
     auth_code = _extract_code_from_redirect(pasted)
@@ -10023,167 +5438,31 @@ def _ms_token_flow_browser():
     return _complete_oauth_flow(auth_code)
 
 
-def _ms_token_flow_webview():
-    if webview is None:
-        raise Exception("pywebview is not available")
-    auth_code_result = {'code': None, 'cancelled': False}
-    oauth_url = (
-        "https://login.live.com/oauth20_authorize.srf"
-        f"?client_id={CLIENT_ID}"
-        f"&redirect_uri={REDIRECT_URI}"
-        "&response_type=code"
-        f"&scope={SCOPE}"
-    )
-    print(f"[DEBUG] Loading OAuth URL in webview...")
-    def on_loaded():
-        try:
-            current_url = window.get_current_url()
-            if current_url:
-                print(f"[DEBUG] Current URL: {current_url}")
-                if 'login.live.com/oauth20_desktop.srf' in current_url and 'code=' in current_url:
-                    print("[DEBUG] Found auth code in URL!")
-                    parsed = urllib.parse.urlparse(current_url)
-                    params = urllib.parse.parse_qs(parsed.query)
-                    if 'code' in params:
-                        auth_code = params['code'][0]
-                        print(f"[DEBUG] Extracted auth code: {auth_code[:20]}...")
-                        auth_code_result['code'] = auth_code
-                        window.destroy()
-        except Exception as e:
-            print(f"[DEBUG] Error checking URL: {e}")
-    def on_closing():
-        if not auth_code_result['code']:
-            auth_code_result['cancelled'] = True
-    window = webview.create_window(
-        'Microsoft Account Login',
-        oauth_url,
-        width=600,
-        height=700,
-        resizable=True
-    )
-    window.events.loaded += on_loaded
-    window.events.closing += on_closing
-    webview.start()
-    if auth_code_result['cancelled'] and not auth_code_result['code']:
-        raise Exception("Login cancelled or failed")
-    if not auth_code_result['code']:
-        raise Exception("Failed to capture auth code")
-    return _complete_oauth_flow(auth_code_result['code'])
 def _complete_oauth_flow(auth_code):
-    print(f"[DEBUG] Completing OAuth flow with code: {auth_code[:20]}...")
-    token_data = {
+    r = requests.post("https://login.live.com/oauth20_token.srf", data={
         "client_id": CLIENT_ID,
         "scope": SCOPE,
         "code": auth_code,
         "redirect_uri": REDIRECT_URI,
         "grant_type": "authorization_code"
-    }
-    r = requests.post("https://login.live.com/oauth20_token.srf", data=token_data)
+    }, timeout=30)
     if not r.ok:
         raise Exception("Failed to get Microsoft token: " + r.text)
-    tokens = r.json()
-    microsoft_token = tokens["access_token"]
-    microsoft_refresh_token = tokens["refresh_token"]
-    r = requests.post("https://user.auth.xboxlive.com/user/authenticate", json={
-        "Properties": {
-            "AuthMethod": "RPS",
-            "SiteName": "user.auth.xboxlive.com",
-            "RpsTicket": microsoft_token
-        },
-        "RelyingParty": "http://auth.xboxlive.com",
-        "TokenType": "JWT"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Xbox Live token: " + r.text)
-    xbl_token = r.json()["Token"]
-    r = requests.post("https://xsts.auth.xboxlive.com/xsts/authorize", json={
-        "Properties": {
-            "SandboxId": "RETAIL",
-            "UserTokens": [xbl_token]
-        },
-        "RelyingParty": "rp://api.minecraftservices.com/",
-        "TokenType": "JWT"
-    })
-    if not r.ok:
-        raise Exception("Failed to get XSTS token: " + r.text)
-    xsts_userhash = r.json()["DisplayClaims"]["xui"][0]["uhs"]
-    xsts_token = r.json()["Token"]
-    r = requests.post("https://api.minecraftservices.com/authentication/login_with_xbox", json={
-        "identityToken": f"XBL3.0 x={xsts_userhash};{xsts_token}"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Minecraft token: " + r.text)
-    minecraft_token = r.json()["access_token"]
-    r = _http_session.get("https://api.minecraftservices.com/minecraft/profile", headers={
-        "Authorization": f"Bearer {minecraft_token}"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Minecraft profile: " + r.text)
-    profile_data = r.json()
-    username = profile_data["name"]
-    uuid = profile_data["id"]
-    print(f"[DEBUG] Successfully authenticated as: {username}")
-    return {
-        "microsoft_refresh_token": microsoft_refresh_token,
-        "minecraft_token": minecraft_token,
-        "username": username,
-        "uuid": uuid,
-        "last_refresh": time.time()
-    }
-def refresh_mc_token(microsoft_refresh_token):
+    return _ms_complete_with_tokens(r.json())
+def refresh_mc_token(microsoft_refresh_token, client_id=None):
     r = requests.post("https://login.live.com/oauth20_token.srf", data={
         "scope": SCOPE,
-        "client_id": CLIENT_ID,
+        "client_id": client_id or CLIENT_ID,
         "grant_type": "refresh_token",
         "refresh_token": microsoft_refresh_token
-    })
+    }, timeout=30)
     if not r.ok:
         raise Exception("Failed to refresh Microsoft token: " + r.text)
-    microsoft_token = r.json()["access_token"]
-    r = requests.post("https://user.auth.xboxlive.com/user/authenticate", json={
-        "Properties": {
-            "AuthMethod": "RPS",
-            "SiteName": "user.auth.xboxlive.com",
-            "RpsTicket": microsoft_token
-        },
-        "RelyingParty": "http://auth.xboxlive.com",
-        "TokenType": "JWT"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Xbox Live token: " + r.text)
-    xbl_token = r.json()["Token"]
-    r = requests.post("https://xsts.auth.xboxlive.com/xsts/authorize", json={
-        "Properties": {
-            "SandboxId": "RETAIL",
-            "UserTokens": [xbl_token]
-        },
-        "RelyingParty": "rp://api.minecraftservices.com/",
-        "TokenType": "JWT"
-    })
-    if not r.ok:
-        raise Exception("Failed to get XSTS token: " + r.text)
-    xsts_userhash = r.json()["DisplayClaims"]["xui"][0]["uhs"]
-    xsts_token = r.json()["Token"]
-    r = requests.post("https://api.minecraftservices.com/authentication/login_with_xbox", json={
-        "identityToken": f"XBL3.0 x={xsts_userhash};{xsts_token}"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Minecraft token: " + r.text)
-    minecraft_token = r.json()["access_token"]
-    r = _http_session.get("https://api.minecraftservices.com/minecraft/profile", headers={
-        "Authorization": f"Bearer {minecraft_token}"
-    })
-    if not r.ok:
-        raise Exception("Failed to get Minecraft profile: " + r.text)
-    username = r.json()["name"]
-    uuid = r.json()["id"]
-    return {
-        "microsoft_refresh_token": microsoft_refresh_token,
-        "minecraft_token": minecraft_token,
-        "username": username,
-        "uuid": uuid,
-        "last_refresh": time.time()
-    }
+    tokens = r.json()
+    tokens.setdefault("refresh_token", microsoft_refresh_token)
+    result = _ms_complete_with_tokens(tokens)
+    result["ms_client_id"] = client_id or CLIENT_ID
+    return result
 def check_mc_token(minecraft_token):
     r = _http_session.get("https://api.minecraftservices.com/minecraft/profile", headers={
         "Authorization": f"Bearer {minecraft_token}"
@@ -10197,7 +5476,7 @@ def ensure_mc_profile_valid(profile):
     if token and check_mc_token(token):
         return profile
     try:
-        newdata = refresh_mc_token(refresh_token)
+        newdata = refresh_mc_token(refresh_token, profile.get("ms_client_id"))
         profile.update(newdata)
         profiles_data = load_profiles()
         for idx, p in enumerate(profiles_data):
@@ -10220,261 +5499,8 @@ def ensure_mc_profile_valid(profile):
             return profile
         except Exception as ee:
             raise Exception("Could not refresh or re-authenticate: " + str(ee))
-def ask_profile_type(parent=None):
-    result = {'value': None}
-    win = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
-    win.title("Select Profile Type")
-    win.transient(parent) if parent is not None else None
-    win.grab_set()
-    win.resizable(False, False)
-    tm = get_theme_manager()
-    bg = tm.get_color('bg_primary')
-    fg = tm.get_color('fg_primary')
-    btn_bg = tm.get_color('accent_primary')
-    btn_fg = tm.get_color('fg_primary')
-    win.configure(bg=bg)
-    tk.Label(win, text="Select profile type:", bg=bg, fg=fg, font=("Segoe UI", 11)).pack(padx=24, pady=12)
-    btn_frame = tk.Frame(win, bg=bg)
-    btn_frame.pack(pady=10)
 
-    def choose(val):
-        result['value'] = val
-        win.destroy()
 
-    offline_btn = tk.Button(btn_frame, text="Offline", width=12,
-                           bg=btn_bg, fg=btn_fg, font=("Segoe UI", 10, "bold"),
-                           bd=0, padx=20, pady=10, cursor="hand2", relief="flat",
-                           command=lambda: choose("offline"))
-    offline_btn.pack(side="left", padx=8)
-
-    ms_btn = tk.Button(btn_frame, text="Microsoft", width=12,
-                      bg=btn_bg, fg=btn_fg, font=("Segoe UI", 10, "bold"),
-                      bd=0, padx=20, pady=10, cursor="hand2", relief="flat",
-                      command=lambda: choose("microsoft"))
-    ms_btn.pack(side="left", padx=8)
-
-    win.wait_window()
-    return result['value']
-
-def themed_askstring(title, prompt, parent=None, launcher=None, initialvalue=None):
-    if launcher is not None and hasattr(launcher, '_get_theme_color'):
-        def get_color(k):
-            try:
-                return launcher._get_theme_color(k)
-            except Exception:
-                return get_theme_manager().get_color(k)
-    else:
-        tm = get_theme_manager()
-        def get_color(k):
-            return tm.get_color(k)
-
-    created_root = False
-    if parent is None:
-        parent = tk.Tk()
-        parent.withdraw()
-        created_root = True
-
-    dialog = tk.Toplevel(parent)
-    dialog.title(title)
-    dialog.geometry("400x160")
-    dialog.configure(bg=get_color('bg_primary'))
-    dialog.transient(parent)
-    dialog.grab_set()
-
-    tk.Label(dialog, text=prompt,
-             bg=get_color('bg_primary'),
-             fg=get_color('fg_primary'),
-             font=("Segoe UI", 11)).pack(pady=(20, 8), padx=20)
-
-    username_var = tk.StringVar(value=initialvalue or "")
-    entry = ttk.Entry(dialog, textvariable=username_var, width=34, font=("Segoe UI", 10))
-    entry.pack(pady=6)
-    entry.focus()
-
-    result = {'value': None}
-
-    def on_ok():
-        val = username_var.get().strip()
-        result['value'] = val if val != "" else None
-        dialog.destroy()
-
-    def on_cancel():
-        dialog.destroy()
-
-    btn_frame = tk.Frame(dialog, bg=get_color('bg_primary'))
-    btn_frame.pack(pady=14)
-
-    ok_btn = tk.Button(btn_frame, text="OK", width=10,
-                       bg=get_color('accent_primary'),
-                       fg=get_color('fg_primary'),
-                       font=("Segoe UI", 10, "bold"),
-                       bd=0, padx=20, pady=8, cursor="hand2", relief="flat",
-                       command=on_ok)
-    ok_btn.pack(side="left", padx=6)
-
-    cancel_btn = tk.Button(btn_frame, text="Cancel", width=10,
-                          bg=get_color('bg_hover'),
-                          fg=get_color('fg_primary'),
-                          font=("Segoe UI", 10),
-                          bd=0, padx=20, pady=8, cursor="hand2", relief="flat",
-                          command=on_cancel)
-    cancel_btn.pack(side="left", padx=6)
-
-    entry.bind('<Return>', lambda e: on_ok())
-    entry.bind('<Escape>', lambda e: on_cancel())
-
-    try:
-        parent.update_idletasks()
-        dialog.update_idletasks()
-        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (dialog.winfo_width() // 2)
-        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
-    except Exception:
-        pass
-
-    dialog.wait_window()
-    if created_root:
-        try:
-            parent.destroy()
-        except Exception:
-            pass
-    return result['value']
-
-def classic_askstring(title, prompt, parent=None):
-    tm = get_theme_manager()
-    bg = tm.get_color('bg_primary')
-    fg = tm.get_color('fg_primary')
-    accent = tm.get_color('accent_primary')
-    hover = tm.get_color('bg_hover')
-
-    created_root = False
-    if parent is None:
-        parent = tk.Tk()
-        parent.withdraw()
-        created_root = True
-
-    dialog = tk.Toplevel(parent)
-    dialog.title(title)
-    dialog.geometry("400x200")
-    dialog.configure(bg=bg)
-    dialog.transient(parent)
-    dialog.grab_set()
-
-    tk.Label(dialog, text=prompt,
-             bg=bg, fg=fg, font=("Segoe UI", 11)).pack(pady=(20, 10))
-
-    username_var = tk.StringVar()
-    entry = ttk.Entry(dialog, textvariable=username_var, width=30, font=("Segoe UI", 10))
-    entry.pack(pady=10)
-    entry.focus()
-
-    result = {'username': None}
-
-    def on_ok():
-        val = username_var.get().strip()
-        result['username'] = val if val != "" else None
-        dialog.destroy()
-
-    def on_cancel():
-        dialog.destroy()
-
-    btn_frame = tk.Frame(dialog, bg=bg)
-    btn_frame.pack(pady=20)
-
-    ok_btn = tk.Button(btn_frame, text="OK", width=10,
-                      bg=accent, fg=fg, font=("Segoe UI", 10, "bold"),
-                      bd=0, padx=20, pady=8, cursor="hand2", relief="flat",
-                      command=on_ok)
-    ok_btn.pack(side="left", padx=5)
-
-    cancel_btn = tk.Button(btn_frame, text="Cancel", width=10,
-                          bg=hover, fg=fg, font=("Segoe UI", 10),
-                          bd=0, padx=20, pady=8, cursor="hand2", relief="flat",
-                          command=on_cancel)
-    cancel_btn.pack(side="left", padx=5)
-
-    entry.bind('<Return>', lambda e: on_ok())
-    entry.bind('<Escape>', lambda e: on_cancel())
-
-    dialog.wait_window()
-    if created_root:
-        try:
-            parent.destroy()
-        except Exception:
-            pass
-    return result['username']
-def add_profile(parent=None):
-    created_root = False
-    if parent is None:
-        root = tk.Tk()
-        root.withdraw()
-        created_root = True
-        use_parent = root
-    else:
-        use_parent = parent
-
-    mode = ask_profile_type(parent=use_parent)
-    print("DEBUG: Selected profile type:", mode)
-    if mode not in ("offline", "microsoft"):
-        if created_root:
-            try:
-                root.destroy()
-            except Exception:
-                pass
-        return None
-    profile = {"type": mode}
-    if mode == "offline":
-        username = classic_askstring("Username", "Enter offline username", parent=use_parent)
-        if not username:
-            messagebox.showerror("Error", "Username required.")
-            if created_root:
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
-            return None
-        profile["username"] = username
-    elif mode == "microsoft":
-        try:
-            tokens = ms_token_flow_interactive()
-            profile.update(tokens)
-        except Exception as e:
-            messagebox.showerror("Auth Error", f"Microsoft authentication failed:\n{e}")
-            if created_root:
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
-            return None
-    profiles_data = load_profiles()
-    profiles_data.append(profile)
-    if created_root:
-        try:
-            root.destroy()
-        except Exception:
-            pass
-    if created_root:
-        try:
-            root.destroy()
-        except Exception:
-            pass
-    save_profiles(profiles_data)
-    messagebox.showinfo("Success", f"Profile '{profile.get('username', '')}' added.")
-def make_style(root: tk.Tk) -> ttk.Style:
-    style = ttk.Style(root)
-    try:
-        style.theme_use("clam")
-    except:
-        pass
-    saved_theme = load_saved_theme()
-    tm = get_theme_manager()
-    tm.load_theme(saved_theme)
-    tm.apply_to_style(style)
-    root.option_add('*TCheckbutton*indicatorColor', tm.get_color('bg_input'))
-    root.option_add('*TCheckbutton*selectColor', tm.get_color('accent_primary'))
-    root.option_add('*TCheckbutton*indicatorBackground', tm.get_color('bg_input'))
-    root.option_add('*TCheckbutton*indicatorForeground', tm.get_color('accent_primary'))
-    return style
 def _get_setup_mark_path():
     config_dir = Path.home() / ".config" / "oranglauncher"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -10529,210 +5555,5686 @@ def _wizard_loader_versions(loader, mc_version):
         print(f"[setup] loader versions fetch failed: {e}")
     return []
 
-class WelcomeWizard(tk.Frame):
-    PAGE_COUNT = 5
-    def __init__(self, launcher):
-        self.launcher = launcher
-        self.tm = launcher.theme_manager
-        super().__init__(launcher, bg=self._c('bg_primary'))
-        self.page = 0
-        self.completed = [True, False, False, False, True]  # greet
-        self.java_var = tk.StringVar()
-        self.java_choices = {}  # label
-        self.recommended_java_label = None
-        self.p_name = tk.StringVar()
-        self.p_loader = tk.StringVar(value="vanilla")
-        self.p_version = tk.StringVar()
-        self.p_loader_version = tk.StringVar(value="N/A")
-        self.p_ram = tk.StringVar(value="4G")
-        self.profile_created = False
-        self.rec_vars = {}
-        self._build_chrome()
-        self._render_page()
-        self.place(x=0, y=0, relwidth=1, relheight=1)
-        self.lift()
-        self.focus_force()
 
-    def _c(self, key):
-        return self.tm.get_color(key)
+# main app
 
-    def _on_close(self):
-        self.place_forget()
-        self.destroy()
+def terminal_launch_game(instance, profile, ram="4G"):
+    try:
+        version = instance.version
+        mod_loader = instance.mod_loader
+        username = profile.get("username", "Steve")
+        uuid = profile.get("uuid", str(uuid_module.uuid4()))
+        access_token = profile.get("minecraft_token", "0")
+        minecraft_directory = str(instance.minecraft_dir)
+        Path(minecraft_directory).mkdir(parents=True, exist_ok=True)
+        print(f"\n[Launcher] Launching Minecraft {version} ({mod_loader}) as {username}...")
+        java_exe = resolve_java_for_instance(instance, version, log_fn=print)
+        print(f"[Java] Using: {java_exe}")
+        if not ram.endswith('G') and not ram.endswith('M'):
+            ram = f"{ram}G"
+        jvm_args = memory_jvm_args(instance, ram) + extra_jvm_args(instance) + native_library_jvm_args(instance)
+        options = {
+            'username': username,
+            'uuid': uuid,
+            'token': access_token,
+            'executablePath': java_exe,
+            'jvmArguments': jvm_args,
+            'launcherName': 'OrangLauncher',
+            'launcherVersion': CURRENT_VERSION
+        }
+        if instance.opt("demo", False):
+            options['demo'] = True
+        print(f"[Launcher] Preparing {version}...")
 
-    def _build_chrome(self):
-        header = tk.Frame(self, bg=self._c('bg_primary'))
-        header.pack(fill="x", padx=28, pady=(24, 8))
-        tk.Label(header, text="OrangLauncher", font=("Segoe UI", 20, "bold"),
-                 bg=self._c('bg_primary'), fg=self._c('accent_primary')).pack(anchor="w")
-        self.subtitle = tk.Label(header, text="", font=("Segoe UI", 10),
-                                 bg=self._c('bg_primary'), fg=self._c('fg_secondary'))
-        self.subtitle.pack(anchor="w", pady=(2, 0))
-        self.dots_frame = tk.Frame(self, bg=self._c('bg_primary'))
-        self.dots_frame.pack(fill="x", padx=28, pady=(6, 4))
-        self.dot_labels = []
-        for i in range(self.PAGE_COUNT):
-            d = tk.Label(self.dots_frame, text="●", font=("Segoe UI", 13),
-                         bg=self._c('bg_primary'), fg=self._c('fg_disabled'))
-            d.pack(side="left", padx=(0, 6))
-            self.dot_labels.append(d)
-        self.body = tk.Frame(self, bg=self._c('bg_secondary'))
-        self.body.pack(fill="both", expand=True, padx=28, pady=12)
-        footer = tk.Frame(self, bg=self._c('bg_primary'))
-        footer.pack(fill="x", padx=28, pady=(0, 22))
-        self.back_btn = tk.Button(footer, text="Back", command=self._go_back,
-                                  bg=self._c('bg_tertiary'), fg=self._c('fg_primary'),
-                                  font=("Segoe UI", 10), bd=0, relief="flat",
-                                  padx=18, pady=8, cursor="hand2",
-                                  activebackground=self._c('bg_hover'),
-                                  activeforeground=self._c('fg_primary'))
-        self.back_btn.pack(side="left")
-        self.next_btn = tk.Button(footer, text="Continue", command=self._go_next,
-                                  bg=self._c('accent_primary'), fg="#ffffff",
-                                  font=("Segoe UI", 10, "bold"), bd=0, relief="flat",
-                                  padx=22, pady=8, cursor="hand2",
-                                  activebackground=self._c('accent_hover'),
-                                  activeforeground="#ffffff")
-        self.next_btn.pack(side="right")
-
-    def _clear_body(self):
-        for w in self.body.winfo_children():
-            w.destroy()
-
-    def _set_complete(self, idx, value=True):
-        self.completed[idx] = value
-        self._refresh_nav()
-
-    def _refresh_nav(self):
-        for i, d in enumerate(self.dot_labels):
-            if i == self.page:
-                d.config(fg=self._c('accent_primary'))
-            elif self.completed[i]:
-                d.config(fg=self._c('fg_secondary'))
+        # Handle mod loaders
+        if mod_loader and mod_loader.lower() != "vanilla" and mod_loader.lower() != "none":
+            if instance.installed_version_id and instance.installed_version_id not in ['Latest', 'N/A', '']:
+                local_versions_dir = Path(minecraft_directory) / "versions" / instance.installed_version_id
+                version_exists = local_versions_dir.exists() and (local_versions_dir / f"{instance.installed_version_id}.json").exists()
+                if version_exists:
+                    version = instance.installed_version_id
+                    print(f"[Launcher] Using installed version: {version}")
+        print(f"[Launcher] Installing Minecraft {version}...")
+        minecraft_launcher_lib.install.install_minecraft_version(version, minecraft_directory)
+        print(f"[Launcher] Starting Minecraft...")
+        try:
+            apply_video_options(instance)
+        except Exception:
+            pass
+        command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
+        command = strip_server_blocklist(command, instance, instance.version, log_fn=print)
+        command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
+        try:
+            lwjgl_override = resolve_lwjgl_override(instance, minecraft_directory, version, log_fn=print)
+            if lwjgl_override:
+                command = LwjglManager.rewrite_command(command, lwjgl_override["jars"], lwjgl_override["natives_dir"])
+        except Exception as e:
+            print(f"[LWJGL] override failed, using stock libraries: {e}")
+        launch_env = build_launch_env(instance)
+        command = apply_wrapper_command(command, instance.opt("wrapper_cmd"))
+        _launch_start = time.time()
+        mc_process = subprocess.Popen(
+            command,
+            cwd=minecraft_directory,
+            env=launch_env
+        )
+        
+        print(f"\n[Launcher] Game is running. Press Ctrl+C to detach...")
+        try:
+            exit_code = mc_process.wait()
+        except KeyboardInterrupt:
+            print("\n[Launcher] Detaching from game process...")
+            exit_code = 0
+        elapsed = int(time.time() - _launch_start)
+        if elapsed > 5:
+            instance.play_time = (instance.play_time or 0) + elapsed
+            instance.last_played = datetime.now().isoformat()
+        print(f"[Launcher] Minecraft exited with code {exit_code}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Launch failed: {e}")
+        traceback.print_exc()
+        return False
+def terminal_main():
+    try:
+        print("\n" + "="*50)
+        print("OrangLauncher - Joke Mode, Less ram :>")
+        print("="*50 + "\n")
+        instance_manager = get_instance_manager()
+        if not instance_manager.instances:
+            print("[ERROR] No instances found!")
+            return
+        instances_list = sorted(instance_manager.instances.values(), key=lambda inst: inst.name.lower())
+        print("Available Instances:")
+        for i, inst in enumerate(instances_list, 1):
+            print(f"  {i}. {inst.name} (MC {inst.version}, {inst.mod_loader})")
+        while True:
+            try:
+                choice = input(f"\nSelect instance (1-{len(instances_list)}): ").strip()
+                idx = int(choice) - 1
+                if 0 <= idx < len(instances_list):
+                    selected_instance = instances_list[idx]
+                    break
+                else:
+                    print(f"Invalid choice. Please select 1-{len(instances_list)}")
+            except ValueError:
+                print(f"Invalid input. Please enter a number 1-{len(instances_list)}")
+        profiles = load_profiles()
+        if not profiles:
+            print("\n[ERROR] No game profiles found yk! Please add a profile in GUI mode first you linuxer. Sorry no actual creation of profiles yet.")
+            return
+        print(f"\nAvailable Profiles for your idk what:")
+        for i, profile in enumerate(profiles, 1):
+            profile_type = profile.get("type", "unknown")
+            username = profile.get("username", "Unknown")
+            if profile_type == "offline":
+                print(f"  {i}. {username} (Offline)")
+            elif profile_type == "microsoft":
+                print(f"  {i}. {username} (Microsoft)")
             else:
-                d.config(fg=self._c('fg_disabled'))
-        self.back_btn.config(state="normal" if self.page > 0 else "disabled")
-        last = self.page == self.PAGE_COUNT - 1
-        self.next_btn.config(text="Finish" if last else "Continue")
-        if self.completed[self.page]:
-            self.next_btn.config(state="normal", bg=self._c('accent_primary'),
-                                 cursor="hand2")
+                print(f"  {i}. {username}")
+        while True:
+            try:
+                choice = input(f"\nSelect profile (1-{len(profiles)}): ").strip()
+                idx = int(choice) - 1
+                if 0 <= idx < len(profiles):
+                    selected_profile = profiles[idx]
+                    break
+                else:
+                    print(f"Invalid choice. Please select 1-{len(profiles)}")
+            except ValueError:
+                print(f"Invalid input. Please enter a number 1-{len(profiles)}")
+        # Get RAM for me I want 64gb plz, I only have 16 GB now :>
+        # I have now 32 again, yayyy and yay works halfway..
+        ram_input = input("\nEnter RAM amount (default: 4G): ").strip()
+        ram = ram_input if ram_input else "4G"
+        print(f"\nLaunching {selected_instance.name} as {selected_profile.get('username')}...")
+        terminal_launch_game(selected_instance, selected_profile, ram)
+    except KeyboardInterrupt:
+        print("\n[Launcher] Cancelled by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"[ERROR] Terminal mode error: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+def _system_desktop_file():
+    for base in ("/usr/share/applications", "/usr/local/share/applications", "/var/lib/flatpak/exports/share/applications"):
+        candidate = Path(base) / "oranglauncher.desktop"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _launcher_exec_command():
+    compiled = getattr(sys, "frozen", False) or "__compiled__" in globals()
+    wrapper = shutil.which("oranglauncher")
+    if compiled:
+        exe = Path(sys.executable).resolve()
+        if wrapper and Path(wrapper).resolve() != exe:
+            return f'"{wrapper}" %f'
+        return f'"{exe}" %f'
+    return f'"{sys.executable}" "{Path(__file__).resolve()}" %f'
+
+
+def _register_mrpack_association():
+    try:
+        home = Path.home()
+        apps_dir = home / ".local/share/applications"
+        apps_dir.mkdir(parents=True, exist_ok=True)
+        desktop_file = apps_dir / "oranglauncher.desktop"
+        system_desktop = _system_desktop_file()
+        if system_desktop is not None:
+            if desktop_file.exists():
+                try:
+                    desktop_file.unlink()
+                    subprocess.run(["update-desktop-database", str(apps_dir)], check=False, capture_output=True)
+                except Exception:
+                    pass
         else:
-            self.next_btn.config(state="disabled", bg=self._c('bg_tertiary'),
-                                 cursor="arrow")
+            icon_path = find_resource("oranglauncher/images/orange.png")
+            desktop = (
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=OrangLauncher\n"
+                "Comment=Modular Minecraft launcher\n"
+                f"Exec={_launcher_exec_command()}\n"
+                f"Icon={icon_path or 'oranglauncher'}\n"
+                "Terminal=false\n"
+                "Categories=Game;\n"
+                "StartupWMClass=oranglauncher\n"
+                "MimeType=application/x-modrinth-modpack+zip;application/x-orangpack;\n"
+            )
+            if not desktop_file.exists() or desktop_file.read_text() != desktop:
+                desktop_file.write_text(desktop)
+        mime_dir = home / ".local/share/mime/packages"
+        mime_dir.mkdir(parents=True, exist_ok=True)
+        mime_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
+            '  <mime-type type="application/x-modrinth-modpack+zip">\n'
+            '    <comment>Modrinth Modpack</comment>\n'
+            '    <glob pattern="*.mrpack"/>\n'
+            '  </mime-type>\n'
+            '</mime-info>\n'
+        )
+        mime_file = mime_dir / "oranglauncher-mrpack.xml"
+        if not mime_file.exists() or mime_file.read_text() != mime_xml:
+            mime_file.write_text(mime_xml)
+            subprocess.run(["update-mime-database", str(home / ".local/share/mime")],
+                           check=False, capture_output=True)
+            subprocess.run(["update-desktop-database", str(apps_dir)],
+                           check=False, capture_output=True)
+        subprocess.run(["xdg-mime", "default", "oranglauncher.desktop",
+                        "application/x-modrinth-modpack+zip"],
+                       check=False, capture_output=True)
+        orang_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
+            '  <mime-type type="application/x-orangpack">\n'
+            '    <comment>OrangLauncher Modpack</comment>\n'
+            '    <glob pattern="*.orangpack"/>\n'
+            '  </mime-type>\n'
+            '</mime-info>\n'
+        )
+        orang_file = mime_dir / "oranglauncher-orangpack.xml"
+        if not orang_file.exists() or orang_file.read_text() != orang_xml:
+            orang_file.write_text(orang_xml)
+            subprocess.run(["update-mime-database", str(home / ".local/share/mime")],
+                           check=False, capture_output=True)
+            subprocess.run(["update-desktop-database", str(apps_dir)],
+                           check=False, capture_output=True)
+        subprocess.run(["xdg-mime", "default", "oranglauncher.desktop", "application/x-orangpack"],
+                       check=False, capture_output=True)
+    except Exception as e:
+        print(f"[setup] mrpack association failed: {e}")
+
+try:
+    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6.QtCore import Qt, Signal, QObject, QTimer, QSize
+    QT_AVAILABLE = True
+except Exception:
+    QT_AVAILABLE = False
+    class _QtPlaceholder:
+        def __init__(self, *a, **k):
+            pass
+    class _QtNamespace:
+        def __getattr__(self, name):
+            return _QtPlaceholder
+    QtCore = QtGui = QtWidgets = _QtNamespace()
+    Qt = _QtNamespace()
+    QObject = _QtPlaceholder
+    QTimer = _QtPlaceholder
+    QSize = _QtPlaceholder
+    def Signal(*a, **k):
+        return None
+QT_ACTIVE = [False]
+_QT_MAIN_THREAD = [None]
+_QT_APP_REF = [None]
+
+
+def _qt_is_main_thread():
+    return threading.get_ident() == _QT_MAIN_THREAD[0]
+
+
+def _trim_memory():
+    try:
+        import gc
+        gc.collect()
+        if platform.system() == "Linux":
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
+class _QtInvoker(QObject):
+    call = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.call.connect(self._run, Qt.QueuedConnection)
+
+    def _run(self, fn):
+        try:
+            fn()
+        except Exception as e:
+            print(f"[Qt] deferred call failed: {e}")
+            traceback.print_exc()
+_QT_INVOKER = [None]
+
+def _qt_later(fn, ms=0):
+    if not QT_ACTIVE[0]:
+        return
+    if _qt_is_main_thread():
+        if ms <= 0:
+            QTimer.singleShot(0, fn)
+        else:
+            QTimer.singleShot(int(ms), fn)
+        return
+    inv = _QT_INVOKER[0]
+    if inv is None:
+        return
+    if ms <= 0:
+        inv.call.emit(fn)
+    else:
+        inv.call.emit(lambda: QTimer.singleShot(int(ms), fn))
+
+
+def _qt_blocking(fn):
+    if _qt_is_main_thread():
+        return fn()
+    box = {}
+    done = threading.Event()
+
+    def run():
+        try:
+            box["value"] = fn()
+        except Exception as e:
+            box["error"] = e
+        finally:
+            done.set()
+    _qt_later(run)
+    done.wait()
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+class _Var:
+    def __init__(self, value=None):
+        self._value = value
+        self._traces = []
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = value
+        for cb in list(self._traces):
+            try:
+                cb()
+            except Exception as e:
+                print(f"[Var] trace failed: {e}")
+
+    def trace_add(self, mode, callback):
+        self._traces.append(lambda: callback(None, None, mode))
+        return callback
+    def trace_remove(self, mode, name):
+        pass
+
+
+class _LabelAdapter:
+    def __init__(self, label):
+        self.label = label
+        self.master = label
+
+    def config(self, **kw):
+        if "text" in kw:
+            text = str(kw["text"])
+            _qt_later(lambda: self.label.setText(text))
+
+    configure = config
+
+    def cget(self, key):
+        if key == "text":
+            return self.label.text()
+        return None
+    def winfo_exists(self):
+        return True
+
+
+class _ProgressAdapter:
+    def __init__(self, bar):
+        self.bar = bar
+
+    def config(self, **kw):
+        mode = kw.get("mode")
+        if mode == "indeterminate":
+            _qt_later(lambda: self.bar.setRange(0, 0))
+        elif mode == "determinate":
+            _qt_later(lambda: (self.bar.setRange(0, 100), self.bar.setValue(0)))
+
+    configure = config
+
+    def start(self, *a):
+        _qt_later(lambda: self.bar.setRange(0, 0))
+
+    def stop(self):
+        _qt_later(lambda: (self.bar.setRange(0, 100), self.bar.setValue(0)))
+
+
+class _QtMessageBox:
+    def _parent(self, kw):
+        p = kw.get("parent")
+        if isinstance(p, QtWidgets.QWidget):
+            return p
+        return QtWidgets.QApplication.activeWindow()
+
+    def _show(self, icon, title, message, **kw):
+        def run():
+            box = QtWidgets.QMessageBox(self._parent(kw))
+            box.setIcon(icon)
+            box.setWindowTitle(str(title))
+            box.setText(str(message))
+            box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            box.exec()
+            return "ok"
+        return _qt_blocking(run)
+
+    def showinfo(self, title="", message="", **kw):
+        return self._show(QtWidgets.QMessageBox.Information, title, message, **kw)
+
+    def showwarning(self, title="", message="", **kw):
+        return self._show(QtWidgets.QMessageBox.Warning, title, message, **kw)
+
+    def showerror(self, title="", message="", **kw):
+        return self._show(QtWidgets.QMessageBox.Critical, title, message, **kw)
+
+    def _ask(self, title, message, buttons, default, mapping, **kw):
+        def run():
+            box = QtWidgets.QMessageBox(self._parent(kw))
+            box.setIcon(QtWidgets.QMessageBox.Question)
+            box.setWindowTitle(str(title))
+            box.setText(str(message))
+            box.setStandardButtons(buttons)
+            box.setDefaultButton(default)
+            return mapping.get(box.exec())
+        return _qt_blocking(run)
+
+    def askyesno(self, title="", message="", **kw):
+        return self._ask(title, message, QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes,
+                         {QtWidgets.QMessageBox.Yes: True, QtWidgets.QMessageBox.No: False}, **kw)
+
+    def askquestion(self, title="", message="", **kw):
+        return "yes" if self.askyesno(title, message, **kw) else "no"
+
+    def askokcancel(self, title="", message="", **kw):
+        return self._ask(title, message, QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel, QtWidgets.QMessageBox.Ok,
+                         {QtWidgets.QMessageBox.Ok: True, QtWidgets.QMessageBox.Cancel: False}, **kw)
+
+    def askretrycancel(self, title="", message="", **kw):
+        return self._ask(title, message, QtWidgets.QMessageBox.Retry | QtWidgets.QMessageBox.Cancel, QtWidgets.QMessageBox.Retry,
+                         {QtWidgets.QMessageBox.Retry: True, QtWidgets.QMessageBox.Cancel: False}, **kw)
+
+    def askyesnocancel(self, title="", message="", **kw):
+        return self._ask(title, message, QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                         QtWidgets.QMessageBox.Yes,
+                         {QtWidgets.QMessageBox.Yes: True, QtWidgets.QMessageBox.No: False, QtWidgets.QMessageBox.Cancel: None}, **kw)
+
+
+def _qt_filter_string(filetypes):
+    parts = []
+    for item in filetypes or []:
+        try:
+            label, patterns = item[0], item[1]
+        except Exception:
+            continue
+        if isinstance(patterns, (list, tuple)):
+            patterns = " ".join(patterns)
+        parts.append(f"{label} ({patterns})")
+    return ";;".join(parts) if parts else "All files (*)"
+
+
+class _QtFileDialog:
+    def _parent(self):
+        return QtWidgets.QApplication.activeWindow()
+
+    def _start_dir(self, kw):
+        d = kw.get("initialdir") or str(Path.home())
+        f = kw.get("initialfile")
+        return os.path.join(d, f) if f else d
+
+    def askopenfilename(self, **kw):
+        def run():
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self._parent(), kw.get("title") or "Open", self._start_dir(kw), _qt_filter_string(kw.get("filetypes")))
+            return path or ""
+        return _qt_blocking(run)
+
+    def askopenfilenames(self, **kw):
+        def run():
+            paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self._parent(), kw.get("title") or "Open", self._start_dir(kw), _qt_filter_string(kw.get("filetypes")))
+            return tuple(paths or ())
+        return _qt_blocking(run)
+
+    def asksaveasfilename(self, **kw):
+        def run():
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self._parent(), kw.get("title") or "Save", self._start_dir(kw), _qt_filter_string(kw.get("filetypes")))
+            if path and kw.get("defaultextension") and not os.path.splitext(path)[1]:
+                path += kw["defaultextension"]
+            return path or ""
+        return _qt_blocking(run)
+
+    def askdirectory(self, **kw):
+        def run():
+            return QtWidgets.QFileDialog.getExistingDirectory(self._parent(), kw.get("title") or "Select folder", kw.get("initialdir") or str(Path.home())) or ""
+        return _qt_blocking(run)
+
+messagebox = _QtMessageBox()
+filedialog = _QtFileDialog()
+
+def _qt_askstring(title, prompt, parent=None, launcher=None, initialvalue=None, **kw):
+    def run():
+        p = parent if isinstance(parent, QtWidgets.QWidget) else QtWidgets.QApplication.activeWindow()
+        dlg = QtWidgets.QInputDialog(p)
+        dlg.setWindowTitle(str(title))
+        dlg.setLabelText(str(prompt))
+        dlg.setInputMode(QtWidgets.QInputDialog.TextInput)
+        if initialvalue:
+            dlg.setTextValue(str(initialvalue))
+        dlg.resize(480, dlg.sizeHint().height())
+        if dlg.exec() == QtWidgets.QDialog.Accepted:
+            return dlg.textValue()
+        return None
+    return _qt_blocking(run)
+
+# remove whitespace from mojang logo, i gave this to slopilot
+def _mojang_logo_pixmap(width=240):
+    path = find_resource("oranglauncher/images/mojang.png")
+    if not path:
+        return None
+    try:
+        img = _qimage_rgba(path)
+        w, h = img.width(), img.height()
+        buf = bytes(img.constBits())
+        has_alpha = any(buf[i] < 255 for i in range(3, len(buf), 4))
+        x0, y0, x1, y1 = w, h, -1, -1
+        for y in range(h):
+            row = y * w * 4
+            for x in range(w):
+                i = row + x * 4
+                if has_alpha:
+                    keep = buf[i + 3] > 0
+                else:
+                    keep = (buf[i] * 299 + buf[i + 1] * 587 + buf[i + 2] * 114) // 1000 < 245
+                if keep:
+                    if x < x0: x0 = x
+                    if x > x1: x1 = x
+                    if y < y0: y0 = y
+                    if y > y1: y1 = y
+        if x1 >= x0 and y1 >= y0:
+            pad = int((x1 + 1 - x0) * 0.05)
+            img = img.copy(max(0, x0 - pad), max(0, y0 - pad), min(w, x1 + 1 + pad) - max(0, x0 - pad), min(h, y1 + 1 + pad) - max(0, y0 - pad))
+        img = img.scaledToWidth(width, Qt.SmoothTransformation).convertToFormat(QtGui.QImage.Format_RGBA8888)
+        launcher = _QT_APP_REF[0]
+        if launcher is not None and launcher.theme.c("is_dark", True):
+            fg = QtGui.QColor(launcher.theme.c("fg_primary", "#ffffff"))
+            fr, fg_, fb = fg.red(), fg.green(), fg.blue()
+            pix = bytearray(bytes(img.constBits()))
+            for i in range(0, len(pix), 4):
+                r, g, b, a = pix[i], pix[i + 1], pix[i + 2], pix[i + 3]
+                if a and max(r, g, b) < 110 and abs(r - g) < 40 and abs(g - b) < 40:
+                    pix[i], pix[i + 1], pix[i + 2] = fr, fg_, fb
+            img = QtGui.QImage(bytes(pix), img.width(), img.height(), img.width() * 4, QtGui.QImage.Format_RGBA8888).copy()
+        return QtGui.QPixmap.fromImage(img)
+    except Exception as e:
+        print(f"[Accounts] mojang logo failed: {e}")
+        return None
+
+
+def _qt_ask_profile_type(parent=None):
+    def run():
+        p = parent if isinstance(parent, QtWidgets.QWidget) else QtWidgets.QApplication.activeWindow()
+        dlg = QtWidgets.QDialog(p)
+        dlg.setWindowTitle(_qt_t("QT_ADD_ACCOUNT", "Add account"))
+        lay = QtWidgets.QVBoxLayout(dlg)
+        lay.setSpacing(12)
+        logo = _mojang_logo_pixmap(240)
+        if logo is not None:
+            frame = QtWidgets.QLabel()
+            frame.setPixmap(logo)
+            frame.setAlignment(Qt.AlignCenter)
+            frame.setContentsMargins(0, 8, 0, 8)
+            lay.addWidget(frame, 0, Qt.AlignHCenter)
+        lay.addWidget(_qt_label(_qt_t("QT_ADD_ACCOUNT_QUESTION", "Which kind of account do you want to add?"), "h3"))
+        lay.addWidget(_qt_label(_qt_t("QT_ADD_ACCOUNT_MS_DESC", "Microsoft: sign in with the account that owns Minecraft."), "muted", wrap=True))
+        lay.addWidget(_qt_label(_qt_t("QT_ADD_ACCOUNT_OFFLINE_DESC", "Offline: pick a username (singleplayer and offline-mode servers only)."), "muted", wrap=True))
+        result = {"value": None}
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+
+        def choose(kind):
+            result["value"] = kind
+            dlg.accept()
+        launcher = _QT_APP_REF[0]
+        row.addWidget(_qt_button("Microsoft", lambda: choose("microsoft"), kind="accent", icon="microsoft", launcher=launcher))
+        row.addWidget(_qt_button(_qt_t("QT_OFFLINE", "Offline"), lambda: choose("offline"), icon="offline", launcher=launcher))
+        row.addWidget(_qt_button(_qt_t("QT_CANCEL", "Cancel"), dlg.reject))
+        lay.addLayout(row)
+        dlg.setMinimumWidth(420)
+        dlg.exec()
+        return result["value"]
+    return _qt_blocking(run)
+
+
+class LoginCancelled(Exception):
+    pass
+
+    # I know that this is illegal but I don't have my azure anymore because it got deleted.
+def _ms_oauth_url():
+    return ("https://login.live.com/oauth20_authorize.srf"
+            f"?client_id={CLIENT_ID}"
+            f"&redirect_uri={REDIRECT_URI}"
+            "&response_type=code"
+            f"&scope={SCOPE}")
+
+
+def _qt_webengine():
+    try:
+        from PySide6 import QtWebEngineWidgets, QtWebEngineCore
+        return QtWebEngineWidgets, QtWebEngineCore
+    except Exception as e:
+        print(f"[Accounts] embedded browser unavailable: {e}")
+        return None, None
+
+
+def _ms_device_code_start():
+    r = requests.post("https://login.live.com/oauth20_connect.srf",
+                      data={"client_id": DEVICE_CLIENT_ID, "scope": SCOPE, "response_type": "device_code"}, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+    if "device_code" not in data:
+        raise Exception(data.get("error_description") or data.get("error") or "device code request failed")
+    return data
+
+
+def _ms_log(msg):
+    try:
+        print(f"[Accounts] {msg}", flush=True)
+    except Exception:
+        pass
+
+
+def _ms_device_code_poll(device_code):
+    r = requests.post("https://login.live.com/oauth20_token.srf", data={"client_id": DEVICE_CLIENT_ID, "device_code": device_code, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}, timeout=20)
+    try:
+        data = r.json()
+    except Exception:
+        data = {}
+    if r.ok and data.get("access_token"):
+        _ms_log("device code approved, got tokens")
+        return "ok", data
+    err = data.get("error", "")
+    if err not in ("authorization_pending",):
+        _ms_log(f"device poll: http {r.status_code} error={err!r} {data.get('error_description', '')[:120]}")
+    if err in ("authorization_pending", "slow_down", ""):
+        return "pending", data
+    return "error", data
+
+
+_XSTS_ERRORS = {
+    "2148916233": "This Microsoft account has no Xbox profile. Sign in once at https://www.xbox.com to create one, then try again.",
+    "2148916235": "Xbox Live is not available in your country or region.",
+    "2148916236": "This account needs adult verification on xbox.com (South Korea).",
+    "2148916237": "This account needs adult verification on xbox.com (South Korea).",
+    "2148916238": "This is a child account. Add it to a Microsoft family group at https://account.microsoft.com/family first.",
+}
+
+
+def _ms_xbox_authenticate(microsoft_token):
+    last = None
+    for ticket in (microsoft_token, f"t={microsoft_token}", f"d={microsoft_token}"):
+        r = requests.post("https://user.auth.xboxlive.com/user/authenticate", json={"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ticket}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}, timeout=30)
+        if r.ok:
+            try:
+                return r.json()["Token"]
+            except Exception:
+                pass
+        last = r
+    raise Exception("Failed to get Xbox Live token: " + (last.text if last is not None else "?"))
+
+
+def _ms_complete_with_tokens(tokens):
+    microsoft_token = tokens["access_token"]
+    microsoft_refresh_token = tokens.get("refresh_token", "")
+    _ms_log("exchanging Microsoft token for Xbox Live token")
+    xbl_token = _ms_xbox_authenticate(microsoft_token)
+    _ms_log("got XBL token, requesting XSTS")
+    r = requests.post("https://xsts.auth.xboxlive.com/xsts/authorize", json={"Properties": {"SandboxId": "RETAIL", "UserTokens": [xbl_token]}, "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}, timeout=30)
+    if not r.ok:
+        try:
+            xerr = str(r.json().get("XErr", ""))
+        except Exception:
+            xerr = ""
+        raise Exception(_XSTS_ERRORS.get(xerr) or ("Failed to get XSTS token: " + r.text))
+    xsts_userhash = r.json()["DisplayClaims"]["xui"][0]["uhs"]
+    xsts_token = r.json()["Token"]
+    _ms_log("got XSTS token, logging into Minecraft services")
+    r = requests.post("https://api.minecraftservices.com/authentication/login_with_xbox", json={"identityToken": f"XBL3.0 x={xsts_userhash};{xsts_token}"}, timeout=30)
+    if not r.ok:
+        raise Exception("Failed to get Minecraft token: " + r.text)
+    minecraft_token = r.json()["access_token"]
+    _ms_log("got Minecraft token, fetching profile")
+    r = _http_session.get("https://api.minecraftservices.com/minecraft/profile", headers={"Authorization": f"Bearer {minecraft_token}"}, timeout=30)
+    if r.status_code == 404:
+        raise Exception("This Microsoft account does not own Minecraft: Java Edition (no profile found).")
+    if not r.ok:
+        raise Exception("Failed to get Minecraft profile: " + r.text)
+    profile_data = r.json()
+    return {"microsoft_refresh_token": microsoft_refresh_token, "minecraft_token": minecraft_token,
+            "username": profile_data["name"], "uuid": profile_data["id"], "last_refresh": time.time()}
+
+    # the emmbeded browser login form
+class QtMicrosoftLoginDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None, mode="embedded"):
+        super().__init__(parent)
+        self.setWindowTitle(_qt_t("QT_MS_LOGIN_TITLE", "Sign in with Microsoft"))
+        self.resize(560, 720)
+        self.auth_code = None
+        self.tokens = None
+        self.error = None
+        self.view = None
+        self.profile = None
+        self._device = None
+        self._poll_token = 0
+        self._relogin = 0
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+        self.stack = QtWidgets.QStackedWidget()
+        lay.addWidget(self.stack, 1)
+        self.embedded_page = QtWidgets.QWidget()
+        el = QtWidgets.QVBoxLayout(self.embedded_page)
+        el.setContentsMargins(0, 0, 0, 0)
+        el.setSpacing(6)
+        self.embedded_status = _qt_label(_qt_t("QT_MS_LOGIN_LOADING", "Loading the Microsoft sign-in page..."), "muted", wrap=True)
+        el.addWidget(self.embedded_status)
+        self.web_host = QtWidgets.QVBoxLayout()
+        el.addLayout(self.web_host, 1)
+        self.stack.addWidget(self.embedded_page)
+        self.browser_page = QtWidgets.QWidget()
+        bl = QtWidgets.QVBoxLayout(self.browser_page)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(10)
+        bl.addWidget(_qt_label(_qt_t("QT_MS_BROWSER_TITLE", "Sign in with your web browser"), "h2"))
+        bl.addWidget(_qt_label(_qt_t("QT_MS_DEVICE_STEPS", "Your browser was opened on microsoft.com/link with this code already filled in. Sign in there and come back - the launcher finishes the login by itself, nothing to copy."), None, wrap=True))
+        self.code_label = QtWidgets.QLabel("…")
+        self.code_label.setAlignment(Qt.AlignCenter)
+        self.code_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.code_label.setStyleSheet("font-size: 26pt; font-weight: 700; letter-spacing: 6px; padding: 10px;")
+        bl.addWidget(self.code_label)
+        self.device_status = _qt_label(_qt_t("QT_MS_DEVICE_WAITING", "Waiting for you to sign in..."), "muted", wrap=True)
+        bl.addWidget(self.device_status)
+        brow = QtWidgets.QHBoxLayout()
+        brow.addWidget(_qt_button(_qt_t("QT_MS_OPEN_BROWSER_AGAIN", "Open the browser again"), self._open_device_browser))
+        brow.addWidget(_qt_button(_qt_t("QT_COPY_CODE", "Copy code"), lambda: QtWidgets.QApplication.clipboard().setText(self.code_label.text())))
+        brow.addStretch(1)
+        bl.addLayout(brow)
+        bl.addWidget(_qt_label(_qt_t("QT_MS_DEVICE_HINT", "If the browser did not open, go to https://www.microsoft.com/link yourself and type the code."), "hint", wrap=True))
+        bl.addStretch(1)
+        self.stack.addWidget(self.browser_page)
+        foot = QtWidgets.QHBoxLayout()
+        self.switch_btn = _qt_button(_qt_t("QT_MS_USE_BROWSER", "Use the browser instead"), self.use_browser, kind="flat")
+        foot.addWidget(self.switch_btn)
+        self.embed_btn = _qt_button(_qt_t("QT_MS_USE_EMBEDDED", "Use the embedded sign-in instead"), self.use_embedded, kind="flat")
+        foot.addWidget(self.embed_btn)
+        foot.addStretch(1)
+        foot.addWidget(_qt_button(_qt_t("QT_CANCEL", "Cancel"), self.reject))
+        lay.addLayout(foot)
+        if mode == "browser":
+            self.use_browser()
+        else:
+            self.use_embedded()
+
+    # I still want the localhost redirect :|
+    def _verification_url(self):
+        if not self._device:
+            return "https://www.microsoft.com/link"
+        base = self._device.get("verification_uri") or "https://www.microsoft.com/link"
+        return f"{base}?otc={self._device.get('user_code', '')}"
+
+    def _open_device_browser(self):
+        open_with_browser(self._verification_url())
+
+    def use_browser(self):
+        self._drop_view()
+        self.stack.setCurrentWidget(self.browser_page)
+        self.switch_btn.setVisible(False)
+        self.embed_btn.setVisible(True)
+        self.resize(560, 420)
+        if self._device is None:
+            self._start_device_flow()
+
+    def _start_device_flow(self):
+        self._poll_token += 1
+        token = self._poll_token
+        self.device_status.setText(_qt_t("QT_MS_DEVICE_REQUESTING", "Requesting a sign-in code..."))
+
+        def done(data):
+            if token != self._poll_token:
+                return
+            self._device = data
+            self._device_started = time.time()
+            _ms_log(f"device code {data.get('user_code')} issued, polling every {data.get('interval', 5)}s")
+            self.code_label.setText(data.get("user_code", "?"))
+            try:
+                QtWidgets.QApplication.clipboard().setText(data.get("user_code", ""))
+            except Exception:
+                pass
+            self.device_status.setText(_qt_t("QT_MS_DEVICE_WAITING", "Waiting for you to sign in..."))
+            self._open_device_browser()
+            self._schedule_poll(token, int(data.get("interval", 5)))
+
+        def fail(err):
+            if token != self._poll_token:
+                return
+            self.device_status.setText(_qt_t("QT_MS_DEVICE_FAIL", "Could not start the browser sign-in: {error}").format(error=err))
+        _qt_run_bg(_ms_device_code_start, done, fail)
+
+    def _schedule_poll(self, token, interval):
+        QTimer.singleShot(max(2, interval) * 1000, lambda: self._poll(token))
+
+    def _poll(self, token):
+        if token != self._poll_token or self._device is None or not self.isVisible():
+            return
+        device_code = self._device["device_code"]
+
+        def done(result):
+            if token != self._poll_token:
+                return
+            state, data = result
+            if state == "ok":
+                self.tokens = data
+                self.accept()
+            elif state == "pending":
+                if time.time() - getattr(self, "_device_started", time.time()) > 20:
+                    self.device_status.setText(_qt_t("QT_MS_DEVICE_STILL_WAITING", "Still waiting. If the browser ended up on account.microsoft.com without asking about the code, open https://www.microsoft.com/link again, type the code above and confirm the Minecraft sign-in."))
+                self._schedule_poll(token, int(self._device.get("interval", 5)) + (5 if data.get("error") == "slow_down" else 0))
+            else:
+                self.error = data.get("error_description") or data.get("error") or "?"
+                self.device_status.setText(_qt_t("QT_MS_DEVICE_FAIL", "Could not start the browser sign-in: {error}").format(error=self.error))
+                if data.get("error") == "expired_token":
+                    self._device = None
+                    self._start_device_flow()
+        _qt_run_bg(lambda: _ms_device_code_poll(device_code), done, lambda e: self._schedule_poll(token, 10))
+
+    def use_embedded(self):
+        widgets, core = _qt_webengine()
+        if widgets is None:
+            self.embed_btn.setVisible(False)
+            self.switch_btn.setVisible(False)
+            self.use_browser()
+            self.embed_btn.setVisible(False)
+            messagebox.showwarning(_qt_t("QT_MS_LOGIN_TITLE", "Sign in with Microsoft"), _qt_t("QT_MS_NO_WEBENGINE", "The embedded browser (Qt WebEngine) is not installed, so the browser sign-in is used instead."), parent=self)
+            return
+        self._poll_token += 1
+        self.stack.setCurrentWidget(self.embedded_page)
+        self.switch_btn.setVisible(True)
+        self.embed_btn.setVisible(False)
+        self.resize(560, 720)
+        if self.view is not None:
+            return
+        try:
+            self.profile = core.QWebEngineProfile(self)
+            self.profile.setHttpUserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+            dialog = self
+
+            class _LoginPage(core.QWebEnginePage):
+                def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+                    if is_main_frame and dialog._handle_nav(url.toString()):
+                        return False
+                    return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+                def createWindow(self, _type):
+                    return self
+
+            page = _LoginPage(self.profile, self)
+            self.view = widgets.QWebEngineView()
+            self.view.setPage(page)
+            self.view.urlChanged.connect(self._on_url)
+            self.view.loadFinished.connect(lambda ok: self.embedded_status.setText("" if ok else _qt_t("QT_MS_LOGIN_LOAD_FAIL", "The sign-in page could not be loaded. Check your connection or use the browser instead.")))
+            self.web_host.addWidget(self.view, 1)
+            self.view.load(QtCore.QUrl(_ms_oauth_url()))
+        except Exception as e:
+            print(f"[Accounts] embedded login failed: {e}")
+            self._drop_view()
+            self.use_browser()
+            self.embed_btn.setVisible(False)
+
+    def _drop_view(self):
+        if self.view is not None:
+            try:
+                self.view.stop()
+                self.view.setPage(None)
+                self.web_host.removeWidget(self.view)
+                self.view.deleteLater()
+            except Exception:
+                pass
+            self.view = None
+
+    def _handle_nav(self, text):
+        low = text.lower()
+        _ms_log("embedded nav: " + text.split("?", 1)[0])
+        if low.startswith(REDIRECT_URI.lower()):
+            code = _extract_code_from_redirect(text)
+            if code:
+                if self.auth_code is None:
+                    self.auth_code = code
+                    _qt_later(self.accept)
+                return True
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(text).query)
+            if query.get("error"):
+                self.error = (query.get("error_description") or query.get("error") or ["?"])[0]
+                _qt_later(self.reject)
+                return True
+            return False
+        host = urllib.parse.urlsplit(text).netloc.lower()
+        if host in ("account.microsoft.com", "www.microsoft.com", "www.xbox.com", "www.minecraft.net") and self.view is not None and self._relogin < 3:
+            self._relogin += 1
+            self.embedded_status.setText(_qt_t("QT_MS_LOGIN_FINISHING", "Finishing the sign-in..."))
+            _qt_later(lambda: self.view.load(QtCore.QUrl(_ms_oauth_url())) if self.view is not None else None)
+            return True
+        return False
+
+    def _on_url(self, url):
+        self._handle_nav(url.toString())
+
+    def accept(self):
+        _ms_log("login dialog accepted (%s)" % ("device tokens" if self.tokens else "auth code" if self.auth_code else "?"))
+        super().accept()
+
+    def done(self, result):
+        self._poll_token += 1
+        self._drop_view()
+        super().done(result)
+
+
+def _ms_token_flow_qt(mode="embedded"):
+    def run():
+        parent = QtWidgets.QApplication.activeWindow()
+        dlg = QtMicrosoftLoginDialog(parent, mode=mode)
+        dlg.exec()
+        if dlg.tokens:
+            return ("tokens", dlg.tokens)
+        if dlg.auth_code:
+            return ("code", dlg.auth_code)
+        if dlg.error and dlg.result() == QtWidgets.QDialog.Accepted:
+            raise Exception(dlg.error)
+        return None
+    result = _qt_blocking(run)
+    if not result:
+        raise LoginCancelled(_qt_t("QT_MS_LOGIN_CANCELLED", "Login cancelled"))
+    kind, value = result
+    if kind == "tokens":
+        data = _ms_complete_with_tokens(value)
+        data["ms_client_id"] = DEVICE_CLIENT_ID
+        return data
+    data = _complete_oauth_flow(value)
+    data["ms_client_id"] = CLIENT_ID
+    return data
+
+
+def _qt_pixmap_from_path(path, size=None):
+    try:
+        pix = QtGui.QPixmap(str(path))
+        if pix.isNull():
+            return None
+        if size:
+            pix = pix.scaled(size[0], size[1], Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return pix
+    except Exception:
+        return None
+
+
+def _qt_pixmap_from_bytes(data, size=None):
+    try:
+        pix = QtGui.QPixmap()
+        if not pix.loadFromData(data):
+            return None
+        if size:
+            pix = pix.scaled(size[0], size[1], Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        return pix
+    except Exception:
+        return None
+
+
+def _on_plasma():
+    desk = (os.environ.get("XDG_CURRENT_DESKTOP", "") + ":" + os.environ.get("DESKTOP_SESSION", "")).lower()
+    return "kde" in desk or "plasma" in desk
+
+
+def _read_kdeglobals():
+    candidates = [Path.home() / ".config" / "kdeglobals", Path("/etc/xdg/kdeglobals")]
+    data = {}
+    for path in candidates:
+        if not path.exists():
+            continue
+        section = None
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1]
+                    continue
+                if "=" in line and section:
+                    key, value = line.split("=", 1)
+                    data.setdefault(section, {}).setdefault(key.strip(), value.strip())
+        except Exception:
+            continue
+    return data
+
+
+def _kde_rgb(value, fallback):
+    try:
+        parts = [int(x) for x in value.split(",")[:3]]
+        if len(parts) == 3:
+            return "#%02x%02x%02x" % tuple(max(0, min(255, p)) for p in parts)
+    except Exception:
+        pass
+    return fallback
+
+
+def _mix_hex(a, b, t):
+    ca = QtGui.QColor(a)
+    cb = QtGui.QColor(b)
+    r = int(ca.red() + (cb.red() - ca.red()) * t)
+    g = int(ca.green() + (cb.green() - ca.green()) * t)
+    bl = int(ca.blue() + (cb.blue() - ca.blue()) * t)
+    return QtGui.QColor(r, g, bl).name()
+
+
+def _plasma_colors():
+    kde = _read_kdeglobals()
+    if not kde:
+        return None
+    win = kde.get("Colors:Window", {})
+    view = kde.get("Colors:View", {})
+    btn = kde.get("Colors:Button", {})
+    sel = kde.get("Colors:Selection", {})
+    bg = _kde_rgb(win.get("BackgroundNormal", ""), "#2a2e32")
+    bg_alt = _kde_rgb(win.get("BackgroundAlternate", ""), bg)
+    fg = _kde_rgb(win.get("ForegroundNormal", ""), "#fcfcfc")
+    fg_inactive = _kde_rgb(win.get("ForegroundInactive", ""), "#a1a9b1")
+    view_bg = _kde_rgb(view.get("BackgroundNormal", ""), "#1b1e20")
+    button_bg = _kde_rgb(btn.get("BackgroundNormal", ""), "#31363b")
+    focus = _kde_rgb(sel.get("DecorationFocus", ""), "#3daee9")
+    accent = _kde_rgb(kde.get("General", {}).get("AccentColor", ""), focus)
+    sel_bg = _kde_rgb(sel.get("BackgroundNormal", ""), accent)
+    sel_fg = _kde_rgb(sel.get("ForegroundNormal", ""), "#fcfcfc")
+    dark = QtGui.QColor(bg).lightness() < 128
+    border = _mix_hex(bg, fg, 0.18)
+    return {
+        "bg_primary": bg,
+        "bg_secondary": bg_alt if bg_alt != bg else _mix_hex(bg, view_bg, 0.5),
+        "bg_tertiary": _mix_hex(bg, fg, 0.06),
+        "bg_section": _mix_hex(bg, fg, 0.08),
+        "bg_hover": _mix_hex(bg, fg, 0.14),
+        "bg_pressed": _mix_hex(bg, fg, 0.04),
+        "bg_input": view_bg,
+        "fg_primary": fg,
+        "fg_secondary": _mix_hex(fg, bg, 0.12),
+        "fg_tertiary": fg_inactive,
+        "fg_disabled": _mix_hex(fg, bg, 0.55),
+        "accent_primary": accent,
+        "accent_hover": _mix_hex(accent, fg, 0.2),
+        "accent_pressed": _mix_hex(accent, bg, 0.2),
+        "border": border,
+        "scrollbar_thumb": _mix_hex(bg, fg, 0.3),
+        "scrollbar_track": bg,
+        "progress_bar": accent,
+        "progress_track": _mix_hex(bg, fg, 0.1),
+        "tab_selected": _mix_hex(bg, fg, 0.1),
+        "tab_unselected": bg,
+        "button_bg": button_bg,
+        "button_fg": fg,
+        "play_button_bg": accent,
+        "play_button_fg": sel_fg,
+        "play_button_hover": _mix_hex(accent, fg, 0.2),
+        "play_button_pressed": _mix_hex(accent, bg, 0.2),
+        "selection_bg": sel_bg,
+        "selection_fg": sel_fg,
+        "focus": focus,
+        "is_dark": dark,
+        "system": True,
+    }
+
+
+QT_THEME_SYSTEM = "System"
+QT_THEME_OLED = "Dark Prism"
+
+
+def _qt_check_icon_path(color, kind="check"):
+    try:
+        cache = Path.home() / ".cache" / "oranglauncher"
+        cache.mkdir(parents=True, exist_ok=True)
+        safe = color.strip("#")
+        path = cache / f"{kind}_{safe}.png"
+        if not path.exists():
+            img = QtGui.QImage(32, 32, QtGui.QImage.Format_ARGB32)
+            img.fill(Qt.transparent)
+            painter = QtGui.QPainter(img)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            if kind == "check":
+                pen = QtGui.QPen(QtGui.QColor(color), 4)
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(pen)
+                painter.drawPolyline([QtCore.QPointF(7, 16), QtCore.QPointF(13, 23), QtCore.QPointF(25, 9)])
+            else:
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QtGui.QColor(color))
+                painter.drawEllipse(QtCore.QRectF(10, 10, 12, 12))
+            painter.end()
+            img.save(str(path))
+        return str(path).replace("\\", "/")
+    except Exception:
+        return ""
+
+
+class QtTheme:
+    def __init__(self, theme_manager):
+        self.tm = theme_manager
+        self.name = None
+        self.colors = {}
+        self.native = False
+
+    def available(self):
+        names = [QT_THEME_SYSTEM] if _on_plasma() else []
+        names += [n for n in self.tm.get_available_themes() if n != QT_THEME_SYSTEM]
+        return names
+
+    def load(self, name):
+        if name == QT_THEME_SYSTEM and not _on_plasma():
+            name = QT_THEME_OLED
+        if name == QT_THEME_SYSTEM:
+            colors = _plasma_colors()
+            if colors is None:
+                colors = self._qt_default_colors()
+            self.colors = colors
+            self.native = True
+            self.name = name
+            self.tm.current_theme = name
+            self.tm.theme_data = {"name": name, "colors": colors, "fonts": {"primary": "Segoe UI", "monospace": "monospace"}}
+            return
+        if not self.tm.load_theme(name):
+            self.tm.load_theme("Arc")
+        self.colors = dict(self.tm.theme_data.get("colors", {}))
+        self.colors["selection_bg"] = self.colors.get("accent_primary")
+        self.colors["selection_fg"] = "#ffffff"
+        self.colors["is_dark"] = QtGui.QColor(self.colors.get("bg_primary", "#000")).lightness() < 128
+        self.colors["system"] = False
+        self.native = False
+        self.name = self.tm.current_theme
+
+    def _qt_default_colors(self):
+        app = QtWidgets.QApplication.instance()
+        pal = app.palette() if app else QtGui.QPalette()
+        bg = pal.color(QtGui.QPalette.Window).name()
+        fg = pal.color(QtGui.QPalette.WindowText).name()
+        base = pal.color(QtGui.QPalette.Base).name()
+        hl = pal.color(QtGui.QPalette.Highlight).name()
+        hl_text = pal.color(QtGui.QPalette.HighlightedText).name()
+        btn = pal.color(QtGui.QPalette.Button).name()
+        dark = QtGui.QColor(bg).lightness() < 128
+        return {
+            "bg_primary": bg, "bg_secondary": _mix_hex(bg, base, 0.5), "bg_tertiary": _mix_hex(bg, fg, 0.06),
+            "bg_section": _mix_hex(bg, fg, 0.08), "bg_hover": _mix_hex(bg, fg, 0.14), "bg_pressed": _mix_hex(bg, fg, 0.04),
+            "bg_input": base, "fg_primary": fg, "fg_secondary": _mix_hex(fg, bg, 0.12), "fg_tertiary": _mix_hex(fg, bg, 0.35),
+            "fg_disabled": _mix_hex(fg, bg, 0.55), "accent_primary": hl, "accent_hover": _mix_hex(hl, fg, 0.2),
+            "accent_pressed": _mix_hex(hl, bg, 0.2), "border": _mix_hex(bg, fg, 0.18), "scrollbar_thumb": _mix_hex(bg, fg, 0.3),
+            "scrollbar_track": bg, "progress_bar": hl, "progress_track": _mix_hex(bg, fg, 0.1), "tab_selected": _mix_hex(bg, fg, 0.1),
+            "tab_unselected": bg, "button_bg": btn, "button_fg": fg, "play_button_bg": hl, "play_button_fg": hl_text,
+            "play_button_hover": _mix_hex(hl, fg, 0.2), "play_button_pressed": _mix_hex(hl, bg, 0.2),
+            "selection_bg": hl, "selection_fg": hl_text, "is_dark": dark, "system": True,
+        }
+
+    def c(self, key, default="#000000"):
+        return self.colors.get(key, default)
+
+    def palette(self):
+        c = self.c
+        pal = QtGui.QPalette()
+        window = QtGui.QColor(c("bg_primary"))
+        text = QtGui.QColor(c("fg_primary"))
+        base = QtGui.QColor(c("bg_input"))
+        button = QtGui.QColor(c("button_bg"))
+        hl = QtGui.QColor(c("selection_bg", c("accent_primary")))
+        hl_text = QtGui.QColor(c("selection_fg", "#ffffff"))
+        disabled = QtGui.QColor(c("fg_disabled"))
+        for group in (QtGui.QPalette.Active, QtGui.QPalette.Inactive, QtGui.QPalette.Disabled):
+            pal.setColor(group, QtGui.QPalette.Window, window)
+            pal.setColor(group, QtGui.QPalette.WindowText, text if group != QtGui.QPalette.Disabled else disabled)
+            pal.setColor(group, QtGui.QPalette.Base, base)
+            pal.setColor(group, QtGui.QPalette.AlternateBase, QtGui.QColor(c("bg_secondary")))
+            pal.setColor(group, QtGui.QPalette.Text, text if group != QtGui.QPalette.Disabled else disabled)
+            pal.setColor(group, QtGui.QPalette.Button, button)
+            pal.setColor(group, QtGui.QPalette.ButtonText, QtGui.QColor(c("button_fg")) if group != QtGui.QPalette.Disabled else disabled)
+            pal.setColor(group, QtGui.QPalette.Highlight, hl)
+            pal.setColor(group, QtGui.QPalette.HighlightedText, hl_text)
+            pal.setColor(group, QtGui.QPalette.ToolTipBase, QtGui.QColor(c("bg_tertiary")))
+            pal.setColor(group, QtGui.QPalette.ToolTipText, text)
+            pal.setColor(group, QtGui.QPalette.PlaceholderText, QtGui.QColor(c("fg_tertiary")))
+            pal.setColor(group, QtGui.QPalette.Link, QtGui.QColor(c("accent_primary")))
+            pal.setColor(group, QtGui.QPalette.Light, QtGui.QColor(c("bg_hover")))
+            pal.setColor(group, QtGui.QPalette.Midlight, QtGui.QColor(c("bg_tertiary")))
+            pal.setColor(group, QtGui.QPalette.Mid, QtGui.QColor(c("border")))
+            pal.setColor(group, QtGui.QPalette.Dark, QtGui.QColor(c("bg_pressed")))
+            pal.setColor(group, QtGui.QPalette.Shadow, QtGui.QColor(c("bg_secondary")))
+        return pal
+
+    def _object_stylesheet(self):
+        c = self.c
+        radius = "6px"
+        card_bg = "transparent" if c("bg_primary").lower() == "#000000" else "rgba(128, 128, 128, 0.06)"
+        return f"""
+        QComboBox {{ combobox-popup: 0; }}
+        QComboBox QAbstractItemView {{ padding: 4px; }}
+        QComboBox QAbstractItemView::item {{ padding: 4px 8px; min-height: 22px; }}
+        QComboBox QAbstractItemView {{ padding: 4px; }}
+        QComboBox QAbstractItemView::item {{ padding: 4px 8px; min-height: 22px; }}
+        QFrame#card {{ background: {card_bg}; border: 1px solid {c('border')}; border-radius: {radius}; }}
+        QFrame#plain {{ background: transparent; border: none; }}
+        QLabel#cardTitle {{ font-size: 13pt; font-weight: 600; color: {c('fg_primary')}; }}
+        QLabel#h1 {{ font-size: 18pt; font-weight: 700; color: {c('fg_primary')}; }}
+        QLabel#h2 {{ font-size: 14pt; font-weight: 600; color: {c('fg_primary')}; }}
+        QLabel#h3 {{ font-size: 11pt; font-weight: 600; color: {c('fg_primary')}; }}
+        QLabel#muted {{ color: {c('fg_tertiary')}; }}
+        QLabel#hint {{ color: {c('fg_tertiary')}; font-size: 8pt; }}
+        QLabel#accent {{ color: {c('accent_primary')}; font-weight: 600; }}
+        QPushButton#accent {{ background: {c('accent_primary')}; color: {c('selection_fg', '#ffffff')}; border: 1px solid {c('accent_pressed')}; border-radius: 3px; padding: 5px 14px; font-weight: 600; }}
+        QPushButton#accent:hover {{ background: {c('accent_hover')}; }}
+        QPushButton#accent:pressed {{ background: {c('accent_pressed')}; }}
+        QPushButton#accent:disabled {{ background: {c('bg_hover')}; color: {c('fg_disabled')}; border-color: {c('border')}; }}
+        QPushButton#play {{ background: {c('play_button_bg')}; color: {c('play_button_fg')}; border: 1px solid {c('play_button_pressed')}; font-weight: 700; font-size: 11pt; padding: 7px 24px; border-radius: 3px; }}
+        QPushButton#play:hover {{ background: {c('play_button_hover')}; }}
+        QPushButton#play:pressed {{ background: {c('play_button_pressed')}; }}
+        QPushButton#play:disabled {{ background: {c('bg_hover')}; color: {c('fg_disabled')}; }}
+        QPushButton#danger {{ background: #b3261e; color: #ffffff; border: 1px solid #8e1d17; border-radius: 4px; padding: 5px 14px; }}
+        QPushButton#danger:hover {{ background: #d13a31; }}
+        QPushButton#flat {{ background: transparent; border: none; padding: 6px 10px; color: {c('fg_secondary')}; border-radius: 4px; }}
+        QPushButton#flat:hover {{ background: {c('bg_hover')}; }}
+        QPushButton#nav {{ background: transparent; border: none; text-align: left; padding: 9px 14px; color: {c('fg_secondary')}; font-size: 11pt; border-radius: {radius}; }}
+        QPushButton#nav:hover {{ background: {c('bg_hover')}; color: {c('fg_primary')}; }}
+        QPushButton#nav:checked {{ background: {c('bg_hover')}; color: {c('fg_primary')}; font-weight: 600; }}
+        QPushButton#topnav {{ background: transparent; border: none; padding: 8px 18px; color: {c('fg_tertiary')}; font-size: 11pt; border-radius: {radius}; }}
+        QPushButton#topnav:hover {{ background: {c('bg_hover')}; color: {c('fg_primary')}; }}
+        QPushButton#topnav:checked {{ background: {c('tab_selected')}; color: {c('fg_primary')}; font-weight: 600; }}
+        QFrame#instanceCard {{ background: {c('bg_secondary')}; border: 2px solid {c('border')}; border-radius: 10px; }}
+        QFrame#instanceCard:hover {{ border-color: {c('bg_hover')}; }}
+        QFrame#instanceCardSelected {{ background: {c('bg_tertiary')}; border: 2px solid {c('accent_primary')}; border-radius: 10px; }}
+        QFrame#resultRow {{ background: {c('bg_secondary')}; border: 1px solid {c('border')}; border-radius: {radius}; }}
+        QFrame#serverRow {{ background: {c('bg_secondary')}; border: 1px solid {c('border')}; border-radius: {radius}; }}
+        QFrame#serverRowSelected {{ background: {c('bg_tertiary')}; border: 1px solid {c('accent_primary')}; border-radius: {radius}; }}
+        QFrame#bottomBar {{ background: {c('bg_secondary')}; border-top: 1px solid {c('border')}; }}
+        QFrame#sideNav {{ background: {c('bg_secondary')}; border-right: 1px solid {c('border')}; }}
+        QFrame#topBar {{ background: {c('bg_secondary')}; border-bottom: 1px solid {c('border')}; }}
+        QLabel#offline {{ background: #cc3333; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-weight: 600; }}
+        QScrollArea {{ border: none; background: transparent; }}
+        QScrollArea > QWidget > QWidget {{ background: transparent; }}
+        """
+
+    def _widget_stylesheet(self):
+        c = self.c
+        radius = "6px"
+        check = _qt_check_icon_path(c("selection_fg", "#ffffff"))
+        dot = _qt_check_icon_path(c("selection_fg", "#ffffff"), "dot")
+        return f"""
+        QWidget {{ font-family: "Segoe UI", "Noto Sans", sans-serif; }}
+        QMainWindow, QDialog {{ background: {c('bg_primary')}; }}
+        QToolTip {{ background: {c('bg_tertiary')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; padding: 4px; }}
+        QPushButton {{ background: {c('button_bg')}; color: {c('button_fg')}; border: 1px solid {c('border')}; border-radius: {radius}; padding: 6px 14px; }}
+        QPushButton:hover {{ background: {c('bg_hover')}; }}
+        QPushButton:pressed {{ background: {c('bg_pressed')}; }}
+        QPushButton:disabled {{ color: {c('fg_disabled')}; }}
+        QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox, QListWidget, QTreeWidget, QTableWidget, QTextBrowser {{ background: {c('bg_input')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; border-radius: {radius}; padding: 4px 6px; selection-background-color: {c('selection_bg', c('accent_primary'))}; selection-color: {c('selection_fg', '#ffffff')}; }}
+        QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{ border: 1px solid {c('accent_primary')}; }}
+        QComboBox::drop-down {{ border: none; width: 22px; }}
+        QComboBox QAbstractItemView {{ background: {c('bg_input')}; color: {c('fg_primary')}; selection-background-color: {c('selection_bg', c('accent_primary'))}; selection-color: {c('selection_fg', '#ffffff')}; border: 1px solid {c('border')}; }}
+        QListWidget::item, QTreeWidget::item {{ padding: 3px; }}
+        QListWidget::item:selected, QTreeWidget::item:selected, QTableWidget::item:selected {{ background: {c('selection_bg', c('accent_primary'))}; color: {c('selection_fg', '#ffffff')}; }}
+        QHeaderView::section {{ background: {c('bg_tertiary')}; color: {c('fg_primary')}; border: none; border-bottom: 1px solid {c('border')}; padding: 5px; }}
+        QTabWidget::pane {{ border: none; background: {c('bg_primary')}; }}
+        QTabBar::tab {{ background: {c('tab_unselected')}; color: {c('fg_tertiary')}; padding: 7px 14px; border: 1px solid transparent; border-bottom: none; border-top-left-radius: {radius}; border-top-right-radius: {radius}; margin-right: 2px; }}
+        QTabBar::tab:selected {{ background: {c('tab_selected')}; color: {c('fg_primary')}; border-color: {c('border')}; }}
+        QTabBar::tab:hover {{ background: {c('bg_hover')}; color: {c('fg_primary')}; }}
+        QProgressBar {{ background: {c('progress_track')}; border: none; border-radius: 4px; height: 8px; text-align: center; color: transparent; }}
+        QProgressBar::chunk {{ background: {c('progress_bar')}; border-radius: 4px; }}
+        QScrollBar:vertical {{ background: {c('scrollbar_track')}; width: 12px; margin: 0; border: none; }}
+        QScrollBar::handle:vertical {{ background: {c('scrollbar_thumb')}; min-height: 24px; border-radius: 5px; margin: 2px; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        QScrollBar:horizontal {{ background: {c('scrollbar_track')}; height: 12px; margin: 0; border: none; }}
+        QScrollBar::handle:horizontal {{ background: {c('scrollbar_thumb')}; min-width: 24px; border-radius: 5px; margin: 2px; }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+        QCheckBox, QRadioButton {{ color: {c('fg_primary')}; spacing: 8px; }}
+        QCheckBox::indicator, QRadioButton::indicator, QTreeView::indicator, QListView::indicator {{ width: 16px; height: 16px; border: 1px solid {c('scrollbar_thumb')}; background: {c('bg_input')}; }}
+        QCheckBox::indicator, QTreeView::indicator, QListView::indicator {{ border-radius: 3px; }}
+        QRadioButton::indicator {{ border-radius: 8px; }}
+        QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: {c('accent_primary')}; }}
+        QCheckBox::indicator:checked, QTreeView::indicator:checked, QListView::indicator:checked {{ background: {c('accent_primary')}; border-color: {c('accent_primary')}; image: url({check}); }}
+        QCheckBox::indicator:indeterminate, QTreeView::indicator:indeterminate {{ background: {c('bg_hover')}; border-color: {c('accent_primary')}; }}
+        QRadioButton::indicator:checked {{ background: {c('accent_primary')}; border-color: {c('accent_primary')}; image: url({dot}); }}
+        QSlider::groove:horizontal {{ height: 6px; background: {c('progress_track')}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {c('accent_primary')}; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }}
+        QSlider::sub-page:horizontal {{ background: {c('accent_primary')}; border-radius: 3px; }}
+        QSplitter::handle {{ background: {c('border')}; }}
+        QMenu {{ background: {c('bg_secondary')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; }}
+        QMenu::item:selected {{ background: {c('bg_hover')}; }}
+        QGroupBox {{ border: 1px solid {c('border')}; border-radius: {radius}; margin-top: 10px; padding-top: 8px; color: {c('fg_primary')}; }}
+        QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+        """
+
+    def _native_polish_stylesheet(self):
+        c = self.c
+        focus = c("focus", c("accent_primary"))
+        check = _qt_check_icon_path(c("selection_fg", "#ffffff"))
+        dot = _qt_check_icon_path(c("selection_fg", "#ffffff"), "dot")
+        return f"""
+        QPushButton {{ background: {c('button_bg')}; color: {c('button_fg')}; border: 1px solid {c('border')}; border-radius: 3px; padding: 5px 12px; }}
+        QPushButton:hover {{ border-color: {focus}; }}
+        QPushButton:pressed {{ background: {c('bg_pressed')}; border-color: {focus}; }}
+        QPushButton:disabled {{ color: {c('fg_disabled')}; }}
+        QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox, QListWidget, QTreeWidget, QTableWidget {{ background: {c('bg_input')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; border-radius: 3px; padding: 4px 6px; selection-background-color: {c('selection_bg')}; selection-color: {c('selection_fg')}; }}
+        QLineEdit:hover, QComboBox:hover, QPlainTextEdit:hover, QTextEdit:hover, QSpinBox:hover {{ border-color: {focus}; }}
+        QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus {{ border: 1px solid {focus}; }}
+        QComboBox::drop-down {{ border: none; width: 22px; }}
+        QComboBox QAbstractItemView {{ background: {c('bg_input')}; color: {c('fg_primary')}; selection-background-color: {c('selection_bg')}; selection-color: {c('selection_fg')}; border: 1px solid {c('border')}; }}
+        QHeaderView::section {{ background: {c('bg_tertiary')}; color: {c('fg_primary')}; border: none; border-bottom: 1px solid {c('border')}; padding: 5px; }}
+        QTabWidget::pane {{ border: none; }}
+        QTabBar::tab {{ background: transparent; color: {c('fg_tertiary')}; padding: 6px 14px; border: 1px solid transparent; border-bottom: none; border-top-left-radius: 3px; border-top-right-radius: 3px; margin-right: 1px; }}
+        QTabBar::tab:selected {{ background: {c('bg_tertiary')}; color: {c('fg_primary')}; border-color: {c('border')}; }}
+        QTabBar::tab:hover {{ color: {c('fg_primary')}; }}
+        QCheckBox {{ spacing: 8px; }}
+        QCheckBox::indicator, QRadioButton::indicator, QTreeView::indicator, QListView::indicator {{ width: 18px; height: 18px; border: 1px solid {c('scrollbar_thumb')}; background: {c('bg_input')}; }}
+        QCheckBox::indicator, QTreeView::indicator, QListView::indicator {{ border-radius: 3px; }}
+        QTreeView::indicator:checked, QListView::indicator:checked {{ background: {focus}; border-color: {focus}; image: url({check}); }}
+        QTreeView::indicator:indeterminate {{ background: {c('bg_hover')}; border-color: {focus}; }}
+        QRadioButton::indicator {{ border-radius: 9px; }}
+        QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: {focus}; }}
+        QCheckBox::indicator:checked {{ background: {focus}; border-color: {focus}; image: url({check}); }}
+        QCheckBox::indicator:indeterminate {{ background: {c('bg_hover')}; border-color: {focus}; }}
+        QRadioButton::indicator:checked {{ background: {focus}; border-color: {focus}; image: url({dot}); }}
+        QProgressBar {{ background: {c('progress_track')}; border: none; border-radius: 3px; text-align: center; color: transparent; }}
+        QProgressBar::chunk {{ background: {focus}; border-radius: 3px; }}
+        QSlider::groove:horizontal {{ height: 6px; background: {c('progress_track')}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {c('button_bg')}; border: 1px solid {focus}; width: 16px; height: 16px; margin: -6px 0; border-radius: 9px; }}
+        QSlider::sub-page:horizontal {{ background: {focus}; border-radius: 3px; }}
+        QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; border: none; }}
+        QScrollBar::handle:vertical {{ background: {c('scrollbar_thumb')}; min-height: 24px; border-radius: 4px; margin: 1px; }}
+        QScrollBar::handle:vertical:hover {{ background: {focus}; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; border: none; }}
+        QScrollBar::handle:horizontal {{ background: {c('scrollbar_thumb')}; min-width: 24px; border-radius: 4px; margin: 1px; }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+        QSplitter::handle {{ background: {c('border')}; }}
+        QToolTip {{ background: {c('bg_tertiary')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; padding: 4px; }}
+        """
+
+    def stylesheet(self):
+        if self.native:
+            if _on_plasma() and getattr(self, "_breeze_loaded", False):
+                return self._object_stylesheet()
+            return self._native_polish_stylesheet() + self._object_stylesheet()
+        return self._widget_stylesheet() + self._object_stylesheet()
+
+    def _plasma_font(self):
+        try:
+            raw = _read_kdeglobals().get("General", {}).get("font", "")
+            if raw:
+                font = QtGui.QFont()
+                if font.fromString(raw):
+                    return font
+        except Exception:
+            pass
+        return None
+
+    def apply(self, app):
+        try:
+            keys = [k.lower() for k in QtWidgets.QStyleFactory.keys()]
+            if self.native:
+                self._breeze_loaded = False
+                if _on_plasma() and "breeze" in keys:
+                    app.setStyle(QtWidgets.QStyleFactory.create("Breeze"))
+                    self._breeze_loaded = app.style().objectName().lower() == "breeze"
+                    if app.style().objectName().lower() == "breeze" and QtGui.QGuiApplication.platformName() and _plasma_colors() is None:
+                        app.setPalette(app.style().standardPalette())
+                    else:
+                        app.setPalette(self.palette())
+                else:
+                    app.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
+                    app.setPalette(self.palette())
+                if _on_plasma():
+                    font = self._plasma_font()
+                    if font is not None:
+                        app.setFont(font)
+                app.setStyleSheet(self.stylesheet())
+                return
+            app.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
+            app.setPalette(self.palette())
+            app.setStyleSheet(self.stylesheet())
+        except Exception as e:
+            print(f"[Qt] theme apply failed: {e}")
+
+
+_QT_ICON_CACHE = {}
+
+
+def _qt_icon(name, size=20, color=None):
+    key = (name, size, color)
+    if key in _QT_ICON_CACHE:
+        return _QT_ICON_CACHE[key]
+    path = find_resource(f"oranglauncher/images/icons/{name}.png")
+    icon = QtGui.QIcon()
+    if path:
+        try:
+            pix = QtGui.QPixmap(str(path)).scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            if color:
+                tinted = QtGui.QPixmap(pix.size())
+                tinted.fill(Qt.transparent)
+                painter = QtGui.QPainter(tinted)
+                painter.drawPixmap(0, 0, pix)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+                painter.fillRect(tinted.rect(), QtGui.QColor(color))
+                painter.end()
+                pix = tinted
+            icon = QtGui.QIcon(pix)
+        except Exception:
+            icon = QtGui.QIcon()
+    _QT_ICON_CACHE[key] = icon
+    return icon
+
+
+def _qt_button(text, on_click=None, kind=None, icon=None, tooltip=None, launcher=None):
+    btn = QtWidgets.QPushButton(text)
+    if kind:
+        btn.setObjectName(kind)
+    if icon:
+        fg = launcher.theme.c("fg_primary") if launcher is not None else None
+        if kind == "accent" and launcher is not None:
+            fg = launcher.theme.c("selection_fg", "#ffffff")
+        btn.setIcon(_qt_icon(icon, 16, fg))
+        btn.setIconSize(QSize(16, 16))
+    if tooltip:
+        btn.setToolTip(tooltip)
+    if on_click:
+        btn.clicked.connect(lambda *_: on_click())
+    btn.setCursor(Qt.PointingHandCursor)
+    return btn
+
+
+def _qt_label(text, kind=None, wrap=False, align=None):
+    lbl = QtWidgets.QLabel(text)
+    if kind:
+        lbl.setObjectName(kind)
+    if wrap:
+        lbl.setWordWrap(True)
+    if align is not None:
+        lbl.setAlignment(align)
+    lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    return lbl
+
+
+class _ElideLabel(QtWidgets.QLabel):
+    def __init__(self, text="", kind=None, parent=None):
+        super().__init__(parent)
+        self._full = text
+        if kind:
+            self.setObjectName(kind)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.setToolTip(text)
+        self.setText(text)
+
+    def minimumSizeHint(self):
+        h = super().minimumSizeHint()
+        return QSize(24, h.height())
+
+    def paintEvent(self, event):
+        rect = self.contentsRect()
+        elided = self.fontMetrics().elidedText(self._full, Qt.ElideRight, rect.width())
+        painter = QtGui.QPainter(self)
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(QtGui.QPalette.WindowText))
+        painter.drawText(rect, int(self.alignment()) | Qt.TextSingleLine, elided)
+
+
+class _Card(QtWidgets.QFrame):
+    def __init__(self, title=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("card")
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(16, 14, 16, 14)
+        outer.setSpacing(8)
+        if title:
+            outer.addWidget(_qt_label(title, "cardTitle"))
+        self.body = QtWidgets.QVBoxLayout()
+        self.body.setSpacing(8)
+        outer.addLayout(self.body)
+
+    def add(self, widget):
+        self.body.addWidget(widget)
+        return widget
+
+    def add_layout(self, layout):
+        self.body.addLayout(layout)
+        return layout
+
+
+class _ToggleRow(QtWidgets.QWidget):
+    def __init__(self, title, description, var, on_change=None, parent=None):
+        super().__init__(parent)
+        self.var = var
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 2, 0, 2)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(_qt_label(title, "h3"))
+        if description:
+            col.addWidget(_qt_label(description, "muted", wrap=True))
+        lay.addLayout(col, 1)
+        self.check = QtWidgets.QCheckBox()
+        self.check.setChecked(bool(var.get()))
+        self.check.setCursor(Qt.PointingHandCursor)
+
+        def changed(state):
+            var.set(bool(self.check.isChecked()))
+            if on_change:
+                try:
+                    on_change()
+                except Exception as e:
+                    print(f"[Toggle] {title}: {e}")
+        self.check.toggled.connect(changed)
+        lay.addWidget(self.check, 0, Qt.AlignVCenter)
+
+    def refresh(self):
+        self.check.blockSignals(True)
+        self.check.setChecked(bool(self.var.get()))
+        self.check.blockSignals(False)
+
+
+def _qt_scroll(widget, horizontal=False):
+    area = QtWidgets.QScrollArea()
+    area.setWidgetResizable(True)
+    area.setWidget(widget)
+    area.setFrameShape(QtWidgets.QFrame.NoFrame)
+    if not horizontal:
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    return area
+
+
+def _qt_page(spacing=14, margins=(28, 22, 28, 22)):
+    page = QtWidgets.QWidget()
+    lay = QtWidgets.QVBoxLayout(page)
+    lay.setContentsMargins(*margins)
+    lay.setSpacing(spacing)
+    return page, lay
+
+
+def _qt_form_row(label_text, widget, hint=None):
+    box = QtWidgets.QWidget()
+    lay = QtWidgets.QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 4)
+    lay.setSpacing(3)
+    lay.addWidget(_qt_label(label_text))
+    if isinstance(widget, QtWidgets.QLayout):
+        lay.addLayout(widget)
+    else:
+        lay.addWidget(widget)
+    if hint:
+        lay.addWidget(_qt_label(hint, "hint", wrap=True))
+    return box
+
+
+def _qt_line_with_browse(line_edit, on_browse, text="Browse"):
+    lay = QtWidgets.QHBoxLayout()
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(line_edit, 1)
+    lay.addWidget(_qt_button(text, on_browse))
+    return lay
+
+
+def _tr(launcher, key, default=None):
+    try:
+        text = launcher._t(key)
+    except Exception:
+        text = key
+    if text == key and default is not None:
+        return default
+    return text
+
+
+def _qt_t(key, default=None):
+    launcher = _QT_APP_REF[0]
+    if launcher is None:
+        return default if default is not None else key
+    return _tr(launcher, key, default)
+
+
+def _human_size(n):
+    try:
+        n = float(n)
+    except Exception:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+class _Worker(QObject):
+    def __init__(self, fn, on_done=None, on_error=None):
+        super().__init__()
+        self.fn = fn
+        self.on_done = on_done
+        self.on_error = on_error
+
+    def start(self):
+        def run():
+            try:
+                result = self.fn()
+            except Exception as e:
+                err = e
+                if not isinstance(e, LoginCancelled):
+                    print(traceback.format_exc())
+                if self.on_error:
+                    _qt_later(lambda: self.on_error(err))
+                return
+            if self.on_done:
+                _qt_later(lambda: self.on_done(result))
+        threading.Thread(target=run, daemon=True).start()
+        return self
+
+
+def _qt_run_bg(fn, on_done=None, on_error=None):
+    return _Worker(fn, on_done, on_error).start()
+
+# this gets updated after launcher update or minecraft update.
+NEWS_URL = "https://oranges.lt/launcher.html"
+
+class QtNewsBrowser(QtWidgets.QTextBrowser):
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.base_url = NEWS_URL
+        self.setOpenLinks(False)
+        self.setOpenExternalLinks(False)
+        self.anchorClicked.connect(lambda url: open_with_browser(url.toString()))
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._bg = None
+        self._resources = {}
+        self.document().setDocumentMargin(18)
+
+    def loadResource(self, rtype, url):
+        key = url.toString()
+        if key in self._resources:
+            return self._resources[key]
+        absolute = urllib.parse.urljoin(self.base_url, key)
+        try:
+            data = _cached_image_get(absolute)
+            img = QtGui.QImage()
+            img.loadFromData(data)
+            if not img.isNull():
+                self._resources[key] = img
+                return img
+        except Exception:
+            pass
+        return super().loadResource(rtype, url)
+
+    def paintEvent(self, event):
+        if self._bg is not None:
+            painter = QtGui.QPainter(self.viewport())
+            painter.drawTiledPixmap(self.viewport().rect(), self._bg)
+            painter.end()
+        super().paintEvent(event)
+
+    def set_background(self, pixmap):
+        self._bg = pixmap
+        self.viewport().update()
+
+
+def _news_html_transform(html, theme, base_url):
+    css_match = re.search(r'<link[^>]+href="([^"]+\.css)"', html)
+    css = ""
+    if css_match:
+        try:
+            css = _http_session.get(urllib.parse.urljoin(base_url, css_match.group(1)), timeout=10).text
+        except Exception:
+            css = ""
+    bg_img = None
+    m = re.search(r"background-image:\s*url\('([^']+)'\)", html)
+    if m:
+        bg_img = urllib.parse.urljoin(base_url, m.group(1))
+    body_bg = "#222222"
+    body_fg = "#e0d0d0"
+    link = "#aaaaff"
+    mb = re.search(r"body\s*\{([^}]*)\}", css)
+    if mb:
+        block = mb.group(1)
+        c1 = re.search(r"background-color:\s*([^;]+);", block)
+        c2 = re.search(r"(?<![-\w])color:\s*([^;]+);", block)
+        if c1:
+            body_bg = c1.group(1).strip()
+        if c2:
+            body_fg = c2.group(1).strip()
+    ma = re.search(r"(?:^|\n)a\s*\{[^}]*?(?<![-\w])color:\s*([^;]+);", css)
+    if ma:
+        link = ma.group(1).strip()
+    html = re.sub(r"<link[^>]+>", "", html)
+    html = re.sub(r'<body[^>]*>', '<body>', html)
+    html = re.sub(r'width="(\d+)px"', r'width="\1"', html)
+
+    def _img_style(m):
+        tag = m.group(0)
+        w = re.search(r"width:\s*(\d+)px", tag)
+        tag = re.sub(r'\s*style="[^"]*"', "", tag)
+        if w and 'width=' not in tag:
+            tag = tag[:-1] + f' width="{w.group(1)}">'
+        return tag
+    html = re.sub(r"<img[^>]*>", _img_style, html)
+    bg_css = "" if bg_img else f"background-color:{body_bg};"
+    style = (f"<style>body{{{bg_css}color:{body_fg};font-family:sans-serif;font-size:10pt;}}"
+             f"a{{color:{link};}} h1{{color:#ffffff;font-size:17pt;}} h3{{color:#ffffff;font-size:12pt;margin-top:12px;}}"
+             f"p{{margin-top:3px;margin-bottom:8px;}} li{{margin-bottom:1px;}} td.sidebar{{padding:10px;}}"
+             f"hr{{color:#111111;background-color:#111111;height:2px;}}</style>")
+    html = html.replace("<head>", "<head>" + style, 1) if "<head>" in html else style + html
+    return html, bg_img, body_bg, body_fg, link
+
+
+class QtNewsPage(QtWidgets.QWidget):
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.web = None
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self.status = _qt_label(_tr(launcher, "LOADING_NEWS", "Loading news..."), "muted")
+        self.status.setContentsMargins(12, 6, 12, 6)
+        lay.addWidget(self.status)
+        self.browser = QtNewsBrowser(launcher, self)
+        lay.addWidget(self.browser, 1)
+        self._loaded = False
+
+    def ensure_loaded(self):
+        if not self._loaded:
+            self._loaded = True
+            self.reload()
+
+    def reload(self):
+        self.status.setVisible(True)
+        self.status.setText(_tr(self.launcher, "LOADING_NEWS", "Loading news..."))
+
+        def work():
+            r = _http_session.get(NEWS_URL, timeout=20)
+            r.raise_for_status()
+            html, bg_url, body_bg, body_fg, link = _news_html_transform(r.text, self.launcher.theme, NEWS_URL)
+            bg_pix = None
+            if bg_url:
+                try:
+                    bg_pix = _cached_image_get(bg_url)
+                except Exception:
+                    bg_pix = None
+            return html, bg_pix, body_bg, body_fg, link
+
+        def done(result):
+            html, bg_bytes, body_bg, body_fg, link = result
+            self.status.setVisible(False)
+            self.browser.setStyleSheet(f"QTextBrowser {{ background: {body_bg}; color: {body_fg}; border: none; border-radius: 0; }}")
+            self.browser.document().setDefaultStyleSheet(f"body, p, li, td, div {{ color: {body_fg}; }} a {{ color: {link}; }}")
+            if bg_bytes:
+                pix = QtGui.QPixmap()
+                pix.loadFromData(bg_bytes)
+                if not pix.isNull():
+                    self.browser.set_background(pix)
+                    self.browser.setStyleSheet(f"QTextBrowser {{ background: transparent; color: {body_fg}; border: none; border-radius: 0; }}")
+                    self.browser.viewport().setAutoFillBackground(False)
+            self.browser.setHtml(html)
+            self.status.setText("")
+
+        def fail(err):
+            self.status.setVisible(True)
+            self.status.setText(_tr(self.launcher, "FAILED_LOAD_NEWS", "Could not load news.") + f" ({err})")
+            self.browser.setHtml(f"<h2>Minecraft News</h2><p>Could not load {NEWS_URL}</p><p>{err}</p>")
+        _qt_run_bg(work, done, fail)
+
+
+class QtLogPage(QtWidgets.QWidget):
+    COLORS = {"error": "#f25c5c", "warning": "#ffc107", "info": "#74c0fc", "success": "#3bc652", None: None}
+
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.filters = {"error": True, "warning": True, "info": True, "success": True, None: True}
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(6)
+        bar = QtWidgets.QHBoxLayout()
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText(_tr(launcher, "LOGS_SEARCH_PLACEHOLDER", "Type to filter logs..."))
+        self.search.setClearButtonEnabled(True)
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(250)
+        self._debounce.timeout.connect(self.rebuild)
+        self.search.textChanged.connect(lambda *_: self._debounce.start())
+        bar.addWidget(self.search, 1)
+        for label_key, tag, color in ((("LOGS_FILTER_ERROR", "Errors"), "error", "#f25c5c"), (("LOGS_FILTER_WARN", "Warnings"), "warning", "#ffc107"), (("LOGS_FILTER_INFO", "Info"), "info", "#74c0fc"), (("LOGS_FILTER_SUCCESS", "Success"), "success", "#3bc652"), (("LOGS_FILTER_OTHER", "Other"), None, launcher.theme.c("fg_tertiary"))):
+            cb = QtWidgets.QCheckBox(_tr(launcher, label_key[0], label_key[1]))
+            cb.setChecked(True)
+            cb.setStyleSheet(f"QCheckBox {{ color: {color}; }}")
+            cb.toggled.connect(lambda checked, t=tag: self._set_filter(t, checked))
+            bar.addWidget(cb)
+        self.mclogs_btn = _qt_button(_tr(launcher, "LOGS_MCLOGS_BTN", "Upload to mclo.gs"), self.upload_mclogs, icon="update", launcher=launcher)
+        bar.addWidget(self.mclogs_btn)
+        bar.addWidget(_qt_button(_tr(launcher, "LOGS_SAVE_BTN", "Save log"), self.export_log, icon="file", launcher=launcher))
+        bar.addWidget(_qt_button(_qt_t("QT_CLEAR", "Clear"), self.clear, icon="trash", launcher=launcher))
+        lay.addLayout(bar)
+        self.text = QtWidgets.QPlainTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setMaximumBlockCount(20000)
+        mono = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        mono.setPointSize(9)
+        self.text.setFont(mono)
+        self.text.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        lay.addWidget(self.text, 1)
+
+    def _set_filter(self, tag, checked):
+        self.filters[tag] = checked
+        self.rebuild()
+
+    @staticmethod
+    def classify(message):
+        plain = re.sub(r'(?:\x1b|\033)\[([0-9;]*)m|\[([0-9;]+)m', '', message)
+        low = plain.lower()
+        m = re.search(r'\[(?:[^\]]+)/([A-Z]+)\]', plain)
+        if m:
+            level = m.group(1)
+            if level in ("ERROR", "FATAL"):
+                return plain, "error"
+            if level == "WARN":
+                return plain, "warning"
+            if level == "INFO":
+                return plain, "info"
+            return plain, None
+        if any(k in low for k in ("[error]", "error:", "exception", "traceback", "failed")):
+            return plain, "error"
+        if any(k in low for k in ("[warn]", "warning")):
+            return plain, "warning"
+        if any(k in low for k in ("success", "done", "finished", "installed", "complete")):
+            return plain, "success"
+        if any(k in low for k in ("[launcher]", "[forge]", "[fabric]", "[quilt]", "[install]", "[updater]", "[lwjgl]", "[java]", "[hook]")):
+            return plain, "info"
+        return plain, None
+
+    def _visible(self, plain, tag):
+        if not self.filters.get(tag, True):
+            return False
+        q = self.search.text().strip().lower()
+        if q and q not in plain.lower():
+            return False
+        return True
+
+    def _append_line(self, plain, tag):
+        color = self.COLORS.get(tag)
+        cursor = self.text.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        fmt = QtGui.QTextCharFormat()
+        if color:
+            fmt.setForeground(QtGui.QColor(color))
+        else:
+            fmt.setForeground(QtGui.QColor(self.launcher.theme.c("fg_secondary")))
+        cursor.insertText(plain + "\n", fmt)
+        self.text.setTextCursor(cursor)
+        self.text.ensureCursorVisible()
+
+    def append(self, message):
+        message = (message or "").rstrip()
+        if not message:
+            return
+        plain, tag = self.classify(message)
+        self.launcher._log_buffer.append((plain, tag))
+        if self._visible(plain, tag):
+            self._append_line(plain, tag)
+
+    def rebuild(self):
+        self.text.clear()
+        for plain, tag in list(self.launcher._log_buffer)[-5000:]:
+            if self._visible(plain, tag):
+                self._append_line(plain, tag)
+
+    def clear(self):
+        self.launcher._log_buffer.clear()
+        self.text.clear()
+
+    def export_log(self):
+        if not self.launcher._log_buffer:
+            messagebox.showinfo(_tr(self.launcher, "LOGS_EXPORT_TITLE", "Export log"), _tr(self.launcher, "LOGS_NO_ENTRIES", "No log entries."))
+            return
+        path = _pick_save_file(defaultextension=".txt", filetypes=[(_qt_t("QT_FT_TEXT", "Text files"), "*.txt"), (_qt_t("QT_FT_ALL", "All files"), "*.*")], initialfile="launcher_log.txt", title=_tr(self.launcher, "LOGS_EXPORT_TITLE", "Export log"))
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                for msg, _ in self.launcher._log_buffer:
+                    f.write(msg + "\n")
+            messagebox.showinfo(_tr(self.launcher, "LOGS_EXPORT_TITLE", "Export log"), _tr(self.launcher, "LOGS_EXPORT_SUCCESS", "Saved") + f"\n{path}")
+        except Exception as e:
+            messagebox.showerror(_tr(self.launcher, "LOGS_EXPORT_TITLE", "Export log"), str(e))
+
+    # feature from modrinth
+    def upload_mclogs(self):
+        if not self.launcher._log_buffer:
+            messagebox.showinfo("mclo.gs", _tr(self.launcher, "LOGS_NO_ENTRIES", "No log entries."))
+            return
+        lines = [msg for msg, _ in self.launcher._log_buffer][-25000:]
+        content = "\n".join(lines)
+        if len(content.encode("utf-8")) > 10 * 1024 * 1024:
+            content = content.encode("utf-8")[-10 * 1024 * 1024:].decode("utf-8", "ignore")
+        self.mclogs_btn.setEnabled(False)
+        self.mclogs_btn.setText(_tr(self.launcher, "LOGS_MCLOGS_UPLOADING", "Uploading..."))
+
+        def work():
+            r = _http_session.post("https://api.mclo.gs/1/log", data={"content": content, "source": "OrangLauncher"}, timeout=20)
+            return r.json()
+
+        def done(data):
+            self.mclogs_btn.setEnabled(True)
+            self.mclogs_btn.setText(_tr(self.launcher, "LOGS_MCLOGS_BTN", "Upload to mclo.gs"))
+            if data.get("success") and data.get("url"):
+                url = data["url"]
+                QtWidgets.QApplication.clipboard().setText(url)
+                if messagebox.askyesno("mclo.gs", f"{_tr(self.launcher, 'LOGS_MCLOGS_SUCCESS', 'Uploaded, link copied to clipboard.')}\n\n{url}\n\n{_tr(self.launcher, 'LOGS_MCLOGS_OPEN', 'Open it in the browser?')}"):
+                    open_with_browser(url)
+            else:
+                messagebox.showerror("mclo.gs", str(data.get("error", "?")))
+
+        def fail(err):
+            self.mclogs_btn.setEnabled(True)
+            self.mclogs_btn.setText(_tr(self.launcher, "LOGS_MCLOGS_BTN", "Upload to mclo.gs"))
+            messagebox.showerror("mclo.gs", str(err))
+        _qt_run_bg(work, done, fail)
+
+
+def _instance_icon_pixmap(launcher, instance, size=64):
+    icon_file = instance.base_path / "icon.txt"
+    path = None
+    if icon_file.exists():
+        try:
+            path = icon_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            path = None
+    if not path or not Path(path).exists():
+        for cand in ("icon.png", "pack.png"):
+            p = instance.base_path / cand
+            if p.exists():
+                path = str(p)
+                break
+    if not path or not Path(path).exists():
+        loader = (instance.mod_loader or "vanilla").lower()
+        if loader in ("vanilla", "none", ""):
+            res = find_resource("oranglauncher/images/minecraft-green.png")
+        else:
+            res = find_resource(f"oranglauncher/images/loaders/{loader}.png") or find_resource("oranglauncher/images/minecraft-blue.png")
+        path = str(res) if res else None
+    if not path:
+        return QtGui.QPixmap()
+    pix = _qt_pixmap_from_path(path, (size, size))
+    return pix if pix is not None else QtGui.QPixmap()
+
+
+class QtInstanceCard(QtWidgets.QFrame):
+    def __init__(self, page, instance, selected):
+        super().__init__()
+        self.page = page
+        self.instance = instance
+        self.setObjectName("instanceCardSelected" if selected else "instanceCard")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedWidth(page.card_width())
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(14, 14, 14, 12)
+        lay.setSpacing(6)
+        top = QtWidgets.QHBoxLayout()
+        icon = QtWidgets.QLabel()
+        icon.setPixmap(_instance_icon_pixmap(page.launcher, instance, 48))
+        icon.setFixedSize(48, 48)
+        icon.setScaledContents(True)
+        top.addWidget(icon)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(_ElideLabel(instance.name, "h3"))
+        loader = (instance.mod_loader or "vanilla").title()
+        col.addWidget(_ElideLabel(f"{instance.version}  ·  {loader}", "muted"))
+        top.addLayout(col, 1)
+        lay.addLayout(top)
+        meta = []
+        try:
+            meta.append(_qt_t("QT_MODS_COUNT", "{n} mods").format(n=instance.get_mod_count()))
+            meta.append(_qt_t("QT_WORLDS_COUNT", "{n} worlds").format(n=instance.get_saves_count()))
+        except Exception:
+            pass
+        if instance.play_time:
+            h, rem = divmod(int(instance.play_time), 3600)
+            meta.append(_qt_t("QT_PLAYED", "{h}h {m}m played").format(h=h, m=rem // 60))
+        lay.addWidget(_ElideLabel("  ·  ".join(meta), "hint"))
+        btns = QtWidgets.QHBoxLayout()
+        btns.setSpacing(6)
+        sel_btn = _qt_button(page.select_text(selected), lambda: page.select_instance(instance.instance_id), kind="accent" if selected else None)
+        sel_btn.setEnabled(not selected)
+        btns.addWidget(sel_btn)
+        edit_btn = _qt_button(page.edit_text(), lambda: page.open_editor(instance), icon="settings", launcher=page.launcher)
+        btns.addWidget(edit_btn)
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        for b in (sel_btn, edit_btn):
+            b.ensurePolished()
+            b.setMinimumWidth(b.sizeHint().width())
+        need = sel_btn.minimumWidth() + edit_btn.minimumWidth() + 6 + 28 + 4
+        if need > page._card_width:
+            page._card_width = need
+            self.setFixedWidth(need)
+
+    def mouseDoubleClickEvent(self, event):
+        self.page.open_editor(self.instance)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.page.select_instance(self.instance.instance_id)
+        super().mousePressEvent(event)
+
+
+class QtInstanceFormDialog(QtWidgets.QDialog):
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.setWindowTitle(_tr(launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"))
+        self.resize(460, 360)
+        self.result_instance = None
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setSpacing(10)
+        form = QtWidgets.QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        self.name = QtWidgets.QLineEdit()
+        base = "My Instance"
+        candidate = base
+        i = 1
+        while launcher.instance_manager.get_instance_by_name(candidate):
+            i += 1
+            candidate = f"{base} {i}"
+        self.name.setText(candidate)
+        form.addRow(_tr(launcher, "GAME_PROFILES_NAME", _qt_t("QT_NAME", "Name")), self.name)
+        self.loader = QtWidgets.QComboBox()
+        self.loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"])
+        form.addRow(_tr(launcher, "GAME_PROFILES_LOADER", _qt_t("QT_MOD_LOADER", "Mod loader")), self.loader)
+        self.version = QtWidgets.QComboBox()
+        self.version.setMaxVisibleItems(14)
+        self.version.setMinimumContentsLength(12)
+        vrow = QtWidgets.QHBoxLayout()
+        vrow.addWidget(self.version, 1)
+        self.snapshots = QtWidgets.QCheckBox(_qt_t("QT_SHOW_SNAPSHOTS", "Snapshots"))
+        vrow.addWidget(self.snapshots)
+        form.addRow(_tr(launcher, "GAME_PROFILES_VERSION", "Minecraft version"), vrow)
+        self.loader_version = QtWidgets.QComboBox()
+        self.loader_version.setEnabled(False)
+        form.addRow(_tr(launcher, "GAME_PROFILES_LOADER_VERSION", _qt_t("QT_LOADER_VERSION", "Loader version")), self.loader_version)
+        self.ram = QtWidgets.QSpinBox()
+        self.ram.setRange(1, max(2, (_get_system_ram_mb() - 1024) // 1024))
+        self.ram.setValue(min(4, self.ram.maximum()))
+        self.ram.setSuffix(" GB")
+        form.addRow(_tr(launcher, "GAME_PROFILES_RAM", _qt_t("QT_MEMORY", "Memory")), self.ram)
+        lay.addLayout(form)
+        self.status = _qt_label("", "hint", wrap=True)
+        lay.addWidget(self.status)
+        lay.addStretch(1)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addStretch(1)
+        btns.addWidget(_qt_button(_tr(launcher, "CANCEL", "Cancel"), self.reject))
+        btns.addWidget(_qt_button(_tr(launcher, "GAME_PROFILES_CREATE_BTN", "Create"), self.submit, kind="accent"))
+        lay.addLayout(btns)
+        self._token = 0
+        self._fill_versions()
+        self.loader.currentTextChanged.connect(lambda *_: self.refresh_loader_versions())
+        self.version.currentTextChanged.connect(lambda *_: self.refresh_loader_versions())
+        self.snapshots.toggled.connect(lambda *_: self._fill_versions())
+
+    def _fill_versions(self):
+        current = self.version.currentText()
+        try:
+            detailed = list(get_available_versions_detailed())
+        except Exception:
+            detailed = []
+        if detailed:
+            allowed = None if self.snapshots.isChecked() else ("release",)
+            ids = [v.id for v in detailed if allowed is None or v.type in allowed]
+        else:
+            ids = self.launcher.version_values()
+        self.version.blockSignals(True)
+        self.version.clear()
+        self.version.addItems(ids)
+        idx = self.version.findText(current) if current else -1
+        self.version.setCurrentIndex(idx if idx >= 0 else 0)
+        self.version.blockSignals(False)
+        if self.version.currentText() != current:
+            self.refresh_loader_versions()
+
+    def refresh_loader_versions(self):
+        loader = self.loader.currentText().lower()
+        mc = self.version.currentText().strip()
+        self.loader_version.clear()
+        if loader == "vanilla":
+            self.loader_version.setEnabled(False)
+            self.status.setText("")
+            return
+        self.loader_version.setEnabled(True)
+        self.loader_version.addItem(_qt_t("QT_LOADING", "Loading…"))
+        self._token += 1
+        token = self._token
+
+        def work():
+            return self.launcher.fetch_loader_versions(loader, mc)
+
+        def done(versions):
+            if token != self._token:
+                return
+            self.loader_version.clear()
+            if versions:
+                self.loader_version.addItems(versions)
+                self.status.setText("")
+            else:
+                self.loader_version.addItem(_tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version"))
+                self.status.setText(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=mc))
+        _qt_run_bg(work, done, lambda e: None)
+
+    def submit(self):
+        name = self.name.text().strip()
+        version = self.version.currentText().strip()
+        loader = self.loader.currentText().lower()
+        if not name or not version:
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_INVALID_TITLE", "Invalid"), _tr(self.launcher, "GAME_PROFILES_INVALID_MSG", "Name and version are required."), parent=self)
+            return
+        if not self.launcher.validate_version(version):
+            return
+        lv = self.loader_version.currentText().strip()
+        if loader != "vanilla" and lv in ("", "Loading…", _qt_t("QT_LOADING", "Loading…"), _tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version")):
+            messagebox.showerror(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_TITLE", "Loader not available"),
+                                 _tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=version), parent=self)
+            return
+        if loader == "vanilla":
+            lv = None
+        try:
+            inst = self.launcher.instance_manager.create_instance(name, version, loader, ram=f"{self.ram.value()}G", loader_version=lv)
+        except ValueError as e:
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"), str(e), parent=self)
+            return
+        except Exception as e:
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"), str(e), parent=self)
+            return
+        if inst is not None:
+            try:
+                self.launcher._apply_sharing_for_instance(inst)
+            except Exception as e:
+                print(f"[Sharing] {e}")
+        self.result_instance = inst
+        self.accept()
+
+
+class QtInstancesPage(QtWidgets.QWidget):
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.instance_manager = launcher.instance_manager
+        self.stack = QtWidgets.QStackedLayout(self)
+        self.stack.setContentsMargins(0, 0, 0, 0)
+        self.list_page = QtWidgets.QWidget()
+        self.stack.addWidget(self.list_page)
+        self.editor = None
+        self._build_list()
+        self.instance_manager.register_callback(lambda: _qt_later(self.refresh))
+        self._fingerprint = None
+
+    def _build_list(self):
+        lay = QtWidgets.QVBoxLayout(self.list_page)
+        lay.setContentsMargins(18, 14, 18, 12)
+        lay.setSpacing(10)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(_qt_label(_tr(self.launcher, "GAME_PROFILES_TITLE", "Instances"), "h1"))
+        head.addStretch(1)
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText(_qt_t("QT_FILTER_INSTANCES", "Filter instances..."))
+        self.search.setClearButtonEnabled(True)
+        self.search.setFixedWidth(240)
+        self.search.textChanged.connect(lambda *_: self.refresh(force=True))
+        head.addWidget(self.search)
+        lay.addLayout(head)
+        self.grid_host = QtWidgets.QWidget()
+        self.grid = QtWidgets.QGridLayout(self.grid_host)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(12)
+        self.grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.scroll = _qt_scroll(self.grid_host)
+        lay.addWidget(self.scroll, 1)
+        bar = QtWidgets.QHBoxLayout()
+        L = self.launcher
+        bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_NEW", "New"), self.new_instance, kind="accent", icon="plus", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_DUPLICATE", "Duplicate"), self.duplicate_selected, icon="dublicate", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_DELETE", _qt_t("QT_DELETE", "Delete")), self.delete_selected, icon="trash", launcher=L))
+        bar.addWidget(_qt_button(_qt_t("QT_IMPORT", "Import"), self.import_instance, icon="file", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "MODS_IMPORT_MRPACK_BTN", "Import .mrpack"), self.import_mrpack, icon="mrpack", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_EDIT", _qt_t("QT_EDIT", "Edit")), self.edit_selected, icon="settings", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "RES_SH_OPEN_FOLDER", "Open folder"), self.open_selected_folder, icon="folder", launcher=L))
+        bar.addStretch(1)
+        lay.addLayout(bar)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        _qt_later(self.refresh)
+
+    def select_text(self, selected):
+        return _qt_t("QT_SELECTED", "Selected") if selected else _tr(self.launcher, "GAME_PROFILES_SELECT", "Select")
+
+    def edit_text(self):
+        return _tr(self.launcher, "GAME_PROFILES_EDIT", _qt_t("QT_EDIT", "Edit"))
+
+    def card_width(self):
+        cached = getattr(self, "_card_width", None)
+        if cached:
+            return cached
+        probe = QtWidgets.QPushButton(self)
+        probe.hide()
+        probe.ensurePolished()
+        widths = []
+        for text, icon in ((self.select_text(False), False), (self.select_text(True), False), (self.edit_text(), True)):
+            probe.setText(text)
+            widths.append(probe.sizeHint().width() + (24 if icon else 0))
+        probe.deleteLater()
+        need = max(widths[0], widths[1]) + widths[2] + 28 + 6 + 12
+        self._card_width = max(250, min(need, 420))
+        return self._card_width
+
+    def _columns(self):
+        width = max(self.scroll.viewport().width(), 300)
+        return max(1, width // (self.card_width() + 12))
+
+    def refresh(self, force=False):
+        q = self.search.text().strip().lower()
+        instances = [i for i in self.instance_manager.instances.values() if not q or q in i.name.lower()]
+        instances.sort(key=lambda i: (i.last_played or "", i.name), reverse=True)
+        fp = (tuple((i.instance_id, i.name, i.version, i.mod_loader, i.play_time, i.last_played) for i in instances),
+              self.instance_manager.selected_instance_id, self._columns())
+        if fp == self._fingerprint and not force:
+            return
+        self._fingerprint = fp
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        if not instances:
+            empty = _qt_label(_tr(self.launcher, "GAME_PROFILES_NO_PROFILES", _qt_t("QT_NO_INSTANCES", "No instances yet. Press New to create one, or Import to add a modpack.")), "muted", wrap=True)
+            self.grid.addWidget(empty, 0, 0)
+            return
+        cards = [QtInstanceCard(self, inst, inst.instance_id == self.instance_manager.selected_instance_id) for inst in instances]
+        cols = self._columns()
+        for idx, card in enumerate(cards):
+            card.setFixedWidth(self._card_width)
+            self.grid.addWidget(card, idx // cols, idx % cols)
+
+    def select_instance(self, instance_id):
+        if self.instance_manager.selected_instance_id == instance_id:
+            return
+        self.instance_manager.set_selected_instance(instance_id)
+        self.launcher.refresh_instance_display()
+        self.refresh(force=True)
+
+    def selected(self):
+        return self.instance_manager.get_selected_instance()
+
+    def new_instance(self):
+        dlg = QtInstanceFormDialog(self.launcher, self)
+        if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.result_instance is not None:
+            self.instance_manager.set_selected_instance(dlg.result_instance.instance_id)
+            self.launcher.refresh_instance_display()
+            self.refresh(force=True)
+
+    def duplicate_selected(self):
+        source = self.selected()
+        if not source:
+            messagebox.showinfo(_tr(self.launcher, "GAME_PROFILES_DUPLICATE", "Duplicate"), _tr(self.launcher, "GAME_PROFILES_DUPLICATE_SELECT_MSG", _qt_t("QT_SELECT_INSTANCE_FIRST", "Select an instance first.")))
+            return
+        base = f"{source.name} Copy"
+        candidate = base
+        i = 2
+        while self.instance_manager.get_instance_by_name(candidate):
+            candidate = f"{base} {i}"
+            i += 1
+        try:
+            dup = self.instance_manager.create_instance(candidate, source.version, source.mod_loader, ram=source.ram, java_args=source.java_args, loader_version=source.loader_version)
+            dup.java_path = source.java_path
+            dup.env_vars = source.env_vars
+            dup.opts = dict(source.opts)
+            self.instance_manager.save_instances()
+        except Exception as e:
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_DUPLICATE", "Duplicate"), str(e))
+            return
+        self.launcher.set_status(_qt_t("QT_COPYING_FILES", "Copying files..."))
+
+        def work():
+            for rel in ("mods", "config", "resourcepacks", "shaderpacks", "saves", "options.txt", "servers.dat"):
+                src = source.minecraft_dir / rel
+                dst = dup.minecraft_dir / rel
+                try:
+                    if src.is_symlink() or not src.exists():
+                        continue
+                    if src.is_dir():
+                        if dst.exists():
+                            shutil.rmtree(dst)
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+                except Exception as e:
+                    print(f"[Duplicate] {rel}: {e}")
+            for extra in ("icon.png", "icon.txt", "modpack.json"):
+                src = source.base_path / extra
+                if src.exists():
+                    try:
+                        shutil.copy2(src, dup.base_path / extra)
+                    except Exception:
+                        pass
+            icon_txt = dup.base_path / "icon.txt"
+            if icon_txt.exists() and (dup.base_path / "icon.png").exists():
+                icon_txt.write_text(str(dup.base_path / "icon.png"), encoding="utf-8")
+
+        def done(_):
+            self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+            self.instance_manager.set_selected_instance(dup.instance_id)
+            self.launcher.refresh_instance_display()
+            self.refresh(force=True)
+        _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_DUPLICATE", "Duplicate"), str(e))))
+
+    def delete_selected(self):
+        inst = self.selected()
+        if not inst:
+            messagebox.showinfo(_tr(self.launcher, "GAME_PROFILES_DELETE", _qt_t("QT_DELETE", "Delete")), _qt_t("QT_SELECT_INSTANCE_FIRST", "Select an instance first."))
+            return
+        self.delete_instance(inst)
+
+    def delete_instance(self, inst):
+        if not messagebox.askyesno(_tr(self.launcher, "GAME_PROFILES_DELETE_CONFIRM_TITLE", "Delete instance"),
+                                   _tr(self.launcher, "GAME_PROFILES_DELETE_CONFIRM_MSG", "Delete '{name}' and all of its files?").format(name=inst.name)):
+            return
+        self.instance_manager.remove_instance(inst.instance_id)
+        self.launcher.refresh_instance_display()
+        self.show_list()
+        self.refresh(force=True)
+
+    def edit_selected(self):
+        inst = self.selected()
+        if not inst:
+            messagebox.showinfo(_tr(self.launcher, "GAME_PROFILES_EDIT", _qt_t("QT_EDIT", "Edit")), _qt_t("QT_SELECT_INSTANCE_FIRST", "Select an instance first."))
+            return
+        self.open_editor(inst)
+
+    def open_selected_folder(self):
+        inst = self.selected()
+        if not inst:
+            messagebox.showinfo(_tr(self.launcher, "RES_SH_OPEN_FOLDER", "Open folder"), _qt_t("QT_SELECT_INSTANCE_FIRST", "Select an instance first."))
+            return
+        inst.minecraft_dir.mkdir(parents=True, exist_ok=True)
+        open_path_native(inst.minecraft_dir)
+
+    def open_editor(self, inst):
+        if self.editor is None:
+            self.editor = QtInstanceEditor(self.launcher, self)
+            self.stack.addWidget(self.editor)
+        self.editor.open(inst)
+        self.stack.setCurrentWidget(self.editor)
+
+    def show_list(self):
+        self.stack.setCurrentWidget(self.list_page)
+        self.refresh(force=True)
+
+    def import_instance(self):
+        path = _pick_open_file(title=_qt_t("QT_IMPORT_INSTANCE_OR_PACK", "Import instance or pack"), filetypes=[(_qt_t("QT_FT_INSTANCES_PACKS", "Instances and packs"), "*.zip *.orangpack *.mrpack"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not path:
+            return
+        low = path.lower()
+        if low.endswith((ORANGPACK_EXT, ".mrpack")):
+            self.launcher._do_import_mrpack_path(path)
+            return
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                names = set(zf.namelist())
+            if "instance.json" not in names and ("modrinth.index.json" in names or ORANGPACK_INDEX in names):
+                self.launcher._do_import_mrpack_path(path)
+                return
+            if "instance.json" not in names and "manifest.json" in names:
+                self.launcher._do_import_curseforge_path(path)
+                return
+        except Exception:
+            pass
+        self.launcher.set_status(_qt_t("QT_IMPORTING_INSTANCE", "Importing instance..."))
+        def work():
+            new_id = str(uuid_module.uuid4())
+            dest = InstanceManager.get_instances_dir() / new_id
+            dest.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(path, "r") as zf:
+                zf.extractall(dest)
+            inst_json = dest / "instance.json"
+            if not inst_json.exists():
+                raise FileNotFoundError(_qt_t("QT_NOT_AN_EXPORT", "instance.json not found in zip - not a valid OrangLauncher export."))
+            data = json.loads(inst_json.read_text(encoding="utf-8"))
+            data["instance_id"] = new_id
+            data["base_path"] = str(dest)
+            data["minecraft_dir"] = str(dest / ".minecraft")
+            base_name = data.get("name") or "Imported"
+            candidate = base_name
+            i = 2
+            while self.instance_manager.get_instance_by_name(candidate):
+                candidate = f"{base_name} {i}"
+                i += 1
+            data["name"] = candidate
+            inst_json.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            instance = MinecraftInstance.from_dict(data)
+            self.instance_manager.instances[new_id] = instance
+            self.instance_manager.save_instances()
+            self.launcher._apply_sharing_for_instance(instance)
+            return instance
+        def done(instance):
+            self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+            self.launcher.refresh_instance_display()
+            self.refresh(force=True)
+            messagebox.showinfo(_qt_t("QT_IMPORT", "Import"), _qt_t("QT_IMPORTED_AS", "Imported: {name}").format(name=instance.name))
+        _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), str(e))))
+    def import_mrpack(self):
+        path = _pick_open_file(title=_tr(self.launcher, "MODS_IMPORT_TITLE", "Import modpack"), filetypes=[(_qt_t("QT_FT_MODPACKS", "Modpacks"), "*.mrpack *.orangpack"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if path:
+            self.launcher._do_import_mrpack_path(path)
+_MOD_META_CACHE = {}
+
+def _toml_loads_lenient(text):
+    try:
+        import tomllib
+        return tomllib.loads(text)
+    except Exception:
+        pass
+    mods = []
+    current = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[[mods]]"):
+            current = {}
+            mods.append(current)
+            continue
+        if line.startswith("[") or current is None or "=" not in line:
+            if line.startswith("["):
+                current = None
+            continue
+        key, _, value = line.partition("=")
+        value = value.strip()
+        if value[:1] in ("'", '"'):
+            value = value[1:].split(value[0])[0]
+        current[key.strip()] = value
+    return {"mods": mods}
+
+
+
+
+
+
+
+
+
+def _manifest_value(zf, key):
+    try:
+        for line in zf.read("META-INF/MANIFEST.MF").decode("utf-8", "replace").splitlines():
+            if line.lower().startswith(key.lower() + ":"):
+                return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return ""
+
+def read_mod_metadata(path):
+    path = Path(path)
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_size, int(st.st_mtime))
+    cached = _MOD_META_CACHE.get(key)
+    if cached is not None:
+        return cached
+    meta = {}
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+
+            def load_json(name):
+                raw = zf.read(name).decode("utf-8-sig", "replace")
+                try:
+                    return json.loads(raw, strict=False)
+                except Exception:
+                    raw = re.sub(r",\s*([}\]])", r"\1", raw)
+                    return json.loads(raw, strict=False)
+            if "fabric.mod.json" in names:
+                data = load_json("fabric.mod.json")
+                meta = {"name": data.get("name") or data.get("id") or "", "version": str(data.get("version") or ""), "id": data.get("id") or "", "loader": "fabric", "description": data.get("description") or ""}
+            elif "quilt.mod.json" in names:
+                data = load_json("quilt.mod.json").get("quilt_loader", {})
+                md = data.get("metadata", {}) or {}
+                meta = {"name": md.get("name") or data.get("id") or "", "version": str(data.get("version") or ""), "id": data.get("id") or "", "loader": "quilt", "description": md.get("description") or ""}
+            else:
+                toml_name = next((n for n in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml") if n in names), None)
+                if toml_name:
+                    data = _toml_loads_lenient(zf.read(toml_name).decode("utf-8-sig", "replace"))
+                    mods = data.get("mods") or []
+                    if mods:
+                        first = mods[0]
+                        version = str(first.get("version") or "")
+                        if "${" in version or not version:
+                            version = _manifest_value(zf, "Implementation-Version") or version.replace("${file.jarVersion}", "").strip("${}")
+                        meta = {"name": first.get("displayName") or first.get("modId") or "", "version": version, "id": first.get("modId") or "",
+                                "loader": "neoforge" if "neoforge" in toml_name else "forge", "description": str(first.get("description") or "").strip()}
+                elif "mcmod.info" in names:
+                    data = load_json("mcmod.info")
+                    if isinstance(data, dict):
+                        data = data.get("modList") or []
+                    if isinstance(data, list) and data:
+                        first = data[0] or {}
+                        meta = {"name": first.get("name") or first.get("modid") or "", "version": str(first.get("version") or ""), "id": first.get("modid") or "",
+                                "loader": "forge", "description": first.get("description") or ""}
+                elif "META-INF/MANIFEST.MF" in names:
+                    title = _manifest_value(zf, "Implementation-Title") or _manifest_value(zf, "Specification-Title")
+                    if title:
+                        meta = {"name": title, "version": _manifest_value(zf, "Implementation-Version"), "id": "", "loader": "", "description": ""}
+    except Exception as e:
+        print(f"[Mods] metadata read failed for {path.name}: {e}")
+        meta = {}
+    if meta.get("name"):
+        meta["name"] = str(meta["name"]).strip()
+    _MOD_META_CACHE[key] = meta
+    return meta
+# modding tab
+class QtModsPanel(QtWidgets.QWidget):
+    def __init__(self, editor, parent=None):
+        super().__init__(parent)
+        self.editor = editor
+        self.launcher = editor.launcher
+        self.instance = None
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+        head = QtWidgets.QHBoxLayout()
+        self.info = _qt_label("", "h3")
+        head.addWidget(self.info)
+        self.count = _qt_label("", "muted")
+        head.addWidget(self.count)
+        head.addStretch(1)
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText(_qt_t("QT_FILTER_MODS", "Filter mods..."))
+        self.search.setClearButtonEnabled(True)
+        self.search.setFixedWidth(220)
+        self.search.textChanged.connect(lambda *_: self.refresh())
+        head.addWidget(self.search)
+        lay.addLayout(head)
+        self.warning = _qt_label(_tr(self.launcher, "MODS_LOADER_WARNING", "This instance runs vanilla Minecraft. Mods need Forge, NeoForge, Fabric or Quilt (Versions tab)."), "accent", wrap=True)
+        lay.addWidget(self.warning)
+        self.list = QtWidgets.QTreeWidget()
+        self.list.setHeaderLabels([_qt_t("QT_MOD_NAME", "Mod"), _qt_t("QT_VERSION", "Version"), _qt_t("QT_MOD_FILE", "File")])
+        self.list.setRootIsDecorated(False)
+        self.list.setAlternatingRowColors(False)
+        self.list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        hh = self.list.header()
+        hh.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        self.list.itemSelectionChanged.connect(self._on_select)
+        self.list.itemDoubleClicked.connect(lambda item, col: self.toggle_selected())
+        lay.addWidget(self.list, 1)
+        self.selected_info = _qt_label(_tr(self.launcher, "MODS_SELECT_MOD_INFO", "Select a mod to see details."), "hint")
+        self.selected_info.setWordWrap(True)
+        lay.addWidget(self.selected_info)
+        self._meta_token = 0
+        bar = QtWidgets.QHBoxLayout()
+        L = self.launcher
+        bar.addWidget(_qt_button(_tr(L, "MODS_ADD_BTN", "Add mods"), self.add_mods, kind="accent", icon="plus", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "MODS_REMOVE_BTN", "Remove"), self.remove_selected, icon="trash", launcher=L))
+        bar.addWidget(_qt_button(_qt_t("QT_ENABLE_DISABLE", "Enable / disable"), self.toggle_selected, icon="switch", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "MODS_UPDATE_BTN", "Update mods"), self.update_mods, icon="update", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "MODS_RESTORE_BACKUPS", "Restore backups"), self.restore_backups, icon="refresh", launcher=L))
+        bar.addWidget(_qt_button(_tr(L, "MODS_OPEN_FOLDER_BTN", "Open folder"), self.open_folder, icon="folder", launcher=L))
+        bar.addWidget(_qt_button(_qt_t("QT_GET_MODS", "Get mods (Modrinth)"), self.go_content, icon="file", launcher=L))
+        bar.addStretch(1)
+        lay.addLayout(bar)
+
+# btw the QT is new like addon from where it got to pyside, don't trust it fully
+
+    def load(self, instance):
+        self.instance = instance
+        self.refresh()
+
+    def _mods_dir(self):
+        d = self.instance.mods_dir
+        return d.resolve() if d.is_symlink() else d
+
+    def refresh(self):
+        self.list.clear()
+        if self.instance is None:
+            return
+        inst = self.instance
+        self.info.setText(f"{inst.name}  ·  {inst.version}  ·  {(inst.mod_loader or 'vanilla').title()}")
+        self.warning.setVisible((inst.mod_loader or "vanilla").lower() in ("vanilla", "none", ""))
+        d = self._mods_dir()
+        q = self.search.text().strip().lower()
+        mods = []
+        if d.exists():
+            for f in sorted(d.iterdir(), key=lambda p: p.name.lower()):
+                if not f.is_file():
+                    continue
+                low = f.name.lower()
+                if low.endswith(".jar") or low.endswith(".jar.disabled"):
+                    mods.append(f)
+        disabled_color = QtGui.QColor(self.launcher.theme.c("fg_disabled"))
+        disabled_tip = _qt_t("QT_MOD_DISABLED_TIP", "Disabled (renamed to .jar.disabled)")
+        rows = {}
+        for f in mods:
+            cached = _MOD_META_CACHE.get((str(f), f.stat().st_size, int(f.stat().st_mtime))) if f.exists() else None
+            name = (cached or {}).get("name") or f.name
+            version = (cached or {}).get("version") or ""
+            if q and q not in f.name.lower() and q not in name.lower():
+                continue
+            item = QtWidgets.QTreeWidgetItem([name, version, f.name])
+            item.setData(0, Qt.UserRole, str(f))
+            font = item.font(0)
+            font.setBold(True)
+            item.setFont(0, font)
+            if f.name.lower().endswith(".disabled"):
+                for c in range(3):
+                    item.setForeground(c, disabled_color)
+                item.setToolTip(0, disabled_tip)
+            self.list.addTopLevelItem(item)
+            rows[str(f)] = item
+        self.count.setText(_tr(self.launcher, "MODS_COUNT", "{n} mods").format(n=len(mods)) if len(mods) else _tr(self.launcher, "MODS_NONE_INSTALLED", "No mods installed"))
+        self._meta_token += 1
+        token = self._meta_token
+        pending = [f for f in mods if str(f) in rows and _MOD_META_CACHE.get((str(f), f.stat().st_size, int(f.stat().st_mtime))) is None]
+        if not pending:
+            return
+
+        def work():
+            out = []
+            for f in pending:
+                if token != self._meta_token:
+                    break
+                out.append((str(f), read_mod_metadata(f)))
+            return out
+
+        def done(results):
+            if token != self._meta_token:
+                return
+            for path, meta in results:
+                item = rows.get(path)
+                if item is None or not meta.get("name"):
+                    continue
+                try:
+                    item.setText(0, meta["name"])
+                    item.setText(1, meta.get("version") or "")
+                    if meta.get("description"):
+                        item.setToolTip(0, meta["description"][:400])
+                except RuntimeError:
+                    return
+            if q:
+                for path, meta in results:
+                    item = rows.get(path)
+                    if item is not None and q not in os.path.basename(path).lower() and q not in (meta.get("name") or "").lower():
+                        item.setHidden(True)
+        _qt_run_bg(work, done, lambda e: None)
+
+    def _selected_paths(self):
+        return [Path(item.data(0, Qt.UserRole)) for item in self.list.selectedItems() if not item.isHidden()]
+
+    def _on_select(self):
+        paths = self._selected_paths()
+        if not paths:
+            self.selected_info.setText(_tr(self.launcher, "MODS_SELECT_MOD_INFO", "Select a mod to see details."))
+        elif len(paths) == 1:
+            p = paths[0]
+            meta = read_mod_metadata(p) if p.exists() else {}
+            parts = [meta.get("name") or p.name]
+            if meta.get("version"):
+                parts.append("v" + meta["version"])
+            if meta.get("id"):
+                parts.append(meta["id"])
+            if meta.get("loader"):
+                parts.append(meta["loader"])
+            parts.append(p.name)
+            try:
+                parts.append(_human_size(p.stat().st_size))
+            except Exception:
+                pass
+            text = "  ·  ".join(parts)
+            if meta.get("description"):
+                text += "\n" + meta["description"][:300]
+            self.selected_info.setText(text)
+        else:
+            self.selected_info.setText(_qt_t("QT_MODS_SELECTED", "{n} mods selected").format(n=len(paths)))
+
+    # picker
+    def add_mods(self):
+        if (self.instance.mod_loader or "vanilla").lower() in ("vanilla", "none", ""):
+            if not messagebox.askyesno(_tr(self.launcher, "MODS_NO_LOADER_TITLE", "No mod loader"), _tr(self.launcher, "MODS_NO_LOADER_MSG", "This instance has no mod loader, mods will not load. Add them anyway?")):
+                return
+        files = _pick_open_files(title=_tr(self.launcher, "MODS_FILE_SELECT_TITLE", "Select mods"), filetypes=[(_qt_t("QT_FT_MODS", "Mod files"), "*.jar *.zip"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not files:
+            return
+        d = self._mods_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        added = 0
+        for f in files:
+            try:
+                shutil.copy2(f, d / os.path.basename(f))
+                added += 1
+            except Exception as e:
+                print(f"[Mods] add {f}: {e}")
+        self.refresh()
+        self.launcher.set_status(_qt_t("QT_MODS_ADDED", "Added {n} mod(s)").format(n=added))
+
+    def remove_selected(self):
+        paths = self._selected_paths()
+        if not paths:
+            messagebox.showinfo(_tr(self.launcher, "MODS_REMOVE_TITLE", "Remove mods"), _tr(self.launcher, "MODS_REMOVE_NONE", "Select mods first."))
+            return
+        msg = _tr(self.launcher, "MODS_REMOVE_CONFIRM_SINGLE", "Remove {name}?").format(name=paths[0].name) if len(paths) == 1 else _tr(self.launcher, "MODS_REMOVE_CONFIRM_MULTI", "Remove {count} mods?").format(count=len(paths))
+        if not messagebox.askyesno(_tr(self.launcher, "MODS_REMOVE_CONFIRM_TITLE", "Remove"), msg):
+            return
+        for p in paths:
+            try:
+                p.unlink()
+            except Exception as e:
+                print(f"[Mods] remove {p}: {e}")
+        self.refresh()
+
+    def toggle_selected(self):
+        paths = self._selected_paths()
+        if not paths:
+            return
+        for p in paths:
+            try:
+                if p.name.lower().endswith(".disabled"):
+                    p.rename(p.with_name(p.name[:-len(".disabled")]))
+                else:
+                    p.rename(p.with_name(p.name + ".disabled"))
+            except Exception as e:
+                print(f"[Mods] toggle {p}: {e}")
+        self.refresh()
+
+    def open_folder(self):
+        d = self._mods_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        open_path_native(d)
+
+    def go_content(self):
+        self.launcher.instance_manager.set_selected_instance(self.instance.instance_id)
+        self.launcher.show_content("mod")
+
+    def restore_backups(self):
+        d = self._mods_dir()
+        baks = list(d.glob("*.jar.bak")) if d.exists() else []
+        if not baks:
+            messagebox.showinfo(_tr(self.launcher, "MODS_BACKUP_NONE", "No backups"), _tr(self.launcher, "MODS_BACKUP_NONE_MSG", "No .bak backup files found."))
+            return
+        if not messagebox.askyesno(_tr(self.launcher, "MODS_BACKUP_RESTORE_TITLE", "Restore backups"), _tr(self.launcher, "MODS_BACKUP_RESTORE_CONFIRM", "Restore {count} backup(s)?").format(count=len(baks))):
+            return
+        restored = 0
+        for bak in baks:
+            try:
+                orig = bak.with_suffix("")
+                if orig.exists():
+                    orig.unlink()
+                shutil.move(str(bak), str(orig))
+                restored += 1
+            except Exception as e:
+                print(f"[Mods] restore {bak}: {e}")
+        messagebox.showinfo(_tr(self.launcher, "MODS_BACKUP_RESTORE_DONE", "Restore complete"), _qt_t("QT_RESTORED_BACKUPS", "Restored {n} backup(s).").format(n=restored))
+        self.refresh()
+
+    def update_mods(self):
+        inst = self.instance
+        d = self._mods_dir()
+        if not d.exists() or not any(d.glob("*.jar")):
+            messagebox.showinfo(_tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), _qt_t("QT_NO_MODS_TO_UPDATE", "No mods to update."))
+            return
+        QtPackUpdateDialog(self.launcher, d, (inst.mod_loader or "").lower(), inst.version, (".jar",), _tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), on_done=self.refresh, parent=self).start()
+
+
+class QtPackUpdateDialog(QtWidgets.QDialog):
+    def __init__(self, launcher, directory, loader, game_version, exts, title, on_done=None, parent=None):
+        super().__init__(parent or launcher)
+        self.launcher = launcher
+        self.directory = Path(directory)
+        self.loader = loader
+        self.game_version = game_version
+        self.exts = exts
+        self.title_text = title
+        self.on_done = on_done
+        self.setWindowTitle(title)
+        self.resize(640, 460)
+        self.cancel_event = threading.Event()
+        self.updater = ModrinthUpdater(logger=lambda m: launcher._safe_append_log(m))
+        lay = QtWidgets.QVBoxLayout(self)
+        self.head = _qt_label(_qt_t("QT_CHECKING_ON_MODRINTH", "Checking {name} on Modrinth...").format(name=self.directory.name), "h2")
+        lay.addWidget(self.head)
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setRange(0, 100)
+        lay.addWidget(self.bar)
+        self.status = _qt_label(_qt_t("QT_HASHING_FILES", "Hashing files..."), "muted", wrap=True)
+        lay.addWidget(self.status)
+        self.list = QtWidgets.QListWidget()
+        self.list.setVisible(False)
+        lay.addWidget(self.list, 1)
+        self.force_check = QtWidgets.QCheckBox(_qt_t("QT_ALLOW_DOWNGRADES", "Allow downgrades / re-downloads (force)"))
+        self.force_check.setVisible(False)
+        lay.addWidget(self.force_check)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addStretch(1)
+        self.select_all_btn = _qt_button(_tr(launcher, "SELECT_ALL", "Select all"), lambda: self._set_all(True))
+        self.deselect_btn = _qt_button(_tr(launcher, "DESELECT_ALL", "Deselect all"), lambda: self._set_all(False))
+        self.apply_btn = _qt_button(_qt_t("QT_UPDATE_SELECTED", "Update selected"), self.apply_selected, kind="accent")
+        for b in (self.select_all_btn, self.deselect_btn, self.apply_btn):
+            b.setVisible(False)
+            btns.addWidget(b)
+        self.cancel_btn = _qt_button(_tr(launcher, "CANCEL", "Cancel"), self._cancel)
+        btns.addWidget(self.cancel_btn)
+        lay.addLayout(btns)
+        self.candidates = {}
+        self.downgrades = {}
+
+    def _cancel(self):
+        self.cancel_event.set()
+        self.reject()
+
+    def _set_all(self, checked):
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            if item.flags() & Qt.ItemIsUserCheckable:
+                item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+
+    def start(self):
+        self.show()
+
+        def progress(cur, total, msg):
+            _qt_later(lambda: (self.bar.setValue(int(cur / max(total, 1) * 100)), self.status.setText(str(msg))))
+
+        def work():
+            return self.updater.scan_dir(self.directory, self.loader, self.game_version, exts=self.exts, progress=progress, stop_event=self.cancel_event)
+
+        def done(scan):
+            if self.cancel_event.is_set():
+                return
+            self.candidates = scan.get("candidates", {}) or {}
+            self.downgrades = scan.get("downgrades", {}) or {}
+            if not self.candidates and not self.downgrades:
+                self.accept()
+                messagebox.showinfo(self.title_text, _qt_t("QT_ALL_UP_TO_DATE", "Everything is up to date (or not found on Modrinth)."))
+                if self.on_done:
+                    self.on_done()
+                return
+            self.head.setText(_qt_t("QT_UPDATES_AVAILABLE", "Updates available"))
+            self.bar.setValue(100)
+            self.status.setText(_qt_t("QT_UPDATES_FOUND", "{n} update(s) found").format(n=len(self.candidates)) + ((", " + _qt_t("QT_DOWNGRADES_SKIPPED", "{n} skipped by downgrade protection").format(n=len(self.downgrades))) if self.downgrades else ""))
+            for name, info in self.candidates.items():
+                item = QtWidgets.QListWidgetItem(f"{info.get('project_title')}: {info.get('current_version_number') or '?'}  →  {info.get('version_number')}    ({name})")
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                item.setData(Qt.UserRole, name)
+                self.list.addItem(item)
+            for name, info in self.downgrades.items():
+                item = QtWidgets.QListWidgetItem(f"{info.get('project_title')}: {info.get('current_version_number') or '?'}  →  {info.get('version_number')}    ({name})  [{_qt_t('QT_OLDER_THAN_INSTALLED', 'older than installed')}]")
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked)
+                item.setData(Qt.UserRole, name)
+                item.setForeground(QtGui.QColor(self.launcher.theme.c("fg_disabled")))
+                self.list.addItem(item)
+            self.list.setVisible(True)
+            self.force_check.setVisible(bool(self.downgrades))
+            for b in (self.select_all_btn, self.deselect_btn, self.apply_btn):
+                b.setVisible(True)
+
+        def fail(err):
+            self.status.setText(_qt_t("QT_FAILED_WITH", "Failed: {error}").format(error=err))
+            self.bar.setValue(0)
+        _qt_run_bg(work, done, fail)
+
+    def apply_selected(self):
+        names = [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count()) if self.list.item(i).checkState() == Qt.Checked]
+        if not names:
+            return
+        force = self.force_check.isChecked()
+        self.apply_btn.setEnabled(False)
+        self.head.setText(_qt_t("QT_UPDATING", "Updating..."))
+        self.bar.setValue(0)
+
+        def work():
+            done_n, errors = 0, []
+            for idx, n in enumerate(names, 1):
+                if self.cancel_event.is_set():
+                    break
+                _qt_later(lambda i=idx, nm=n: (self.bar.setValue(int((i - 1) / len(names) * 100)), self.status.setText(_qt_t("QT_UPDATING_NAME", "Updating {name}...").format(name=nm))))
+                info = self.candidates.get(n) or self.downgrades.get(n)
+                try:
+                    ok, msg = self.updater.apply_candidate(info, force=force or n in self.downgrades)
+                except Exception as e:
+                    ok, msg = False, str(e)
+                if ok:
+                    done_n += 1
+                else:
+                    errors.append(f"{n}: {msg}")
+            return done_n, errors
+
+        def finished(result):
+            done_n, errors = result
+            self.accept()
+            text = _qt_t("QT_UPDATED_N_OF", "Updated {done} of {total}.").format(done=done_n, total=len(names))
+            if errors:
+                text += "\n\n" + "\n".join(errors[:10])
+            self.launcher._safe_append_log(f"[Updater] {text}")
+            messagebox.showinfo(self.title_text, text)
+            if self.on_done:
+                self.on_done()
+        _qt_run_bg(work, finished, lambda e: (self.accept(), messagebox.showerror(self.title_text, str(e))))
+
+# servers and worlds tab
+class QtServersWorldsPanel(QtWidgets.QWidget):
+    def __init__(self, editor, parent=None):
+        super().__init__(parent)
+        self.editor = editor
+        self.launcher = editor.launcher
+        self.instance = None
+        self.servers = []
+        self.worlds = []
+        self.rows = []
+        self._ping_token = 0
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(_qt_label(_qt_t("QT_TAB_SERVERS_WORLDS", "Servers and Worlds"), "h2"))
+        self.info = _qt_label("", "muted")
+        head.addWidget(self.info)
+        head.addStretch(1)
+        L = self.launcher
+        head.addWidget(_qt_button(_qt_t("QT_REFRESH", "Refresh"), self.refresh, icon="refresh", launcher=L))
+        head.addWidget(_qt_button(_tr(L, "SERVERS_ADD", "Add server"), self.add_server, icon="plus", launcher=L))
+        self.join_btn = _qt_button(_qt_t("QT_JOIN", "Join"), self.quick_play, kind="accent")
+        head.addWidget(self.join_btn)
+        self.edit_btn = _qt_button(_qt_t("QT_EDIT", "Edit"), self.edit_server, icon="settings", launcher=L)
+        head.addWidget(self.edit_btn)
+        self.rename_btn = _qt_button(_qt_t("QT_RENAME", "Rename"), self.rename_world, icon="settings", launcher=L)
+        head.addWidget(self.rename_btn)
+        self.folder_btn = _qt_button(_qt_t("QT_FOLDER", "Folder"), self.open_folder, icon="folder", launcher=L)
+        head.addWidget(self.folder_btn)
+        self.del_btn = _qt_button(_qt_t("QT_DELETE", "Delete"), self.delete_selected, icon="trash", launcher=L)
+        head.addWidget(self.del_btn)
+        lay.addLayout(head)
+        self.table = QtWidgets.QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["", _qt_t("QT_NAME", "Name"), _qt_t("QT_ADDRESS", "Address") + " / " + _qt_t("QT_FOLDER", "Folder"), _qt_t("QT_STATUS", "Status") + " / " + _qt_t("QT_SIZE", "Size"), _qt_t("QT_LAST_PLAYED", "Last played")])
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        hh.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        hh.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setIconSize(QSize(32, 32))
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setShowGrid(False)
+        self.table.itemSelectionChanged.connect(self._on_select)
+        self.table.doubleClicked.connect(lambda *_: self._activate())
+        lay.addWidget(self.table, 1)
+        self._on_select()
+
+    def load(self, instance):
+        self.instance = instance
+        self.refresh()
+
+    def _servers_path(self):
+        return self.instance.minecraft_dir / "servers.dat" if self.instance else None
+
+    def _selected(self):
+        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        if not rows:
+            return None
+        return self.rows[rows[0].row()] if rows[0].row() < len(self.rows) else None
+
+    def _on_select(self):
+        sel = self._selected()
+        is_srv = bool(sel and sel["kind"] == "server")
+        is_world = bool(sel and sel["kind"] == "world")
+        self.join_btn.setEnabled(is_srv)
+        self.edit_btn.setEnabled(is_srv)
+        self.rename_btn.setEnabled(is_world)
+        self.folder_btn.setEnabled(is_world)
+        self.del_btn.setEnabled(bool(sel))
+
+    def _activate(self):
+        sel = self._selected()
+        if not sel:
+            return
+        if sel["kind"] == "server":
+            self.quick_play()
+        else:
+            open_path_native(sel["world"]["path"])
+
+    def refresh(self):
+        self.table.setRowCount(0)
+        self.rows = []
+        if self.instance is None:
+            return
+        path = self._servers_path()
+        self.servers = ServersNBT.read_servers_dat(path) if path and path.exists() else []
+        self.worlds = list_instance_worlds(self.instance)
+        server_icon = find_resource("oranglauncher/images/icons/server.png")
+        world_icon = find_resource("oranglauncher/images/minecraft-green.png")
+        for idx, srv in enumerate(self.servers):
+            icon = None
+            raw = srv.get("icon")
+            if raw:
+                try:
+                    pix = _qt_pixmap_from_bytes(base64.b64decode(raw), (32, 32))
+                    icon = QtGui.QIcon(pix) if pix else None
+                except Exception:
+                    icon = None
+            if icon is None and server_icon:
+                icon = QtGui.QIcon(str(server_icon))
+            self._add_row("server", icon, srv.get("name", "Unknown"), srv.get("ip", ""), "⏳", "", {"kind": "server", "index": idx})
+        for w in self.worlds:
+            size = w["size"]
+            size_text = f"{size / (1024 * 1024):.1f} MB" if size < 1024 ** 3 else f"{size / (1024 ** 3):.2f} GB"
+            icon = QtGui.QIcon(str(world_icon)) if world_icon else None
+            self._add_row("world", icon, w["name"], w["folder"], size_text, w["modified"].strftime("%Y-%m-%d %H:%M"), {"kind": "world", "world": w})
+        self.info.setText(_qt_t("QT_SERVERS_COUNT", "{n} server(s)").format(n=len(self.servers)) + "  ·  " + _qt_t("QT_WORLDS_COUNT", "{n} worlds").format(n=len(self.worlds)))
+        self._on_select()
+        self._ping_all()
+
+    def _add_row(self, kind, icon, name, second, third, fourth, meta):
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        first = QtWidgets.QTableWidgetItem("")
+        if icon is not None:
+            first.setIcon(icon)
+        first.setToolTip(_qt_t("QT_SERVER", "Server") if kind == "server" else _qt_t("QT_WORLD", "World"))
+        self.table.setItem(r, 0, first)
+        for c, text in enumerate((name, second, third, fourth), start=1):
+            item = QtWidgets.QTableWidgetItem(text)
+            if c == 1:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            self.table.setItem(r, c, item)
+        self.table.setRowHeight(r, 38)
+        self.rows.append(meta)
+
+    def _ping_all(self):
+        self._ping_token += 1
+        token = self._ping_token
+        for row_idx, meta in enumerate(self.rows):
+            if meta["kind"] != "server":
+                continue
+            srv = self.servers[meta["index"]]
+            host, _, port_str = srv.get("ip", "").partition(":")
+            port = int(port_str) if port_str.isdigit() else 25565
+
+            def work(h=host, p=port):
+                return _slp_ping(h, p)
+
+            def done(result, r=row_idx):
+                if token != self._ping_token or r >= self.table.rowCount():
+                    return
+                status = self.table.item(r, 3)
+                if status is None:
+                    return
+                if result:
+                    ms = result.get("latency", 0)
+                    status.setText(_qt_t("QT_ONLINE", "{online}/{max} online").format(online=result["online"], max=result["max"]) + f"  ·  {int(ms)} ms")
+                    status.setForeground(QtGui.QColor("#3bc652" if ms < 80 else ("#ffc107" if ms < 200 else "#f25c5c")))
+                    if result.get("motd"):
+                        self.table.item(r, 2).setToolTip(_strip_mc_formatting(result["motd"]))
+                    fav = result.get("favicon")
+                    if fav:
+                        try:
+                            pix = _qt_pixmap_from_bytes(base64.b64decode(fav.split(",")[-1]), (32, 32))
+                            if pix:
+                                self.table.item(r, 0).setIcon(QtGui.QIcon(pix))
+                        except Exception:
+                            pass
+                else:
+                    status.setText(_qt_t("QT_OFFLINE", "Offline"))
+                    status.setForeground(QtGui.QColor("#f25c5c"))
+            _qt_run_bg(work, done, lambda e: None)
+    # this works only from 1.20.1
+    def quick_play(self):
+        sel = self._selected()
+        if not sel or sel["kind"] != "server":
+            return
+        ver = self.instance.version if self.instance else ""
+        if not ver or _mc_version_tuple(ver) < (1, 20, 1):
+            messagebox.showinfo(_tr(self.launcher, "SERVERS_QUICKPLAY", "Quick Play"), _qt_t("QT_QUICKPLAY_REQUIRES", "Quick Play requires Minecraft 1.20.1 or newer."))
+            return
+        ip = self.servers[sel["index"]].get("ip", "").strip()
+        if not ip:
+            return
+        self.launcher.instance_manager.set_selected_instance(self.instance.instance_id)
+        self.launcher._pending_quickplay = ip
+        self.launcher._launch_game()
+
+    def _dialog(self, edit_idx=None):
+        srv = self.servers[edit_idx] if edit_idx is not None else {}
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(_tr(self.launcher, "SERVERS_EDIT_TITLE", "Edit server") if edit_idx is not None else _tr(self.launcher, "SERVERS_ADD_TITLE", "Add server"))
+        lay = QtWidgets.QFormLayout(dlg)
+        name = QtWidgets.QLineEdit(srv.get("name", ""))
+        ip = QtWidgets.QLineEdit(srv.get("ip", ""))
+        lay.addRow(_tr(self.launcher, "SERVERS_NAME_LABEL", "Name"), name)
+        lay.addRow(_tr(self.launcher, "SERVERS_ADDRESS_LABEL", "Address"), ip)
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        lay.addRow(btns)
+        dlg.resize(420, dlg.sizeHint().height())
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        n, a = name.text().strip(), ip.text().strip()
+        if not n or not a:
+            messagebox.showwarning(_tr(self.launcher, "SERVERS_INVALID_TITLE", "Invalid"), _tr(self.launcher, "SERVERS_INVALID_MSG", "Name and address are required."))
+            return
+        new = {"name": n, "ip": a}
+        if edit_idx is not None:
+            for k in ("icon", "hidden"):
+                if k in self.servers[edit_idx]:
+                    new[k] = self.servers[edit_idx][k]
+            self.servers[edit_idx] = new
+        else:
+            self.servers.append(new)
+        self._save_servers()
+
+    def add_server(self):
+        self._dialog()
+
+    def edit_server(self):
+        sel = self._selected()
+        if sel and sel["kind"] == "server":
+            self._dialog(sel["index"])
+
+    def _save_servers(self):
+        path = self._servers_path()
+        if path:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                ServersNBT.write_servers_dat(path, self.servers)
+            except Exception as e:
+                messagebox.showerror(_tr(self.launcher, "ERROR", "Error"), str(e))
+        self.refresh()
+
+    def open_folder(self):
+        sel = self._selected()
+        if sel and sel["kind"] == "world":
+            open_path_native(sel["world"]["path"])
+        elif self.instance:
+            open_path_native(self.instance.saves_dir)
+
+    def rename_world(self):
+        sel = self._selected()
+        if not sel or sel["kind"] != "world":
+            messagebox.showinfo(_qt_t("QT_WORLDS", "Worlds"), _qt_t("QT_SELECT_WORLD", "Select a world first."))
+            return
+        w = sel["world"]
+        new_name = _qt_askstring(_qt_t("QT_RENAME", "Rename"), _qt_t("QT_WORLD_NAME", "World name") + ":", initialvalue=w["name"])
+        if not new_name or new_name.strip() == w["name"]:
+            return
+        new_name = new_name.strip()
+        if not _set_levelname_in_level_dat(w["path"] / "level.dat", new_name):
+            messagebox.showerror(_qt_t("QT_RENAME", "Rename"), _qt_t("QT_LEVEL_DAT_FAIL", "Could not update level.dat."))
+            return
+        safe = re.sub(r'[<>:"/\\|?*]', "_", new_name).strip() or w["folder"]
+        target = w["path"].parent / safe
+        if target != w["path"] and not target.exists():
+            try:
+                w["path"].rename(target)
+            except Exception as e:
+                print(f"[World] folder rename skipped: {e}")
+        self.refresh()
+
+    def delete_selected(self):
+        sel = self._selected()
+        if not sel:
+            return
+        if sel["kind"] == "server":
+            srv = self.servers[sel["index"]]
+            if messagebox.askyesno(_tr(self.launcher, "SERVERS_DELETE_TITLE", "Delete server"), _tr(self.launcher, "SERVERS_DELETE_CONFIRM", "Delete {name}?").format(name=srv.get("name", "?"))):
+                self.servers.pop(sel["index"])
+                self._save_servers()
+            return
+        w = sel["world"]
+        if not messagebox.askyesno(_qt_t("QT_DELETE", "Delete"), _qt_t("QT_DELETE_WORLD_CONFIRM", "Permanently delete the world '{name}'?\n\nFolder: {path}\nThis cannot be undone.").format(name=w['name'], path=w['path'])):
+            return
+        try:
+            shutil.rmtree(w["path"])
+        except Exception as e:
+            messagebox.showerror(_qt_t("QT_DELETE", "Delete"), str(e))
+        self.refresh()
+
+# sh and rs
+class QtPacksPanel(QtWidgets.QWidget):
+    def __init__(self, editor, parent=None):
+        super().__init__(parent)
+        self.editor = editor
+        self.launcher = editor.launcher
+        self.instance = None
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(12)
+        self.rp = self._column("resourcepacks", _tr(self.launcher, "RES_SH_RP_TITLE", "Resource packs"))
+        self.sp = self._column("shaderpacks", _tr(self.launcher, "RES_SH_SP_TITLE", "Shader packs"))
+        lay.addWidget(self.rp["box"], 1)
+        lay.addWidget(self.sp["box"], 1)
+
+    def _column(self, kind, title):
+        box = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(_qt_label(title, "h2"))
+        count = _qt_label("", "muted")
+        head.addWidget(count)
+        head.addStretch(1)
+        lay.addLayout(head)
+        lst = QtWidgets.QListWidget()
+        lst.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        lay.addWidget(lst, 1)
+        info = _qt_label("", "hint")
+        lay.addWidget(info)
+        L = self.launcher
+        b1 = QtWidgets.QHBoxLayout()
+        b1.addWidget(_qt_button(_tr(L, "RES_SH_RP_ADD", _qt_t("QT_ADD", "Add")) if kind == "resourcepacks" else _tr(L, "RES_SH_SP_ADD", _qt_t("QT_ADD", "Add")), lambda: self.add(kind), kind="accent", icon="plus", launcher=L))
+        b1.addWidget(_qt_button(_tr(L, "RES_SH_REMOVE_SELECTED", "Remove"), lambda: self.remove(kind), icon="trash", launcher=L))
+        b1.addWidget(_qt_button(_tr(L, "RES_SH_OPEN_FOLDER", "Open folder"), lambda: self.open_folder(kind), icon="folder", launcher=L))
+        b1.addStretch(1)
+        lay.addLayout(b1)
+        b2 = QtWidgets.QHBoxLayout()
+        b2.addWidget(_qt_button(_qt_t("QT_UPDATE_MODRINTH", "Update (Modrinth)"), lambda: self.update(kind), icon="update", launcher=L))
+        b2.addWidget(_qt_button(_qt_t("QT_BROWSE_MODRINTH", "Browse Modrinth"), lambda: self.browse(kind), icon="file", launcher=L))
+        b2.addStretch(1)
+        lay.addLayout(b2)
+        col = {"box": box, "list": lst, "count": count, "info": info, "kind": kind}
+        lst.itemSelectionChanged.connect(lambda c=col: self._on_select(c))
+        return col
+
+    def _dir(self, kind):
+        d = self.instance.resourcepacks_dir if kind == "resourcepacks" else self.instance.shaderpacks_dir
+        return d.resolve() if d.is_symlink() else d
+
+    def load(self, instance):
+        self.instance = instance
+        self.refresh()
+
+    def refresh(self):
+        for col in (self.rp, self.sp):
+            col["list"].clear()
+            if self.instance is None:
+                continue
+            d = self._dir(col["kind"])
+            names = []
+            if d.exists():
+                for item in sorted(d.iterdir(), key=lambda p: p.name.lower()):
+                    if item.is_file() and item.suffix.lower() == ".zip":
+                        names.append(item.name)
+                    elif item.is_dir() and not item.name.startswith("."):
+                        names.append(item.name)
+            for n in names:
+                col["list"].addItem(n)
+            col["count"].setText(_qt_t("QT_PACKS_COUNT", "{n} pack(s)").format(n=len(names)))
+
+    def _on_select(self, col):
+        items = col["list"].selectedItems()
+        if len(items) == 1:
+            p = self._dir(col["kind"]) / items[0].text()
+            try:
+                size = p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                col["info"].setText(f"{items[0].text()}  ·  {_human_size(size)}")
+            except Exception:
+                col["info"].setText(items[0].text())
+        elif items:
+            col["info"].setText(_qt_t("QT_N_SELECTED", "{n} selected").format(n=len(items)))
+        else:
+            col["info"].setText("")
+
+    def add(self, kind):
+        files = _pick_open_files(title=_qt_t("QT_SELECT_PACKS", "Select packs"), filetypes=[(_qt_t("QT_FT_PACKS", "Packs"), "*.zip"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not files:
+            return
+        d = self._dir(kind)
+        d.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            try:
+                shutil.copy2(f, d / os.path.basename(f))
+            except Exception as e:
+                print(f"[Packs] add {f}: {e}")
+        self.refresh()
+
+    def remove(self, kind):
+        col = self.rp if kind == "resourcepacks" else self.sp
+        names = [i.text() for i in col["list"].selectedItems()]
+        if not names:
+            messagebox.showinfo(_qt_t("QT_PACKS", "Packs"), _qt_t("QT_SELECT_PACKS_FIRST", "Select packs first."))
+            return
+        if not messagebox.askyesno(_tr(self.launcher, "CONFIRM_REMOVE", "Remove"), _qt_t("QT_REMOVE_PACKS_CONFIRM", "Remove {n} pack(s)?").format(n=len(names))):
+            return
+        d = self._dir(kind)
+        for n in names:
+            p = d / n
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p)
+                else:
+                    p.unlink()
+            except Exception as e:
+                print(f"[Packs] remove {n}: {e}")
+        self.refresh()
+
+    def open_folder(self, kind):
+        d = self._dir(kind)
+        d.mkdir(parents=True, exist_ok=True)
+        open_path_native(d)
+
+    def update(self, kind):
+        inst = self.instance
+        d = self._dir(kind)
+        loader = "minecraft" if kind == "resourcepacks" else ("iris" if (inst.mod_loader or "").lower() in ("fabric", "quilt", "neoforge", "forge") else "optifine")
+        if not d.exists():
+            messagebox.showinfo(_qt_t("QT_UPDATE", "Update"), _qt_t("QT_FOLDER_MISSING", "Folder does not exist yet."))
+            return
+        title = _tr(self.launcher, "RES_SH_RP_TITLE", "Resource packs") if kind == "resourcepacks" else _tr(self.launcher, "RES_SH_SP_TITLE", "Shader packs")
+        QtPackUpdateDialog(self.launcher, d, loader, inst.version, (".zip",), _qt_t("QT_UPDATE", "Update") + ": " + title, on_done=self.refresh, parent=self).start()
+
+    def browse(self, kind):
+        self.launcher.instance_manager.set_selected_instance(self.instance.instance_id)
+        self.launcher.show_content("resourcepack" if kind == "resourcepacks" else "shader")
+
+
+class QtInstanceEditor(QtWidgets.QWidget):
+    TABS = ["Customization", "Mem and Video", "Modpack Management", "Mods", "Servers and Worlds", "Resource packs and Shader packs", "Sharing", "Screenshots", "Other settings", "Versions"]
+    TAB_KEYS = {"Customization": "QT_TAB_CUSTOMIZATION", "Mem and Video": "QT_TAB_MEM_VIDEO", "Modpack Management": "QT_TAB_MODPACK", "Mods": "QT_TAB_MODS", "Servers and Worlds": "QT_TAB_SERVERS_WORLDS", "Resource packs and Shader packs": "QT_TAB_PACKS", "Sharing": "QT_TAB_SHARING", "Screenshots": "QT_TAB_SCREENSHOTS", "Other settings": "QT_TAB_OTHER", "Versions": "QT_TAB_VERSIONS"}
+
+    def __init__(self, launcher, page, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.page = page
+        self.instance_manager = launcher.instance_manager
+        self.instance = None
+        self._loaded = set()
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(18, 12, 18, 10)
+        lay.setSpacing(10)
+        self._build_header(lay)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setDocumentMode(False)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.setStyleSheet("QTabBar::tab { padding: 6px 9px; }")
+        lay.addWidget(self.tabs, 1)
+        self.pages = {}
+        builders = {
+            "Customization": self._build_customization,
+            "Mem and Video": self._build_mem_video,
+            "Modpack Management": self._build_modpack,
+            "Mods": self._build_mods,
+            "Servers and Worlds": self._build_servers_worlds,
+            "Resource packs and Shader packs": self._build_packs,
+            "Sharing": self._build_sharing,
+            "Screenshots": self._build_screenshots,
+            "Other settings": self._build_other,
+            "Versions": self._build_versions,
+        }
+        for name in self.TABS:
+            w = builders[name]()
+            self.pages[name] = w
+            self.tabs.addTab(w, _qt_t(self.TAB_KEYS[name], name))
+        self.tabs.currentChanged.connect(lambda idx: self._load_tab(self.TABS[idx]))
+
+    def _build_header(self, lay):
+        head = QtWidgets.QHBoxLayout()
+        head.setSpacing(12)
+        L = self.launcher
+        head.addWidget(_qt_button(_tr(L, "GAME_PROFILES_GO_BACK", "← Back"), self.close_editor, kind="flat"))
+        self.icon = QtWidgets.QLabel()
+        self.icon.setFixedSize(56, 56)
+        self.icon.setScaledContents(True)
+        head.addWidget(self.icon)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        self.title = _qt_label("", "h1")
+        self.subtitle = _qt_label("", "muted")
+        col.addWidget(self.title)
+        col.addWidget(self.subtitle)
+        head.addLayout(col, 1)
+        head.addWidget(_qt_button(_tr(L, "PLAY", "Play"), self.play, kind="accent"))
+        head.addWidget(_qt_button(_tr(L, "RES_SH_OPEN_FOLDER", "Open folder"), self.open_folder, icon="folder", launcher=L))
+        lay.addLayout(head)
+
+    def open(self, instance):
+        self.instance = instance
+        self._loaded = set()
+        self.refresh_header()
+        self._load_tab(self.TABS[self.tabs.currentIndex()])
+
+    def close_editor(self):
+        self.page.show_list()
+
+    def refresh_header(self):
+        inst = self.instance
+        if inst is None:
+            return
+        self.icon.setPixmap(_instance_icon_pixmap(self.launcher, inst, 56))
+        self.title.setText(inst.name)
+        ram_mb = self._ram_to_mb(inst.ram)
+        ram_text = f"{ram_mb // 1024} GB" if ram_mb % 1024 == 0 else f"{ram_mb / 1024:.1f} GB"
+        self.subtitle.setText(f"Minecraft {inst.version}  ·  {(inst.mod_loader or 'vanilla').title()}" + (f" {inst.loader_version}" if inst.loader_version else "") + f"  ·  {ram_text} " + _qt_t("QT_RAM", "RAM"))
+
+    def _load_tab(self, name):
+        if self.instance is None:
+            return
+        if name in self._loaded:
+            return
+        self._loaded.add(name)
+        loaders = {
+            "Customization": self._load_customization,
+            "Mem and Video": self._load_mem_video,
+            "Modpack Management": self._load_modpack,
+            "Mods": lambda: self.mods.load(self.instance),
+            "Servers and Worlds": lambda: self.servers_worlds.load(self.instance),
+            "Resource packs and Shader packs": lambda: self.packs.load(self.instance),
+            "Sharing": self._load_sharing,
+            "Screenshots": self._load_screenshots,
+            "Other settings": self._load_other,
+            "Versions": self._load_versions,
+        }
+        try:
+            loaders[name]()
+        except Exception as e:
+            print(f"[Editor] load {name}: {e}")
+            traceback.print_exc()
+
+    def play(self):
+        if self.instance is None:
+            return
+        self.instance_manager.set_selected_instance(self.instance.instance_id)
+        self.launcher.refresh_instance_display()
+        self.launcher._launch_game()
+
+    def open_folder(self):
+        if self.instance is not None:
+            self.instance.minecraft_dir.mkdir(parents=True, exist_ok=True)
+            open_path_native(self.instance.minecraft_dir)
+
+    def save(self, message=None):
+        try:
+            self.instance_manager.save_instances()
+        except Exception as e:
+            messagebox.showerror(_qt_t("QT_SAVE", "Save"), str(e))
+            return False
+        self.refresh_header()
+        self.launcher.refresh_instance_display()
+        if message:
+            self.launcher.set_status(message)
+        return True
+
+    def _page(self):
+        page, lay = _qt_page(spacing=12, margins=(18, 16, 18, 16))
+        return page, lay
+
+    def _build_customization(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_LOOK", "Look"))
+        row = QtWidgets.QHBoxLayout()
+        self.cust_icon = QtWidgets.QLabel()
+        self.cust_icon.setFixedSize(64, 64)
+        self.cust_icon.setScaledContents(True)
+        row.addWidget(self.cust_icon)
+        col = QtWidgets.QVBoxLayout()
+        line = QtWidgets.QHBoxLayout()
+        self.cust_icon_choice = QtWidgets.QComboBox()
+        self.ICON_DEFAULT = _qt_t("QT_ICON_LOADER_DEFAULT", "Loader default")
+        self.ICON_CUSTOM = _qt_t("QT_ICON_CUSTOM", "Custom image...")
+        self.cust_icon_choice.addItems([self.ICON_DEFAULT, "vanilla", "forge", "fabric", "quilt", "neoforge", "optifine", self.ICON_CUSTOM])
+        self.cust_icon_choice.activated.connect(lambda *_: self._on_icon_choice())
+        line.addWidget(self.cust_icon_choice)
+        line.addWidget(_qt_button(_qt_t("QT_BROWSE_IMAGE", "Browse image"), self._browse_icon, icon="folder", launcher=self.launcher))
+        line.addStretch(1)
+        col.addWidget(_qt_label(_qt_t("QT_ICON", "Icon")))
+        col.addLayout(line)
+        col.addWidget(_qt_label(_qt_t("QT_ICON_HINT", "PNG / JPG, shown on the instance card and in the header."), "hint"))
+        row.addLayout(col, 1)
+        card.add_layout(row)
+        lay.addWidget(card)
+        self.cust_icon_path = ""
+        card2 = _Card(_qt_t("QT_IDENTITY", "Identity"))
+        self.cust_name = QtWidgets.QLineEdit()
+        card2.add(_qt_form_row(_qt_t("QT_INSTANCE_NAME", "Instance name"), self.cust_name))
+        self.cust_path = QtWidgets.QLineEdit()
+        self.cust_path.setReadOnly(True)
+        pl = QtWidgets.QHBoxLayout()
+        pl.addWidget(self.cust_path, 1)
+        pl.addWidget(_qt_button(_tr(self.launcher, "GAME_PROFILES_OPEN_BTN", "Open"), self.open_folder, icon="folder", launcher=self.launcher))
+        pl.addWidget(_qt_button(_qt_t("QT_MOVE", "Move..."), self._move_instance))
+        card2.add(_qt_form_row(_qt_t("QT_INSTANCE_PATH", "Instance path"), pl))
+        lay.addWidget(card2)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_customization, kind="accent"))
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+    def _on_icon_choice(self):
+        choice = self.cust_icon_choice.currentText()
+        if choice == self.ICON_CUSTOM:
+            self._browse_icon()
+            return
+        if choice == self.ICON_DEFAULT:
+            self.cust_icon_path = ""
+        else:
+            src = find_resource(f"oranglauncher/images/loaders/{choice}.png") if choice != "vanilla" else find_resource("oranglauncher/images/minecraft-green.png")
+            self.cust_icon_path = str(src) if src else ""
+        self._preview_icon()
+
+    def _browse_icon(self):
+        path = _pick_open_file(title=_qt_t("QT_SELECT_ICON", "Select icon image"), filetypes=[(_qt_t("QT_FT_IMAGES", "Images"), "*.png *.jpg *.jpeg *.webp *.gif"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if path:
+            self.cust_icon_path = path
+            self.cust_icon_choice.setCurrentText(self.ICON_CUSTOM)
+            self._preview_icon()
+
+    def _preview_icon(self):
+        path = self.cust_icon_path
+        pix = _qt_pixmap_from_path(path, (64, 64)) if path and Path(path).exists() else None
+        if pix is None and self.instance is not None:
+            pix = _instance_icon_pixmap(self.launcher, self.instance, 64)
+        self.cust_icon.setPixmap(pix or QtGui.QPixmap())
+
+    def _load_customization(self):
+        inst = self.instance
+        self.cust_name.setText(inst.name)
+        self.cust_path.setText(str(inst.base_path))
+        icon_file = inst.base_path / "icon.txt"
+        path = ""
+        if icon_file.exists():
+            try:
+                path = icon_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                path = ""
+        self.cust_icon_path = path
+        self.cust_icon_choice.setCurrentText(self.ICON_CUSTOM if path else self.ICON_DEFAULT)
+        self._preview_icon()
+
+    def _save_customization(self):
+        inst = self.instance
+        name = self.cust_name.text().strip()
+        if not name:
+            messagebox.showerror(_qt_t("QT_TAB_CUSTOMIZATION", "Customization"), _qt_t("QT_NAME_EMPTY", "Name cannot be empty."))
+            return
+        other = self.instance_manager.get_instance_by_name(name)
+        if other and other.instance_id != inst.instance_id:
+            messagebox.showerror(_qt_t("QT_TAB_CUSTOMIZATION", "Customization"), _qt_t("QT_NAME_TAKEN", "An instance called '{name}' already exists.").format(name=name))
+            return
+        inst.name = name
+        icon_file = inst.base_path / "icon.txt"
+        path = self.cust_icon_path.strip()
+        if path and Path(path).exists():
+            try:
+                img = _qimage_thumbnail(path, 128)
+                dest = inst.base_path / "icon.png"
+                if Path(path).resolve() != dest.resolve():
+                    img.save(str(dest), "PNG")
+                icon_file.write_text(str(dest), encoding="utf-8")
+            except Exception as e:
+                messagebox.showerror(_qt_t("QT_ICON", "Icon"), _qt_t("QT_ICON_FAIL", "Could not use that image: {error}").format(error=e))
+        elif icon_file.exists():
+            icon_file.unlink()
+        self.save(_qt_t("QT_INSTANCE_SAVED", "Instance saved"))
+        self._load_customization()
+
+    def _move_instance(self):
+        dest = _pick_directory(title=_qt_t("QT_MOVE_TO_FOLDER", "Move instance to folder"))
+        if not dest:
+            return
+        inst = self.instance
+        target = Path(dest) / inst.base_path.name
+        title = _qt_t("QT_MOVE_TITLE", "Move")
+        if target.exists():
+            messagebox.showerror(title, _qt_t("QT_ALREADY_EXISTS", "{path} already exists.").format(path=target))
+            return
+        if not messagebox.askyesno(_qt_t("QT_MOVE_INSTANCE", "Move instance"), _qt_t("QT_MOVE_CONFIRM", "Move all files to\n{path}\nand leave a symlink behind?").format(path=target)):
+            return
+        try:
+            shutil.move(str(inst.base_path), str(target))
+            inst.base_path.symlink_to(target, target_is_directory=True)
+            messagebox.showinfo(title, _qt_t("QT_MOVED_TO", "Moved to {path}").format(path=target))
+        except Exception as e:
+            messagebox.showerror(title, str(e))
+        self._load_customization()
+
+    def _slider_row(self, label, lo, hi, step, unit, zero_text=None):
+        box = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 4)
+        lay.setSpacing(2)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(_qt_label(label))
+        head.addStretch(1)
+        value = _qt_label("", "accent")
+        head.addWidget(value)
+        lay.addLayout(head)
+        slider = QtWidgets.QSlider(Qt.Horizontal)
+        slider.setRange(lo // step, hi // step)
+        slider.setSingleStep(1)
+        slider.setPageStep(max(1, 1024 // step))
+        lay.addWidget(slider)
+
+        def fmt(_=None):
+            v = slider.value() * step
+            if v == 0 and zero_text:
+                value.setText(zero_text)
+            elif unit == "MB" and v % 1024 == 0:
+                value.setText(f"{v // 1024} GB")
+            else:
+                value.setText(f"{v} {unit}")
+        slider.valueChanged.connect(fmt)
+        fmt()
+        box.slider = slider
+        box.step = step
+        box.get = lambda: slider.value() * step
+        box.set = lambda v: slider.setValue(int(max(lo, min(hi, v)) // step))
+        return box
+
+    def _build_mem_video(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_WINDOW", "Window"))
+        self.mv_fullscreen = _Var(False)
+        card.add(_ToggleRow(_qt_t("QT_FULLSCREEN", "Launch in fullscreen"), _qt_t("QT_FULLSCREEN_DESC", "Writes fullscreen:true into this instance's options.txt before every launch."), self.mv_fullscreen))
+        res = QtWidgets.QHBoxLayout()
+        self.mv_width = QtWidgets.QLineEdit()
+        self.mv_width.setFixedWidth(90)
+        self.mv_width.setPlaceholderText("1920")
+        self.mv_height = QtWidgets.QLineEdit()
+        self.mv_height.setFixedWidth(90)
+        self.mv_height.setPlaceholderText("1080")
+        res.addWidget(self.mv_width)
+        res.addWidget(_qt_label("  x  "))
+        res.addWidget(self.mv_height)
+        res.addWidget(_qt_label(_qt_t("QT_RESOLUTION_HINT", "(empty = Minecraft default)"), "hint"))
+        res.addStretch(1)
+        card.add(_qt_form_row(_qt_t("QT_RESOLUTION", "Custom resolution"), res))
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_MEMORY", "Memory"))
+        total_mb = _get_system_ram_mb()
+        usable = max(total_mb - 1024, 1024)
+        self.mv_min = card.add(self._slider_row(_qt_t("QT_MEM_MIN", "Minimum memory (Xms)"), 256, usable, 128, "MB"))
+        self.mv_max = card.add(self._slider_row(_qt_t("QT_MEM_MAX", "Maximum memory (Xmx)"), 512, usable, 256, "MB"))
+        self.mv_perm = card.add(self._slider_row(_qt_t("QT_MEM_PERM", "PermGen / Metaspace"), 0, 2048, 64, "MB", zero_text=_qt_t("QT_DEFAULT", "default")))
+        card.add(_qt_label(_qt_t("QT_MEM_HINT", "Detected system memory: {gb} GB. Sliders stop 1 GB below that so the desktop keeps breathing.").format(gb=total_mb // 1024), "hint", wrap=True))
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_GRAPHICS", "Graphics"))
+        self.mv_zink = _Var(False)
+        self.mv_prime = _Var(False)
+        card.add(_ToggleRow(_qt_t("QT_ZINK", "Use Zink (OpenGL over Vulkan)"), _qt_t("QT_ZINK_DESC", "MESA_LOADER_DRIVER_OVERRIDE=zink. Helps on GPUs with weak OpenGL drivers, hurts on good ones."), self.mv_zink))
+        card.add(_ToggleRow(_qt_t("QT_PRIME", "Run on the discrete GPU (PRIME offload)"), _qt_t("QT_PRIME_DESC", "DRI_PRIME=1, plus NVIDIA offload variables when the proprietary driver is present. For laptops with two GPUs."), self.mv_prime))
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_VARIABLES", "Variables"))
+        self.mv_jvm = QtWidgets.QPlainTextEdit()
+        self.mv_jvm.setFixedHeight(70)
+        card.add(_qt_form_row(_qt_t("QT_JVM_ARGS", "Java (JVM) arguments"), self.mv_jvm, _qt_t("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1")))
+        self.mv_env = QtWidgets.QPlainTextEdit()
+        self.mv_env.setFixedHeight(70)
+        card.add(_qt_form_row(_qt_t("QT_ENV_VARS", "Environment variables"), self.mv_env, _qt_t("QT_ENV_VARS_HINT", "One KEY=VALUE per line, lines starting with # are ignored.")))
+        self.mv_pre = QtWidgets.QLineEdit()
+        card.add(_qt_form_row(_qt_t("QT_PRE_LAUNCH", "Pre-launch command"), self.mv_pre, _qt_t("QT_PRE_LAUNCH_HINT", "Runs in the .minecraft folder before the game starts; a non-zero exit aborts the launch. $INST_NAME, $INST_DIR, $INST_MC_DIR, $INST_JAVA, $INST_MC_VER are set.")))
+        self.mv_wrap = QtWidgets.QLineEdit()
+        card.add(_qt_form_row(_qt_t("QT_WRAPPER", "Wrapper command"), self.mv_wrap, _qt_t("QT_WRAPPER_HINT", "Prepended to the java command line, e.g. gamemoderun, mangohud, prime-run")))
+        self.mv_post = QtWidgets.QLineEdit()
+        card.add(_qt_form_row(_qt_t("QT_POST_EXIT", "Post-exit command"), self.mv_post, _qt_t("QT_POST_EXIT_HINT", "Runs after Minecraft closes. $INST_EXIT_CODE holds the exit code.")))
+        lay.addWidget(card)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_mem_video, kind="accent"))
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+    @staticmethod
+    def _ram_to_mb(ram):
+        s = str(ram or "4G").strip().upper().replace(" ", "")
+        try:
+            if s.endswith("GB"):
+                return int(float(s[:-2])) * 1024
+            if s.endswith("G"):
+                return int(float(s[:-1])) * 1024
+            if s.endswith("MB"):
+                return int(float(s[:-2]))
+            if s.endswith("M"):
+                return int(float(s[:-1]))
+            return int(float(s)) * 1024
+        except Exception:
+            return 4096
+
+    def _load_mem_video(self):
+        inst = self.instance
+        self.mv_fullscreen.set(bool(inst.opt("fullscreen", False)))
+        self.mv_width.setText(str(inst.opt("res_width", "") or ""))
+        self.mv_height.setText(str(inst.opt("res_height", "") or ""))
+        self.mv_max.set(self._ram_to_mb(inst.ram))
+        self.mv_min.set(int(inst.opt("min_ram_mb", 0) or min(512, self._ram_to_mb(inst.ram))))
+        self.mv_perm.set(int(inst.opt("permgen_mb", 0) or 0))
+        self.mv_zink.set(bool(inst.opt("use_zink", False)))
+        self.mv_prime.set(bool(inst.opt("use_prime", False)))
+        self.mv_jvm.setPlainText(inst.opt("jvm_args", "") or "")
+        self.mv_env.setPlainText(inst.env_vars or "")
+        self.mv_pre.setText(inst.opt("pre_launch_cmd", "") or "")
+        self.mv_wrap.setText(inst.opt("wrapper_cmd", "") or "")
+        self.mv_post.setText(inst.opt("post_exit_cmd", "") or "")
+        for w in self.pages["Mem and Video"].findChildren(_ToggleRow):
+            w.refresh()
+
+    def _save_mem_video(self):
+        inst = self.instance
+        inst.set_opt("fullscreen", bool(self.mv_fullscreen.get()))
+        w, h = self.mv_width.text().strip(), self.mv_height.text().strip()
+        if (w or h) and not (w.isdigit() and h.isdigit() and int(w) > 0 and int(h) > 0):
+            messagebox.showerror(_qt_t("QT_RESOLUTION", "Custom resolution"), _qt_t("QT_RESOLUTION_INVALID", "Width and height must both be positive numbers, e.g. 1920 x 1080."))
+            return
+        inst.set_opt("res_width", int(w) if w else None)
+        inst.set_opt("res_height", int(h) if h else None)
+        max_mb = int(self.mv_max.get())
+        min_mb = min(int(self.mv_min.get()), max_mb)
+        inst.ram = f"{max_mb // 1024}G" if max_mb % 1024 == 0 else f"{max_mb}M"
+        inst.java_args = f"-Xmx{inst.ram}"
+        inst.set_opt("min_ram_mb", min_mb)
+        inst.set_opt("permgen_mb", int(self.mv_perm.get()))
+        inst.set_opt("use_zink", bool(self.mv_zink.get()))
+        inst.set_opt("use_prime", bool(self.mv_prime.get()))
+        inst.set_opt("jvm_args", self.mv_jvm.toPlainText().strip())
+        inst.env_vars = self.mv_env.toPlainText().strip()
+        inst.set_opt("pre_launch_cmd", self.mv_pre.text().strip())
+        inst.set_opt("wrapper_cmd", self.mv_wrap.text().strip())
+        inst.set_opt("post_exit_cmd", self.mv_post.text().strip())
+        if self.save(_qt_t("QT_MEM_VIDEO_SAVED", "Memory & video settings saved")):
+            try:
+                apply_video_options(inst)
+            except Exception as e:
+                print(f"[Editor] options.txt apply failed: {e}")
+
+    def _build_modpack(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_MODPACK", "Modpack"))
+        self.mp_info = _qt_label("", None, wrap=True)
+        card.add(self.mp_info)
+        row = QtWidgets.QHBoxLayout()
+        L = self.launcher
+        self.mp_check_btn = _qt_button(_qt_t("QT_CHECK_UPDATES", "Check for updates"), self._mp_check_updates, icon="update", launcher=L)
+        self.mp_open_btn = _qt_button(_qt_t("QT_OPEN_MODRINTH", "Open on Modrinth"), self._mp_open_page, icon="github", launcher=L)
+        self.mp_repair_btn = _qt_button(_qt_t("QT_REPAIR", "Repair (re-download missing files)"), self._mp_repair, icon="refresh", launcher=L)
+        self.mp_unlink_btn = _qt_button(_qt_t("QT_UNLINK", "Unlink pack"), self._mp_unlink, icon="trash", launcher=L)
+        for b in (self.mp_check_btn, self.mp_open_btn, self.mp_repair_btn, self.mp_unlink_btn):
+            row.addWidget(b)
+        row.addWidget(_qt_button(_qt_t("QT_IMPORT_INTO", "Import a different .mrpack / .orangpack into this instance"), self._mp_import_into, icon="mrpack", launcher=L))
+        row.addStretch(1)
+        card.add_layout(row)
+        lay.addWidget(card)
+        self.mp_versions_card = card2 = _Card(_qt_t("QT_AVAILABLE_VERSIONS", "Available versions"))
+        card2.add(_qt_label(_qt_t("QT_MP_VERSIONS_HINT", "Pick a version and press Update. Mods from the old version are removed, your overrides and worlds stay."), "hint", wrap=True))
+        self.mp_versions_box = QtWidgets.QListWidget()
+        self.mp_versions_box.setMinimumHeight(180)
+        card2.add(self.mp_versions_box)
+        self.mp_versions = []
+        row2 = QtWidgets.QHBoxLayout()
+        row2.addWidget(_qt_button(_qt_t("QT_UPDATE_TO_SELECTED", "Update to selected version"), self._mp_update_selected, kind="accent"))
+        row2.addStretch(1)
+        card2.add_layout(row2)
+        lay.addWidget(card2)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+    def _pack_meta(self):
+        if self.instance is None:
+            return {}
+        p = self.instance.base_path / "modpack.json"
+        if not p.exists():
+            return {}
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _load_modpack(self):
+        meta = self._pack_meta()
+        self.mp_versions_box.clear()
+        self.mp_versions = []
+        linked = bool(meta)
+        on_modrinth = bool(meta.get("modrinth_project_id"))
+        self.mp_unlink_btn.setVisible(linked)
+        self.mp_repair_btn.setVisible(linked)
+        self.mp_check_btn.setVisible(on_modrinth)
+        self.mp_open_btn.setVisible(on_modrinth)
+        self.mp_versions_card.setVisible(on_modrinth)
+        if not meta:
+            self.mp_info.setText(_qt_t("QT_MP_NOT_FROM_PACK", "This instance was not created from a modpack.\nImport an .mrpack or .orangpack below to link one."))
+            return
+        lines = [_qt_t("QT_MP_NAME", "Name: {name}").format(name=meta.get('modrinth_title') or meta.get('name') or '?'),
+                 _qt_t("QT_MP_INSTALLED_VERSION", "Installed version: {version}").format(version=meta.get('modrinth_version_number') or meta.get('version_id') or '?'),
+                 _qt_t("QT_MP_FILE_COUNT", "Files managed by the pack: {n}").format(n=meta.get('file_count', 0)),
+                 _qt_t("QT_MP_IMPORTED", "Imported: {date}").format(date=(meta.get('imported') or '')[:19].replace('T', ' '))]
+        if meta.get("summary"):
+            lines.append(_qt_t("QT_MP_SUMMARY", "Summary: {summary}").format(summary=meta.get('summary')))
+        if on_modrinth:
+            lines.append(_qt_t("QT_MP_PROJECT", "Modrinth project: {project}").format(project=meta.get('modrinth_slug') or meta.get('modrinth_project_id')))
+        else:
+            lines.append(_qt_t("QT_MP_NOT_LINKED", "Not linked to a Modrinth project (imported from a local file)."))
+        self.mp_info.setText("\n".join(lines))
+
+    # the modrinth open in browser thing because implementing a emmbed is bad for maintainability
+    def _mp_open_page(self):
+        meta = self._pack_meta()
+        slug = meta.get("modrinth_slug") or meta.get("modrinth_project_id")
+        if slug:
+            open_with_browser(f"https://modrinth.com/modpack/{slug}")
+        else:
+            messagebox.showinfo(_qt_t("QT_MODPACK", "Modpack"), _qt_t("QT_MP_NOT_ON_MODRINTH", "This instance is not linked to a Modrinth project."))
+
+    def _mp_check_updates(self):
+        meta = self._pack_meta()
+        pid = meta.get("modrinth_project_id")
+        if not pid:
+            messagebox.showinfo(_qt_t("QT_MODPACK", "Modpack"), _qt_t("QT_MP_NOT_ON_MODRINTH", "This instance is not linked to a Modrinth project."))
+            return
+        self.mp_versions_box.clear()
+        self.mp_versions_box.addItem(_qt_t("QT_LOADING_VERSIONS", "Loading versions..."))
+
+        def work():
+            r = _http_session.get(f"{MODRINTH_API_URL}/project/{pid}/version", timeout=20)
+            r.raise_for_status()
+            return r.json()
+
+        def done(versions):
+            self.mp_versions_box.clear()
+            self.mp_versions = versions
+            current = meta.get("modrinth_version_id")
+            for v in versions:
+                tag = f"  ({_qt_t('QT_INSTALLED_TAG', 'installed')})" if v.get("id") == current else ""
+                self.mp_versions_box.addItem(f"{v.get('version_number')}  -  MC {', '.join(v.get('game_versions', [])[:3])}  -  {', '.join(v.get('loaders', []))}  -  {(v.get('date_published') or '')[:10]}{tag}")
+            if versions and versions[0].get("id") != current:
+                self.mp_info.setText(self.mp_info.text() + "\n" + _qt_t("QT_MP_UPDATE_AVAILABLE", "Update available: {version}").format(version=versions[0].get('version_number')))
+        _qt_run_bg(work, done, lambda e: (self.mp_versions_box.clear(), messagebox.showerror(_qt_t("QT_MODPACK", "Modpack"), _qt_t("QT_MP_FETCH_FAIL", "Could not fetch versions: {error}").format(error=e))))
+
+    def _mp_update_selected(self):
+        row = self.mp_versions_box.currentRow()
+        if row < 0 or row >= len(self.mp_versions):
+            messagebox.showinfo(_qt_t("QT_MODPACK", "Modpack"), _qt_t("QT_MP_PICK_FIRST", "Check for updates first and pick a version from the list."))
+            return
+        version = self.mp_versions[row]
+        primary = next((f for f in version.get("files", []) if f.get("primary")), None)
+        if not primary and version.get("files"):
+            primary = version["files"][0]
+        if not primary:
+            messagebox.showerror(_qt_t("QT_MODPACK", "Modpack"), _qt_t("QT_MP_NO_FILE", "That version has no downloadable file."))
+            return
+        if not messagebox.askyesno(_qt_t("QT_UPDATE_MODPACK", "Update modpack"), _qt_t("QT_MP_UPDATE_CONFIRM", "Update '{name}' to {version}?\n\nManaged mods from the current version are removed first, everything else stays.").format(name=self.instance.name, version=version.get('version_number'))):
+            return
+        self._mp_apply_pack_file(primary.get("url"), primary.get("filename"), remove_managed=True)
+
+    def _mp_apply_pack_file(self, url, filename, remove_managed=True, local_path=None):
+        inst = self.instance
+        meta = self._pack_meta()
+        self.launcher.set_status(_qt_t("QT_UPDATING_MODPACK", "Updating modpack..."))
+
+        def work():
+            if local_path:
+                pack_path = Path(local_path)
+            else:
+                tmpdir = Path(tempfile.mkdtemp(prefix="orang_pack_"))
+                pack_path = tmpdir / (filename or "pack.mrpack")
+                r = _http_session.get(url, stream=True, timeout=120)
+                r.raise_for_status()
+                with open(pack_path, "wb") as f:
+                    for chunk in r.iter_content(65536):
+                        if chunk:
+                            f.write(chunk)
+            if remove_managed:
+                for rel in meta.get("managed_files", []) or []:
+                    if rel.startswith("mods/"):
+                        target = inst.minecraft_dir / rel
+                        try:
+                            if target.exists():
+                                target.unlink()
+                        except Exception:
+                            pass
+            importer = ModrinthPackImporter(self.launcher)
+            return importer.apply_pack_to_instance(pack_path, inst)
+
+        def done(result):
+            ok, msg = result
+            self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+            (messagebox.showinfo if ok else messagebox.showerror)(_qt_t("QT_MODPACK", "Modpack"), msg)
+            self._load_modpack()
+            self.refresh_header()
+            self._loaded.discard("Mods")
+            self._loaded.discard("Resource packs and Shader packs")
+            self._load_tab(self.TABS[self.tabs.currentIndex()])
+        _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_MODPACK", "Modpack"), str(e))))
+
+    def _mp_repair(self):
+        meta = self._pack_meta()
+        src = meta.get("source_file")
+        if src and Path(src).exists():
+            if messagebox.askyesno(_qt_t("QT_REPAIR_TITLE", "Repair"), _qt_t("QT_REPAIR_CONFIRM", "Re-download missing pack files using\n{path}?").format(path=src)):
+                self._mp_apply_pack_file(None, None, remove_managed=False, local_path=src)
+            return
+        vid = meta.get("modrinth_version_id")
+        if not vid:
+            messagebox.showinfo(_qt_t("QT_REPAIR_TITLE", "Repair"), _qt_t("QT_REPAIR_NO_SOURCE", "The original pack file is gone and the instance is not linked to Modrinth.\nImport the pack file again to repair."))
+            return
+
+        def work():
+            r = _http_session.get(f"{MODRINTH_API_URL}/version/{vid}", timeout=20)
+            r.raise_for_status()
+            version = r.json()
+            return next((f for f in version.get("files", []) if f.get("primary")), None) or (version.get("files") or [None])[0]
+
+        def done(primary):
+            if primary:
+                self._mp_apply_pack_file(primary.get("url"), primary.get("filename"), remove_managed=False)
+        _qt_run_bg(work, done, lambda e: messagebox.showerror(_qt_t("QT_REPAIR_TITLE", "Repair"), str(e)))
+
+    def _mp_unlink(self):
+        p = self.instance.base_path / "modpack.json"
+        if p.exists() and messagebox.askyesno(_qt_t("QT_UNLINK_TITLE", "Unlink"), _qt_t("QT_UNLINK_CONFIRM", "Forget the modpack link? Files stay, only update tracking is removed.")):
+            p.unlink()
+            self._load_modpack()
+
+    def _mp_import_into(self):
+        path = _pick_open_file(title=_qt_t("QT_IMPORT_INTO_TITLE", "Import modpack into this instance"), filetypes=[(_qt_t("QT_FT_MODPACKS", "Modpacks"), "*.mrpack *.orangpack"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not path:
+            return
+        if messagebox.askyesno(_qt_t("QT_IMPORT", "Import"), _qt_t("QT_IMPORT_INTO_CONFIRM", "Apply this pack on top of the current instance?\nManaged mods of the previously linked pack are removed first.")):
+            self._mp_apply_pack_file(None, None, remove_managed=True, local_path=path)
+
+    def _build_mods(self):
+        self.mods = QtModsPanel(self)
+        return self.mods
+
+    def _build_servers_worlds(self):
+        self.servers_worlds = QtServersWorldsPanel(self)
+        return self.servers_worlds
+
+    def _build_packs(self):
+        self.packs = QtPacksPanel(self)
+        return self.packs
+
+    # orangpack my beloved (it's just a zip, try with 7zip)
+    def _build_sharing(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_EXPORT", "Export"))
+        card.add(_qt_label(_qt_t("QT_EXPORT_HINT", "Tick what to include, choose a format, export. Files that exist on Modrinth are referenced by download link instead of being packed, which keeps .mrpack and .orangpack small."), "hint", wrap=True))
+        self.sh_format = QtWidgets.QButtonGroup(self)
+        for value, text in (("orangpack", _qt_t("QT_FMT_ORANGPACK", "OrangLauncher pack (.orangpack, smallest, keeps instance settings)")),
+                            ("mrpack", _qt_t("QT_FMT_MRPACK", "Modrinth pack (.mrpack, works in every launcher)")),
+                            ("zip", _qt_t("QT_FMT_ZIP", "Full zip (.zip, everything copied, biggest)"))):
+            rb = QtWidgets.QRadioButton(text)
+            rb.setProperty("fmt", value)
+            if value == "orangpack":
+                rb.setChecked(True)
+            self.sh_format.addButton(rb)
+            card.add(rb)
+        self.sh_tree = QtWidgets.QTreeWidget()
+        self.sh_tree.setHeaderHidden(True)
+        self.sh_tree.setMinimumHeight(320)
+        card.add(self.sh_tree)
+        row = QtWidgets.QHBoxLayout()
+        L = self.launcher
+        row.addWidget(_qt_button(_qt_t("QT_REFRESH_LIST", "Refresh list"), self._load_sharing, icon="refresh", launcher=L))
+        row.addWidget(_qt_button(_tr(L, "SELECT_ALL", "Select all"), lambda: self._sh_set_all(True)))
+        row.addWidget(_qt_button(_qt_t("QT_SELECT_NONE", "Select none"), lambda: self._sh_set_all(False)))
+        row.addWidget(_qt_button(_qt_t("QT_EXPORT_BTN", "Export..."), self._sh_export, kind="accent"))
+        row.addStretch(1)
+        card.add_layout(row)
+        lay.addWidget(card)
+        lay.addStretch(1)
+        self._sh_updating = False
+        return _qt_scroll(page)
+
+    def _sh_set_recursive(self, item, state):
+        item.setCheckState(0, state)
+        for i in range(item.childCount()):
+            self._sh_set_recursive(item.child(i), state)
+
+    def _sh_set_all(self, checked):
+        self._sh_updating = True
+        try:
+            for i in range(self.sh_tree.topLevelItemCount()):
+                self._sh_set_recursive(self.sh_tree.topLevelItem(i), Qt.Checked if checked else Qt.Unchecked)
+        finally:
+            self._sh_updating = False
+
+    def _load_sharing(self):
+        if self.instance is None:
+            return
+        self._sh_updating = True
+        try:
+            self.sh_tree.clear()
+            base = self.instance.base_path
+
+            def skip(rel):
+                return rel in DEFAULT_EXPORT_SKIP_DIRS or any(rel.startswith(d + "/") for d in DEFAULT_EXPORT_SKIP_DIRS)
+
+            def make(parent, text, rel, checked, is_dir):
+                item = QtWidgets.QTreeWidgetItem([text])
+                item.setData(0, Qt.UserRole, rel)
+                item.setData(0, Qt.UserRole + 1, is_dir)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
+                item.setCheckState(0, Qt.Checked if checked else Qt.Unchecked)
+                if parent is None:
+                    self.sh_tree.addTopLevelItem(item)
+                else:
+                    parent.addChild(item)
+                return item
+
+            def add_dir(parent, path, rel, depth):
+                item = make(parent, path.name, rel, not skip(rel), True)
+                if depth >= 2:
+                    return item
+                try:
+                    children = sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+                except Exception:
+                    return item
+                for child in children[:400]:
+                    if child.is_symlink():
+                        continue
+                    crel = f"{rel}/{child.name}"
+                    if child.is_dir():
+                        add_dir(item, child, crel, depth + 1)
+                    else:
+                        make(item, child.name, crel, not skip(rel) and not skip(crel), False)
+                return item
+            try:
+                entries = sorted(base.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+            except Exception:
+                entries = []
+            for p in entries:
+                if p.is_symlink() or p.name == "instance.json":
+                    continue
+                if p.is_dir():
+                    item = add_dir(None, p, p.name, 0)
+                    item.setExpanded(True)
+                else:
+                    make(None, p.name, p.name, p.name in ("icon.png", "icon.txt", "modpack.json"), False)
+        finally:
+            self._sh_updating = False
+
+    def _sh_selected_paths(self):
+        base = self.instance.base_path
+        selected = []
+
+        def walk(item):
+            rel = item.data(0, Qt.UserRole)
+            is_dir = item.data(0, Qt.UserRole + 1)
+            state = item.checkState(0)
+            if item.childCount():
+                for i in range(item.childCount()):
+                    walk(item.child(i))
+                if state != Qt.Unchecked and is_dir:
+                    listed = {item.child(i).data(0, Qt.UserRole) for i in range(item.childCount())}
+                    depth = rel.count("/") + 2
+                    for extra in (base / rel).rglob("*"):
+                        if extra.is_file() and not extra.is_symlink():
+                            erel = str(extra.relative_to(base)).replace("\\", "/")
+                            first = "/".join(erel.split("/")[:depth])
+                            if first not in listed and state == Qt.Checked:
+                                selected.append(erel)
+            elif state == Qt.Checked:
+                path = base / rel
+                if path.is_dir():
+                    for f in path.rglob("*"):
+                        if f.is_file() and not f.is_symlink():
+                            selected.append(str(f.relative_to(base)).replace("\\", "/"))
+                else:
+                    selected.append(rel)
+        for i in range(self.sh_tree.topLevelItemCount()):
+            walk(self.sh_tree.topLevelItem(i))
+        return sorted(set(selected))
+
+    def _sh_export(self):
+        inst = self.instance
+        fmt = "orangpack"
+        for b in self.sh_format.buttons():
+            if b.isChecked():
+                fmt = b.property("fmt")
+        ext = {"orangpack": ORANGPACK_EXT, "mrpack": ".mrpack", "zip": ".zip"}[fmt]
+        safe = re.sub(r"[^\w.-]+", "_", inst.name).strip("_") or "instance"
+        path = _pick_save_file(title=_qt_t("QT_EXPORT_NAME", "Export {name}").format(name=inst.name), defaultextension=ext, filetypes=[(f"{ext[1:]} file", f"*{ext}")], initialfile=f"{safe}{ext}")
+        if not path:
+            return
+        if not path.lower().endswith(ext):
+            path += ext
+        selected = self._sh_selected_paths()
+        if not selected:
+            messagebox.showinfo(_qt_t("QT_EXPORT", "Export"), _qt_t("QT_NOTHING_SELECTED", "Nothing selected."))
+            return
+        self.launcher.set_status(_qt_t("QT_EXPORTING", "Exporting..."))
+
+        def work():
+            return export_instance_pack(inst, path, fmt, selected, log_fn=self.launcher._safe_append_log,
+                                        progress_fn=lambda i, t, n: self.launcher._submit_progress_update(int(i / max(t, 1) * 100), _qt_t("QT_EXPORTING_FILE", "Exporting {name}").format(name=n)))
+
+        def done(out):
+            self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            messagebox.showinfo(_qt_t("QT_EXPORT", "Export"), _qt_t("QT_EXPORTED_TO", "Exported to:\n{path}").format(path=out))
+        _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_EXPORT_FAILED", "Export failed"), str(e))))
+
+    def _build_screenshots(self):
+        page = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(page)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(_qt_label(_qt_t("QT_TAB_SCREENSHOTS", "Screenshots"), "h2"))
+        self.ss_count = _qt_label("", "muted")
+        head.addWidget(self.ss_count)
+        head.addStretch(1)
+        L = self.launcher
+        head.addWidget(_qt_button(_qt_t("QT_REFRESH", "Refresh"), self._load_screenshots, icon="refresh", launcher=L))
+        head.addWidget(_qt_button(_tr(L, "RES_SH_OPEN_FOLDER", "Open folder"), lambda: self.instance and open_path_native(self._screenshot_dir()), icon="folder", launcher=L))
+        head.addWidget(_qt_button(_qt_t("QT_COPY_PICTURES", "Copy selected to ~/Pictures"), self._ss_export_selected, icon="update", launcher=L))
+        head.addWidget(_qt_button(_qt_t("QT_DELETE_SELECTED", "Delete selected"), self._ss_delete_selected, icon="trash", launcher=L))
+        lay.addLayout(head)
+        self.ss_list = QtWidgets.QListWidget()
+        self.ss_list.setViewMode(QtWidgets.QListView.IconMode)
+        self.ss_list.setIconSize(QSize(180, 110))
+        self.ss_list.setGridSize(QSize(200, 150))
+        self.ss_list.setResizeMode(QtWidgets.QListView.Adjust)
+        self.ss_list.setMovement(QtWidgets.QListView.Static)
+        self.ss_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.ss_list.setWordWrap(True)
+        self.ss_list.itemDoubleClicked.connect(lambda item: open_path_native(item.data(Qt.UserRole)))
+        lay.addWidget(self.ss_list, 1)
+        self._ss_token = 0
+        return page
+
+    def _screenshot_dir(self):
+        d = self.instance.minecraft_dir / "screenshots"
+        return d.resolve() if d.is_symlink() else d
+
+    # I never used this and never use it. there is SUPER + SHIFT + S
+    def _load_screenshots(self):
+        if self.instance is None:
+            return
+        self.ss_list.clear()
+        d = self._screenshot_dir()
+        pngs = sorted(d.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True) if d.exists() else []
+        self.ss_count.setText(_qt_t("QT_SCREENSHOTS_COUNT", "{n} screenshot(s)").format(n=len(pngs)))
+        if not pngs:
+            # Bevare that there is a mod that makes ss in 2K quality, so f2 is not only way
+            self.ss_list.addItem(_qt_t("QT_NO_SCREENSHOTS", "No screenshots yet. F2 in game takes one."))
+            return
+        self._ss_token += 1
+        token = self._ss_token
+
+        def work():
+            out = []
+            for png in pngs[:200]:
+                if token != self._ss_token:
+                    return out
+                try:
+                    img = QtGui.QImage(str(png))
+                    if img.isNull():
+                        continue
+                    out.append((png, img.scaled(180, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
+                except Exception:
+                    continue
+            return out
+
+        def done(items):
+            if token != self._ss_token:
+                return
+            for png, img in items:
+                item = QtWidgets.QListWidgetItem(QtGui.QIcon(QtGui.QPixmap.fromImage(img)), png.name[:26])
+                item.setData(Qt.UserRole, str(png))
+                item.setToolTip(png.name)
+                self.ss_list.addItem(item)
+        _qt_run_bg(work, done, lambda e: None)
+
+    def _ss_selected(self):
+        return [Path(i.data(Qt.UserRole)) for i in self.ss_list.selectedItems() if i.data(Qt.UserRole)]
+
+    def _ss_export_selected(self):
+        sel = self._ss_selected()
+        if not sel:
+            messagebox.showinfo(_qt_t("QT_TAB_SCREENSHOTS", "Screenshots"), _qt_t("QT_SELECT_SCREENSHOTS_FIRST", "Click screenshots to select them first."))
+            return
+        dest = Path.home() / "Pictures" / "Minecraft" / re.sub(r"[^\w.-]+", "_", self.instance.name)
+        dest.mkdir(parents=True, exist_ok=True)
+        n = 0
+        for png in sel:
+            try:
+                shutil.copy2(png, dest / png.name)
+                n += 1
+            except Exception as e:
+                print(f"[Screenshots] copy failed: {e}")
+        messagebox.showinfo(_qt_t("QT_TAB_SCREENSHOTS", "Screenshots"), _qt_t("QT_COPIED_FILES_TO", "Copied {n} file(s) to\n{path}").format(n=n, path=dest))
+
+    def _ss_delete_selected(self):
+        sel = self._ss_selected()
+        if not sel:
+            messagebox.showinfo(_qt_t("QT_TAB_SCREENSHOTS", "Screenshots"), _qt_t("QT_SELECT_SCREENSHOTS_FIRST", "Click screenshots to select them first."))
+            return
+        if not messagebox.askyesno(_qt_t("QT_DELETE_SCREENSHOTS", "Delete screenshots"), _qt_t("QT_DELETE_SCREENSHOTS_CONFIRM", "Delete {n} screenshot(s)? This cannot be undone.").format(n=len(sel))):
+            return
+        for png in sel:
+            try:
+                png.unlink()
+            except Exception as e:
+                print(f"[Screenshots] delete failed: {e}")
+        self._load_screenshots()
+
+    def _build_other(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_COMPAT", "Compatibility"))
+        self.ot_legacy = _Var(False)
+        card.add(_ToggleRow(_qt_t("QT_LEGACY_FIXES", "Legacy client fixes (old Minecraft versions)"),
+                            _qt_t("QT_LEGACY_FIXES_DESC", "Adds the JVM flags old clients need (legacy merge sort, xrandr guard, macOS first-thread) and keeps Mojang's session endpoints reachable for skins on 1.7-1.16. Only affects versions below 1.13."), self.ot_legacy))
+        self.ot_anti = _Var(True)
+        card.add(_ToggleRow(_qt_t("QT_ANTI_BAN", "Bypass Mojang's blocked-server list"),
+                            _qt_t("QT_ANTI_BAN_DESC", "Removes Mojang's server block list provider from the game's classpath, so servers on the secret sessionserver.mojang.com/blockedservers list can still be joined. Works on 1.16.4 and newer. Turn it off if a server refuses the connection."), self.ot_anti))
+        self.ot_demo = _Var(False)
+        card.add(_ToggleRow(_qt_t("QT_DEMO_MODE", "Launch the demo version (--demo)"),
+                            _qt_t("QT_DEMO_MODE_DESC", "Passes --demo to the game. Use this if you want to try the Java Edition demo: it starts the demo world with the 5 in-game day limit, no account purchase needed."), self.ot_demo))
+        if platform.system() == "Linux":
+            self.ot_backend = QtWidgets.QComboBox()
+            self.ot_backend.addItem(_qt_t("QT_BACKEND_X11", "X11 / XWayland (compatible, default)"), "x11")
+            self.ot_backend.addItem(_qt_t("QT_BACKEND_WAYLAND", "Wayland (native, needs LWJGL 3.3.3+)"), "wayland")
+            card.add(_qt_form_row(_qt_t("QT_DISPLAY_BACKEND", "Display backend"), self.ot_backend, _qt_t("QT_DISPLAY_BACKEND_HINT", "Native Wayland needs LWJGL 3.3.3+ and a client that tolerates GLFW's missing window-icon support (recent versions, or a Wayland-fix mod on 1.20.1 and older); XWayland is the safe default.")))
+        lay.addWidget(card)
+        card2 = _Card(_qt_t("QT_DANGER", "Danger zone"))
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(_qt_button(_qt_t("QT_DELETE_INSTANCE", "Delete this instance"), self._delete_instance, kind="danger"))
+        row.addWidget(_qt_button(_tr(self.launcher, "GAME_PROFILES_DUPLICATE", "Duplicate"), self._duplicate_instance, icon="dublicate", launcher=self.launcher))
+        row.addStretch(1)
+        card2.add_layout(row)
+        lay.addWidget(card2)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_other, kind="accent"))
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+    def _load_other(self):
+        inst = self.instance
+        self.ot_legacy.set(bool(inst.opt("legacy_fixes", False)))
+        self.ot_anti.set(bool(inst.opt("anti_ban", True)))
+        self.ot_demo.set(bool(inst.opt("demo", False)))
+        if hasattr(self, "ot_backend"):
+            idx = self.ot_backend.findData(inst.opt("display_backend", "") or "x11")
+            self.ot_backend.setCurrentIndex(max(0, idx))
+        for w in self.pages["Other settings"].findChildren(_ToggleRow):
+            w.refresh()
+
+    def _save_other(self):
+        inst = self.instance
+        inst.set_opt("legacy_fixes", bool(self.ot_legacy.get()))
+        inst.opts["anti_ban"] = bool(self.ot_anti.get())
+        inst.set_opt("demo", bool(self.ot_demo.get()))
+        if hasattr(self, "ot_backend"):
+            inst.set_opt("display_backend", self.ot_backend.currentData() or "")
+        self.save(_qt_t("QT_OTHER_SAVED", "Other settings saved"))
+
+    def _delete_instance(self):
+        self.page.delete_instance(self.instance)
+
+    def _duplicate_instance(self):
+        self.instance_manager.set_selected_instance(self.instance.instance_id)
+        self.page.duplicate_selected()
+        self.page.show_list()
+
+    JAVA_AUTO = "__auto__"
+    JAVA_BROWSE = "__browse__"
+
+    def _build_versions(self):
+        page, lay = self._page()
+        card = _Card(_qt_t("QT_COMPONENTS", "Components"))
+        form = QtWidgets.QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        self.vr_mc = QtWidgets.QComboBox()
+        self.vr_mc.setEditable(True)
+        self.vr_mc.setMaxVisibleItems(14)
+        self.vr_mc.setMaximumWidth(360)
+        self.vr_mc.addItems(self.launcher.version_values())
+        self.vr_mc.currentTextChanged.connect(lambda *_: self._vr_loader_versions())
+        form.addRow(_qt_t("QT_MINECRAFT", "Minecraft"), self.vr_mc)
+        self.vr_loader = QtWidgets.QComboBox()
+        self.vr_loader.setMaximumWidth(360)
+        self.vr_loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"])
+        self.vr_loader.currentTextChanged.connect(lambda *_: self._vr_loader_versions())
+        form.addRow(_qt_t("QT_MOD_LOADER", "Mod loader"), self.vr_loader)
+        self.vr_loader_ver = QtWidgets.QComboBox()
+        self.vr_loader_ver.setMaxVisibleItems(14)
+        self.vr_loader_ver.setMaximumWidth(360)
+        form.addRow(_qt_t("QT_LOADER_VERSION", "Loader version"), self.vr_loader_ver)
+        jl = QtWidgets.QHBoxLayout()
+        self.vr_java = QtWidgets.QComboBox()
+        self.vr_java.setMaximumWidth(460)
+        self.vr_java.activated.connect(lambda *_: self._vr_java_activated())
+        jl.addWidget(self.vr_java, 1)
+        jl.addStretch(1)
+        form.addRow(_qt_t("QT_JAVA_RUNTIME", "Java runtime"), jl)
+        card.add_layout(form)
+        card.add(_qt_label(_qt_t("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17 or 21) and downloads it when missing."), "hint", wrap=True))
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_NATIVE_LIBS", "Native libraries (LWJGL)"))
+        card.add(_qt_label(_qt_t("QT_LWJGL_EXPLAIN", "LWJGL is the library Minecraft uses to open its window, talk to the GPU and play sound. Minecraft ships its own copy; the old one bundled with 1.20.1 and earlier crashes on modern Linux desktops, so Automatic swaps in a newer one when needed."), "muted", wrap=True))
+        self.vr_lwjgl_mode = QtWidgets.QComboBox()
+        self.vr_lwjgl_mode.setMaximumWidth(460)
+        self.vr_lwjgl_mode.addItem(_qt_t("QT_LWJGL_AUTO", "Automatic (recommended) - fix old versions, keep new ones"), LWJGL_MODE_AUTO)
+        self.vr_lwjgl_mode.addItem(_qt_t("QT_LWJGL_STOCK", "Minecraft's own - never change anything"), LWJGL_MODE_STOCK)
+        self.vr_lwjgl_mode.addItem(_qt_t("QT_LWJGL_PICK", "Pick a specific version"), "pick")
+        self.vr_lwjgl_mode.currentIndexChanged.connect(lambda *_: self._vr_lwjgl_mode_changed())
+        card.add(_qt_form_row(_qt_t("QT_LWJGL_MODE", "LWJGL mode"), self.vr_lwjgl_mode))
+        self.vr_lwjgl = QtWidgets.QComboBox()
+        self.vr_lwjgl.setMaximumWidth(300)
+        self.vr_lwjgl_version_row = _qt_form_row(_qt_t("QT_LWJGL_VERSION", "LWJGL version"), self.vr_lwjgl)
+        card.add(self.vr_lwjgl_version_row)
+        self.vr_status = _qt_label("", "hint", wrap=True)
+        card.add(self.vr_status)
+        self.vr_adv_toggle = QtWidgets.QCheckBox(_qt_t("QT_LWJGL_ADVANCED", "Show advanced native library options"))
+        self.vr_adv_toggle.toggled.connect(lambda on: self.vr_adv_box.setVisible(on))
+        card.add(self.vr_adv_toggle)
+        self.vr_adv_box = QtWidgets.QWidget()
+        adv = QtWidgets.QVBoxLayout(self.vr_adv_box)
+        adv.setContentsMargins(0, 0, 0, 0)
+        adv.setSpacing(6)
+        self.vr_lwjgl_dir = QtWidgets.QLineEdit()
+        adv.addWidget(_qt_form_row(_qt_t("QT_CUSTOM_LWJGL_DIR", "Custom LWJGL folder (overrides everything above)"), _qt_line_with_browse(self.vr_lwjgl_dir, lambda: self.vr_lwjgl_dir.setText(_pick_directory(title=_qt_t("QT_SELECT_LWJGL_FOLDER", "Select LWJGL folder")) or self.vr_lwjgl_dir.text()), text=_qt_t("QT_BROWSE", "Browse")), _qt_t("QT_CUSTOM_LWJGL_DIR_HINT", "Put the LWJGL jars (lwjgl, lwjgl-glfw, lwjgl-openal, ... plus their natives jars or the raw .so/.dll files) in one folder.")))
+        none_text = _qt_t("QT_NONE_DETECTED", "none")
+        self.vr_glfw = QtWidgets.QLineEdit()
+        adv.addWidget(_qt_form_row(_qt_t("QT_CUSTOM_GLFW", "System GLFW library (.so / .dylib / .dll)"), _qt_line_with_browse(self.vr_glfw, lambda: self.vr_glfw.setText(_pick_open_file(title=_qt_t("QT_SELECT_GLFW", "Select GLFW library")) or self.vr_glfw.text()), text=_qt_t("QT_BROWSE", "Browse")), _qt_t("QT_CUSTOM_GLFW_HINT", "Empty = use the LWJGL one. Detected on this system: {path}").format(path=detect_system_glfw() or none_text)))
+        self.vr_openal = QtWidgets.QLineEdit()
+        adv.addWidget(_qt_form_row(_qt_t("QT_CUSTOM_OPENAL", "System OpenAL library (.so / .dylib / .dll)"), _qt_line_with_browse(self.vr_openal, lambda: self.vr_openal.setText(_pick_open_file(title=_qt_t("QT_SELECT_OPENAL", "Select OpenAL library")) or self.vr_openal.text()), text=_qt_t("QT_BROWSE", "Browse")), _qt_t("QT_CUSTOM_OPENAL_HINT", "Empty = use the LWJGL one. Detected on this system: {path}").format(path=detect_system_openal() or none_text)))
+        self.vr_adv_box.setVisible(False)
+        card.add(self.vr_adv_box)
+        lay.addWidget(card)
+        btns = QtWidgets.QHBoxLayout()
+        L = self.launcher
+        btns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_versions, kind="accent"))
+        btns.addWidget(_qt_button(_qt_t("QT_REINSTALL", "Reinstall game files"), self._vr_reinstall, icon="refresh", launcher=L))
+        btns.addWidget(_qt_button(_qt_t("QT_OPEN_VERSIONS", "Open versions folder"), lambda: self.instance and open_path_native(self.instance.minecraft_dir / "versions"), icon="folder", launcher=L))
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        lay.addWidget(_qt_label(_qt_t("QT_INSTALLED", "Installed"), "h3"))
+        self.vr_installed = _qt_label("", "muted", wrap=True)
+        lay.addWidget(self.vr_installed)
+        lay.addStretch(1)
+        self._vr_token = 0
+        self._vr_loading = False
+        self._vr_lwjgl_versions = []
+        return _qt_scroll(page)
+
+    def _vr_java_activated(self):
+        if self.vr_java.currentData() != self.JAVA_BROWSE:
+            return
+        path = _pick_open_file(title=_qt_t("QT_SELECT_JAVA", "Select the java executable"))
+        if path:
+            self._vr_set_java(path)
+        else:
+            self.vr_java.setCurrentIndex(0)
+
+    def _vr_set_java(self, path):
+        idx = self.vr_java.findData(path)
+        if idx < 0:
+            self.vr_java.insertItem(self.vr_java.count() - 1, f"{_qt_t('QT_JAVA_CUSTOM', 'Custom')}  -  {path}", path)
+            idx = self.vr_java.findData(path)
+        self.vr_java.setCurrentIndex(idx)
+
+    def _vr_fill_java(self, current):
+        self.vr_java.blockSignals(True)
+        self.vr_java.clear()
+        self.vr_java.addItem(_qt_t("QT_JAVA_AUTO", "Automatic (recommended)"), self.JAVA_AUTO)
+        seen = set()
+        for major in (8, 11, 17, 21, 25):
+            jp = find_java_executable(major)
+            if jp and jp not in seen:
+                seen.add(jp)
+                self.vr_java.addItem(f"Java {major}  -  {jp}", jp)
+        self.vr_java.addItem(_qt_t("QT_JAVA_BROWSE", "Choose a java executable..."), self.JAVA_BROWSE)
+        if current:
+            self._vr_set_java(current)
+        else:
+            self.vr_java.setCurrentIndex(0)
+        self.vr_java.blockSignals(False)
+
+    def _vr_lwjgl_mode_changed(self):
+        pick = self.vr_lwjgl_mode.currentData() == "pick"
+        self.vr_lwjgl_version_row.setVisible(pick)
+
+    def _vr_loader_versions(self):
+        if self._vr_loading or self.instance is None:
+            return
+        loader = self.vr_loader.currentText().lower()
+        mc = self.vr_mc.currentText().strip()
+        self.vr_loader_ver.clear()
+        if loader in ("vanilla", ""):
+            self.vr_loader_ver.addItem("N/A")
+            self.vr_loader_ver.setEnabled(False)
+            return
+        self.vr_loader_ver.setEnabled(True)
+        self.vr_loader_ver.addItem(_qt_t("QT_LOADING", "Loading…"))
+        current = self.instance.loader_version or ""
+        self._vr_token += 1
+        token = self._vr_token
+
+        def done(versions):
+            if token != self._vr_token:
+                return
+            self.vr_loader_ver.clear()
+            if versions:
+                self.vr_loader_ver.addItems(versions)
+                self.vr_loader_ver.setCurrentText(current if current in versions else versions[0])
+            else:
+                self.vr_loader_ver.addItem(_tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version"))
+        _qt_run_bg(lambda: self.launcher.fetch_loader_versions(loader, mc), done, lambda e: None)
+
+    def _vr_fill_lwjgl(self, mode):
+        mode = mode or LWJGL_MODE_AUTO
+        if mode in (LWJGL_MODE_AUTO, LWJGL_MODE_STOCK):
+            self.vr_lwjgl_mode.setCurrentIndex(self.vr_lwjgl_mode.findData(mode))
+            wanted = ""
+        else:
+            self.vr_lwjgl_mode.setCurrentIndex(self.vr_lwjgl_mode.findData("pick"))
+            wanted = mode
+        self._vr_lwjgl_mode_changed()
+        self.vr_lwjgl.clear()
+        base = list(self._vr_lwjgl_versions) or list(LWJGL_FALLBACK_VERSIONS)
+        if wanted and wanted not in base:
+            base.insert(0, wanted)
+        self.vr_lwjgl.addItems(base)
+        if wanted:
+            self.vr_lwjgl.setCurrentText(wanted)
+
+        def done(versions):
+            if not versions:
+                return
+            self._vr_lwjgl_versions = list(versions)
+            keep = self.vr_lwjgl.currentText()
+            self.vr_lwjgl.clear()
+            items = list(versions)
+            if keep and keep not in items:
+                items.insert(0, keep)
+            self.vr_lwjgl.addItems(items)
+            if keep:
+                self.vr_lwjgl.setCurrentText(keep)
+        if not self._vr_lwjgl_versions:
+            _qt_run_bg(lambda: get_lwjgl_manager().list_versions(), done, lambda e: None)
+
+    def _load_versions(self):
+        inst = self.instance
+        self._vr_loading = True
+        try:
+            self.vr_mc.setCurrentText(inst.version)
+            self.vr_loader.setCurrentText((inst.mod_loader or "vanilla").lower())
+            self._vr_fill_java(inst.java_path or "")
+            self._vr_fill_lwjgl(inst.opt("lwjgl_mode", "") or LWJGL_MODE_AUTO)
+            self.vr_lwjgl_dir.setText(inst.opt("custom_lwjgl_dir", "") or "")
+            self.vr_glfw.setText(inst.opt("glfw_path", "") or "")
+            self.vr_openal.setText(inst.opt("openal_path", "") or "")
+            has_adv = bool(inst.opt("custom_lwjgl_dir") or inst.opt("glfw_path") or inst.opt("openal_path"))
+            self.vr_adv_toggle.setChecked(has_adv)
+        finally:
+            self._vr_loading = False
+        self._vr_loader_versions()
+        stock, major = LwjglManager.stock_version(str(inst.minecraft_dir), inst.installed_version_id or inst.version)
+        mode = inst.opt("lwjgl_mode", "") or LWJGL_MODE_AUTO
+        effective = "stock" if mode == LWJGL_MODE_STOCK else (mode if mode != LWJGL_MODE_AUTO else (get_lwjgl_manager().choose_auto(stock, major) or "stock"))
+        unknown = _qt_t("QT_LWJGL_UNKNOWN", "unknown (not installed yet)")
+        self.vr_status.setText(_qt_t("QT_LWJGL_STATUS", "Minecraft's own LWJGL: {stock}. Used at launch: {effective}.").format(stock=stock or unknown, effective=effective if effective != 'stock' else (stock or unknown))
+                               + (("  " + _qt_t("QT_JAVA_REQUIRED", "Java required: {major}").format(major=get_required_java_version(inst.version))) if inst.version else ""))
+        installed = inst.installed_version_id or _qt_t("QT_NOTHING_INSTALLED", "nothing installed yet (installs on first launch)")
+        versions_dir = inst.minecraft_dir / "versions"
+        present = sorted(d.name for d in versions_dir.iterdir() if d.is_dir()) if versions_dir.exists() else []
+        self.vr_installed.setText(_qt_t("QT_LAUNCH_ID", "Launch id: {id}").format(id=installed) + "\n" + _qt_t("QT_VERSION_FOLDERS", "Version folders: {folders}").format(folders=', '.join(present) if present else _qt_t("QT_NONE_DETECTED", "none")))
+
+    def _save_versions(self):
+        inst = self.instance
+        mc = self.vr_mc.currentText().strip()
+        loader = self.vr_loader.currentText().strip().lower()
+        if not self.launcher.validate_version(mc):
+            return
+        lv = self.vr_loader_ver.currentText().strip()
+        not_compat = _tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version")
+        if loader != "vanilla" and lv == not_compat:
+            messagebox.showerror(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_TITLE", "Loader not available"), _tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=mc))
+            return
+        if lv in ("N/A", "Latest", "Loading…", _qt_t("QT_LOADING", "Loading…"), "", not_compat):
+            lv = ""
+        changed = (inst.version != mc) or ((inst.mod_loader or "").lower() != loader) or ((inst.loader_version or "") != lv)
+        inst.version = mc
+        inst.mod_loader = loader
+        inst.loader_version = lv
+        if changed:
+            inst.installed_version_id = None
+        mode = self.vr_lwjgl_mode.currentData()
+        if mode == "pick":
+            mode = self.vr_lwjgl.currentText().strip() or LWJGL_MODE_AUTO
+        inst.set_opt("lwjgl_mode", mode if mode != LWJGL_MODE_AUTO else "")
+        java = self.vr_java.currentData()
+        inst.java_path = "" if java in (None, "", self.JAVA_AUTO, self.JAVA_BROWSE) else str(java)
+        inst.set_opt("custom_lwjgl_dir", self.vr_lwjgl_dir.text().strip())
+        inst.set_opt("glfw_path", self.vr_glfw.text().strip())
+        inst.set_opt("openal_path", self.vr_openal.text().strip())
+        inst.set_opt("use_system_glfw", bool(inst.opt("glfw_path")))
+        inst.set_opt("use_system_openal", bool(inst.opt("openal_path")))
+        if self.save(_qt_t("QT_VERSIONS_SAVED", "Versions saved")):
+            self._load_versions()
+
+    def _vr_reinstall(self):
+        inst = self.instance
+        if not messagebox.askyesno(_qt_t("QT_REINSTALL_TITLE", "Reinstall"), _qt_t("QT_REINSTALL_CONFIRM", "Delete the installed version folders (not mods, worlds or configs) so they are downloaded again on the next launch?")):
+            return
+        versions_dir = inst.minecraft_dir / "versions"
+        try:
+            if versions_dir.exists():
+                shutil.rmtree(versions_dir)
+        except Exception as e:
+            messagebox.showerror(_qt_t("QT_REINSTALL_TITLE", "Reinstall"), str(e))
+            return
+        inst.installed_version_id = None
+        self.save(_qt_t("QT_REINSTALL_DONE", "Version files removed, they will be reinstalled on launch"))
+        self._load_versions()
+
+
+class QtContentPage(QtWidgets.QWidget):
+    PAGE_SIZE = 20
+    TYPES = [("mod", "CONTENT_TYPE_MODS", "Mods"), ("modpack", "CONTENT_TYPE_MODPACKS", "Modpacks"), ("resourcepack", "CONTENT_TYPE_RESOURCEPACKS", "Resource packs"), ("shader", "CONTENT_TYPE_SHADERS", "Shaders"), ("datapack", "CONTENT_TYPE_DATAPACKS", "Data packs")]
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        self.instance_manager = launcher.instance_manager
+        self.content_type = "mod"
+        self.offset = 0
+        self.total_hits = 0
+        self.instances = []
+        self._search_token = 0
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(18, 12, 18, 10)
+        lay.setSpacing(8)
+        top = QtWidgets.QHBoxLayout()
+        self.type_group = QtWidgets.QButtonGroup(self)
+        self.type_buttons = {}
+        for tag, key, default in self.TYPES:
+            b = QtWidgets.QPushButton(_tr(launcher, key, default))
+            b.setObjectName("topnav")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, t=tag: self.set_type(t))
+            self.type_group.addButton(b)
+            self.type_buttons[tag] = b
+            top.addWidget(b)
+        self.type_buttons["mod"].setChecked(True)
+        top.addStretch(1)
+        top.addWidget(_qt_label(_qt_t("QT_INSTANCE", "Instance") + ":", "muted"))
+        self.instance_combo = QtWidgets.QComboBox()
+        self.instance_combo.setMinimumWidth(220)
+        self.instance_combo.currentIndexChanged.connect(lambda *_: self._on_instance_pick())
+        top.addWidget(self.instance_combo)
+        lay.addLayout(top)
+        srow = QtWidgets.QHBoxLayout()
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText(_tr(launcher, "CONTENT_SEARCH", "Search Modrinth..."))
+        self.search.setClearButtonEnabled(True)
+        self.search.returnPressed.connect(self.on_search)
+        srow.addWidget(self.search, 1)
+        self.sort = QtWidgets.QComboBox()
+        for value, text in (("relevance", _qt_t("QT_SORT_RELEVANCE", "Relevance")), ("downloads", _qt_t("QT_SORT_DOWNLOADS", "Downloads")), ("follows", _qt_t("QT_SORT_FOLLOWS", "Follows")), ("newest", _qt_t("QT_SORT_NEWEST", "Newest")), ("updated", _qt_t("QT_SORT_UPDATED", "Recently updated"))):
+            self.sort.addItem(text, value)
+        self.sort.currentIndexChanged.connect(lambda *_: self.on_search())
+        srow.addWidget(self.sort)
+        srow.addWidget(_qt_button(_tr(launcher, "CONTENT_SEARCH", "Search"), self.on_search, kind="accent"))
+        lay.addLayout(srow)
+        frow = QtWidgets.QHBoxLayout()
+        frow.addWidget(_qt_label(_qt_t("QT_FILTER_VERSION", "Game version") + ":", "muted"))
+        self.version_filter = QtWidgets.QComboBox()
+        self.version_filter.setMinimumWidth(150)
+        frow.addWidget(self.version_filter)
+        self.loader_label = _qt_label(_qt_t("QT_FILTER_LOADER", "Loader") + ":", "muted")
+        frow.addWidget(self.loader_label)
+        self.loader_filter = QtWidgets.QComboBox()
+        self.loader_filter.setMinimumWidth(130)
+        frow.addWidget(self.loader_filter)
+        frow.addWidget(_qt_label(_qt_t("QT_FILTER_CATEGORY", "Category") + ":", "muted"))
+        self.category_filter = QtWidgets.QComboBox()
+        self.category_filter.setMinimumWidth(150)
+        self.category_filter.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
+        frow.addWidget(self.category_filter)
+        frow.addStretch(1)
+        lay.addLayout(frow)
+        self._categories = []
+        self._fill_version_filter()
+        self._fill_loader_filter()
+        self._apply_type_filter_defaults()
+        for combo in (self.version_filter, self.loader_filter, self.category_filter):
+            combo.currentIndexChanged.connect(lambda *_: self._on_filter_changed())
+        _qt_run_bg(self._load_categories, self._on_categories_loaded, lambda e: None)
+        self.status = _qt_label("", "muted", wrap=True)
+        lay.addWidget(self.status)
+        self.results_host = QtWidgets.QWidget()
+        self.results = QtWidgets.QVBoxLayout(self.results_host)
+        self.results.setContentsMargins(0, 0, 0, 0)
+        self.results.setSpacing(6)
+        self.results.addStretch(1)
+        self.scroll = _qt_scroll(self.results_host)
+        lay.addWidget(self.scroll, 1)
+        pag = QtWidgets.QHBoxLayout()
+        self.prev_btn = _qt_button(_tr(launcher, "CONTENT_PREV", "Previous"), self.prev_page)
+        self.next_btn = _qt_button(_tr(launcher, "CONTENT_NEXT", _qt_t("QT_NEXT", "Next")), self.next_page)
+        self.page_label = _qt_label("", "muted")
+        pag.addWidget(self.prev_btn)
+        pag.addWidget(self.page_label)
+        pag.addWidget(self.next_btn)
+        pag.addStretch(1)
+        lay.addLayout(pag)
+        self._searched = False
+        self.refresh_instances()
+        self.instance_manager.register_callback(lambda: _qt_later(self.refresh_instances))
+
+    def refresh_instances(self):
+        self.instance_combo.blockSignals(True)
+        self.instance_combo.clear()
+        self.instances = list(self.instance_manager.instances.values())
+        for inst in self.instances:
+            self.instance_combo.addItem(f"{inst.name}  ({inst.version}, {inst.mod_loader})")
+        sel = self.instance_manager.selected_instance_id
+        for i, inst in enumerate(self.instances):
+            if inst.instance_id == sel:
+                self.instance_combo.setCurrentIndex(i)
+                break
+        self.instance_combo.blockSignals(False)
+        self._refresh_instance_filter_labels()
+
+    def _on_instance_pick(self):
+        self._refresh_instance_filter_labels()
+        if self._searched:
+            self.on_search()
+    INSTANCE_FILTER = "__instance__"
+    LOADERS = ["fabric", "forge", "neoforge", "quilt"]
+
+    def _fill_version_filter(self):
+        combo = self.version_filter
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
+        combo.addItem("", self.INSTANCE_FILTER)
+        try:
+            versions = [v.id for v in get_available_versions_detailed() if getattr(v, "type", "release") == "release"]
+        except Exception:
+            versions = []
+        for vid in versions:
+            combo.addItem(vid, vid)
+        combo.blockSignals(False)
+        self._refresh_instance_filter_labels()
+
+    def _fill_loader_filter(self):
+        combo = self.loader_filter
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
+        combo.addItem("", self.INSTANCE_FILTER)
+        for name in self.LOADERS:
+            combo.addItem(name.capitalize() if name != "neoforge" else "NeoForge", name)
+        combo.blockSignals(False)
+
+    def _refresh_instance_filter_labels(self):
+        inst = self.target_instance()
+        ver = inst.version if inst else "-"
+        loader = (self._normalized_loader(inst) or "vanilla") if inst else "-"
+        for combo, value in ((self.version_filter, ver), (self.loader_filter, loader)):
+            idx = combo.findData(self.INSTANCE_FILTER)
+            if idx >= 0:
+                combo.setItemText(idx, _qt_t("QT_FILTER_INSTANCE", "Instance ({value})").format(value=value))
+
+    def _apply_type_filter_defaults(self):
+        is_modpack = self.content_type == "modpack"
+        shows_loader = self.content_type in ("mod", "modpack")
+        self.loader_label.setVisible(shows_loader)
+        self.loader_filter.setVisible(shows_loader)
+        for combo in (self.version_filter, self.loader_filter):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(combo.findData("" if is_modpack else self.INSTANCE_FILTER))
+            combo.blockSignals(False)
+        self._fill_category_filter()
+
+    def _on_filter_changed(self):
+        if self._searched:
+            self.on_search()
+
+    def _load_categories(self):
+        r = _http_session.get(f"{MODRINTH_API_URL}/tag/category", timeout=20)
+        r.raise_for_status()
+        return r.json() or []
+
+    def _on_categories_loaded(self, cats):
+        self._categories = [c for c in cats if c.get("header") == "categories"]
+        self._fill_category_filter()
+
+    def _fill_category_filter(self):
+        combo = self.category_filter
+        current = combo.currentData() or ""
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
+        names = sorted({c.get("name") for c in self._categories if c.get("project_type") == self.content_type and c.get("name")})
+        for name in names:
+            combo.addItem(name.replace("-", " ").capitalize(), name)
+        idx = combo.findData(current)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def filter_version(self):
+        value = self.version_filter.currentData() or ""
+        if value == self.INSTANCE_FILTER:
+            inst = self.target_instance()
+            return inst.version if inst else None
+        return value or None
+
+    def filter_loader(self):
+        if self.content_type not in ("mod", "modpack"):
+            return None
+        value = self.loader_filter.currentData() or ""
+        if value == self.INSTANCE_FILTER:
+            return self._normalized_loader(self.target_instance())
+        return value or None
+
+    def filter_category(self):
+        return self.category_filter.currentData() or None
+
+    def target_instance(self):
+        idx = self.instance_combo.currentIndex()
+        if 0 <= idx < len(self.instances):
+            return self.instances[idx]
+        return None
+
+    @staticmethod
+    def _normalized_loader(instance):
+        loader = (instance.mod_loader or "").lower() if instance else ""
+        return loader if loader in ("fabric", "forge", "quilt", "neoforge") else None
+
+    @staticmethod
+    def _is_vanilla(instance):
+        loader = (instance.mod_loader or "vanilla").lower() if instance else "vanilla"
+        return loader in ("vanilla", "none", "")
+
+    def ensure_loaded(self):
+        if not self._searched:
+            self.on_search()
+
+    def set_type(self, tag):
+        self.content_type = tag
+        self.type_buttons[tag].setChecked(True)
+        self._apply_type_filter_defaults()
+        self.offset = 0
+        self.on_search()
+
+    def on_search(self):
+        self.offset = 0
+        self.run_search()
+
+    def prev_page(self):
+        if self.offset > 0:
+            self.offset = max(0, self.offset - self.PAGE_SIZE)
+            self.run_search()
+
+    def next_page(self):
+        if self.offset + self.PAGE_SIZE < self.total_hits:
+            self.offset += self.PAGE_SIZE
+            self.run_search()
+
+    def _update_paging(self):
+        page = self.offset // self.PAGE_SIZE + 1
+        pages = max(1, (self.total_hits + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        self.page_label.setText(_qt_t("QT_PAGE", "Page {page} / {pages}").format(page=page, pages=pages))
+        self.prev_btn.setEnabled(self.offset > 0)
+        self.next_btn.setEnabled(self.offset + self.PAGE_SIZE < self.total_hits)
+
+    def _clear_results(self):
+        while self.results.count() > 1:
+            item = self.results.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def run_search(self):
+        self._searched = True
+        self._clear_results()
+        instance = self.target_instance()
+        if self.content_type == "mod" and instance is not None and self._is_vanilla(instance):
+            self.status.setText(_tr(self.launcher, "CONTENT_VANILLA_WARNING", "The selected instance is vanilla; pick a modded instance to browse mods."))
+            self.total_hits = 0
+            self._update_paging()
+            return
+        query = self.search.text().strip()
+        sort = self.sort.currentData() or "relevance"
+        version = self.filter_version()
+        loader = self.filter_loader()
+        category = self.filter_category()
+        self.status.setText(_tr(self.launcher, "CONTENT_SEARCHING", "Searching..."))
+        self._search_token += 1
+        token = self._search_token
+        offset = self.offset
+
+        def work():
+            facets = [[f"project_type:{self.content_type}"]]
+            if version:
+                facets.append([f"versions:{version}"])
+            if loader:
+                facets.append([f"categories:{loader}"])
+            if category:
+                facets.append([f"categories:{category}"])
+            params = {"query": query, "facets": json.dumps(facets), "index": sort, "offset": offset, "limit": self.PAGE_SIZE}
+            r = _http_session.get(f"{MODRINTH_API_URL}/search", params=params, timeout=25)
+            r.raise_for_status()
+            payload = r.json()
+            return payload.get("hits", []), payload.get("total_hits", 0)
+
+        def done(result):
+            if token != self._search_token:
+                return
+            hits, total = result
+            self.total_hits = total
+            for hit in hits:
+                self.results.insertWidget(self.results.count() - 1, self._make_row(hit))
+            if total == 0:
+                self.status.setText(_tr(self.launcher, "CONTENT_NO_RESULTS", "No results."))
+            else:
+                suffix = ((" " + _qt_t("QT_FOR_VERSION", "for {version}").format(version=version)) if version else "") + (f" ({loader})" if loader else "")
+                self.status.setText(_tr(self.launcher, "CONTENT_RESULTS_COUNT", "{count} results").format(count=f"{total:,}") + suffix)
+            self.scroll.verticalScrollBar().setValue(0)
+            self._update_paging()
+        _qt_run_bg(work, done, lambda e: self.status.setText(_qt_t("QT_SEARCH_FAILED", "Search failed: {error}").format(error=e)))
+
+    def _make_row(self, hit):
+        row = QtWidgets.QFrame()
+        row.setObjectName("resultRow")
+        h = QtWidgets.QHBoxLayout(row)
+        h.setContentsMargins(10, 8, 10, 8)
+        icon = QtWidgets.QLabel()
+        icon.setFixedSize(56, 56)
+        icon.setScaledContents(True)
+        h.addWidget(icon)
+        url = hit.get("icon_url")
+        if url:
+            def done(data, lbl=icon):
+                pix = _qt_pixmap_from_bytes(data, (56, 56))
+                if pix is not None:
+                    try:
+                        lbl.setPixmap(pix)
+                    except RuntimeError:
+                        pass
+            _qt_run_bg(lambda: _cached_image_get(url), done, lambda e: None)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        title_row = QtWidgets.QHBoxLayout()
+        title = _qt_label(hit.get("title", "?"), "h3")
+        title_row.addWidget(title)
+        if hit.get("author"):
+            title_row.addWidget(_qt_label(_qt_t("QT_BY", "by {author}").format(author=hit.get("author")), "muted"))
+        title_row.addStretch(1)
+        col.addLayout(title_row)
+        desc = (hit.get("description") or "").replace("\n", " ")
+        if len(desc) > 220:
+            desc = desc[:217] + "..."
+        col.addWidget(_qt_label(desc, "muted", wrap=True))
+        cats = ", ".join((hit.get("categories") or [])[:5])
+        col.addWidget(_qt_label(_qt_t("QT_DOWNLOADS_COUNT", "{count} downloads").format(count=f"{hit.get('downloads', 0):,}") + (f"  ·  {cats}" if cats else ""), "hint"))
+        h.addLayout(col, 1)
+        slug = hit.get("slug") or hit.get("project_id")
+        btn_col = QtWidgets.QVBoxLayout()
+        install = _qt_button(_tr(self.launcher, "CONTENT_INSTALL_BTN", "Install"), None, kind="accent")
+        install.clicked.connect(lambda *_: self.install(slug, install, hit.get("title", "?")))
+        btn_col.addWidget(install)
+        btn_col.addWidget(_qt_button(_qt_t("QT_CHOOSE_VERSION", "Choose version..."), lambda: self.install(slug, install, hit.get("title", "?"), choose=True), kind="flat"))
+        ptype = hit.get("project_type") or self.content_type
+        btn_col.addWidget(_qt_button(_qt_t("QT_PAGE_BTN", "Page"), lambda: open_with_browser(f"https://modrinth.com/{ptype}/{slug}"), kind="flat"))
+        h.addLayout(btn_col)
+        return row
+
+    def _fetch_versions(self, slug, version, loader):
+        params = {}
+        if version:
+            params["game_versions"] = json.dumps([version])
+        if loader:
+            params["loaders"] = json.dumps([loader])
+        r = _http_session.get(f"{MODRINTH_API_URL}/project/{slug}/version", params=params, timeout=25)
+        r.raise_for_status()
+        return r.json() or []
+
+    @staticmethod
+    def _primary_file(version):
+        files = (version or {}).get("files", [])
+        return next((f for f in files if f.get("primary")), files[0] if files else None)
+
+    def _is_mrpack_version(self, version):
+        f = self._primary_file(version)
+        return bool(f and f.get("filename", "").lower().endswith(".mrpack"))
+
+    def install(self, slug, button, title, choose=False):
+        is_modpack = self.content_type == "modpack"
+        instance = None if is_modpack else self.target_instance()
+        if not is_modpack:
+            if instance is None:
+                messagebox.showwarning(_tr(self.launcher, "CONTENT_TAB", "Content"), _tr(self.launcher, "CONTENT_NEED_PROFILE", "Create or select an instance first."))
+                return
+            if self.content_type == "mod" and self._is_vanilla(instance):
+                messagebox.showwarning(_tr(self.launcher, "CONTENT_TAB", "Content"), _tr(self.launcher, "CONTENT_VANILLA_NO_MODS", "Vanilla instances cannot load mods."))
+                return
+        version = self.filter_version()
+        loader = self.filter_loader()
+        if choose:
+            dlg = QtModrinthVersionDialog(self.launcher, title, lambda: self._fetch_versions(slug, version, loader),
+                                          accept=(self._is_mrpack_version if is_modpack else None), parent=self)
+            if dlg.exec() != QtWidgets.QDialog.Accepted or dlg.chosen is None:
+                return
+            self._install_version(dlg.chosen, instance, button, title)
+            return
+        button.setEnabled(False)
+        button.setText(_tr(self.launcher, "CONTENT_INSTALLING_BTN", "Installing..."))
+
+        def work():
+            versions = self._fetch_versions(slug, version, loader)
+            if is_modpack:
+                versions = [v for v in versions if self._is_mrpack_version(v)]
+            return pick_modrinth_version(versions)
+
+        def done(chosen):
+            if chosen is None:
+                button.setEnabled(True)
+                button.setText(_tr(self.launcher, "CONTENT_NOT_COMPATIBLE_BTN", "Not compatible"))
+                if is_modpack:
+                    self.status.setText(_tr(self.launcher, "CONTENT_NO_MRPACK", "{title} has no .mrpack file.").format(title=title))
+                else:
+                    target = (version or _qt_t("QT_FILTER_ANY", "Any")) + (f" ({loader})" if loader else "")
+                    self.status.setText(_tr(self.launcher, "CONTENT_NOT_COMPATIBLE_MSG", "{title} has no version for {target}.").format(title=title, target=target))
+                return
+            self._install_version(chosen, instance, button, title)
+
+        def fail(err):
+            button.setEnabled(True)
+            button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALL_FAILED", "Install failed: {error}").format(error=err))
+        _qt_run_bg(work, done, fail)
+
+    def _install_version(self, chosen, instance, button, title):
+        if self.content_type == "modpack":
+            self._install_modpack_version(chosen, button, title)
+            return
+        file_info = self._primary_file(chosen)
+        if not file_info:
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALL_FAILED", "Install failed: {error}").format(error="no file"))
+            return
+        dest_dir = {"mod": instance.mods_dir, "resourcepack": instance.resourcepacks_dir, "shader": instance.shaderpacks_dir}.get(self.content_type, instance.minecraft_dir / "datapacks")
+        button.setEnabled(False)
+        button.setText(_tr(self.launcher, "CONTENT_INSTALLING_BTN", "Installing..."))
+
+        def work():
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = Path(dest_dir) / file_info["filename"]
+            with _http_session.get(file_info["url"], stream=True, timeout=60) as dl:
+                dl.raise_for_status()
+                with open(dest_path, "wb") as out:
+                    for chunk in dl.iter_content(chunk_size=1024 * 128):
+                        if chunk:
+                            out.write(chunk)
+            if self.content_type in ("resourcepack", "shader"):
+                try:
+                    self.launcher._apply_sharing_for_instance(instance)
+                except Exception:
+                    pass
+            return dest_path
+
+        def done(dest_path):
+            button.setText(_tr(self.launcher, "CONTENT_INSTALLED_BTN", _qt_t("QT_INSTALLED", "Installed")))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALLED_STATUS", "Installed {name}").format(name=dest_path.name))
+
+        def fail(err):
+            button.setEnabled(True)
+            button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALL_FAILED", "Install failed: {error}").format(error=err))
+        _qt_run_bg(work, done, fail)
+
+    def _install_modpack_version(self, chosen, button, title):
+        file_info = self._primary_file(chosen)
+        if not file_info or not self._is_mrpack_version(chosen):
+            button.setEnabled(True)
+            button.setText(_tr(self.launcher, "CONTENT_NOT_COMPATIBLE_BTN", "Not compatible"))
+            self.status.setText(_tr(self.launcher, "CONTENT_NO_MRPACK", "{title} has no .mrpack file.").format(title=title))
+            return
+        button.setEnabled(False)
+        button.setText(_tr(self.launcher, "CONTENT_INSTALLING_BTN", "Installing..."))
+
+        def work():
+            _qt_later(lambda: self.status.setText(_tr(self.launcher, "CONTENT_DOWNLOADING", "Downloading {title}...").format(title=title)))
+            dest_path = Path(tempfile.gettempdir()) / file_info["filename"]
+            with _http_session.get(file_info["url"], stream=True, timeout=120) as dl:
+                dl.raise_for_status()
+                with open(dest_path, "wb") as out:
+                    for chunk in dl.iter_content(chunk_size=1024 * 128):
+                        if chunk:
+                            out.write(chunk)
+            _qt_later(lambda: self.status.setText(_tr(self.launcher, "CONTENT_INSTALLING_STATUS", "Installing {title}...").format(title=title)))
+            result = import_modpack(str(dest_path), self.launcher)
+            try:
+                dest_path.unlink()
+            except Exception:
+                pass
+            return result
+
+        def done(result):
+            success, message, profile_name = result
+            self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+            if success:
+                button.setText(_tr(self.launcher, "CONTENT_INSTALLED_BTN", _qt_t("QT_INSTALLED", "Installed")))
+                self.status.setText(_tr(self.launcher, "CONTENT_INSTALLED_STATUS", "Installed {name}").format(name=profile_name))
+                self.launcher.refresh_instance_display()
+                self.launcher.instances_page.refresh(force=True)
+                messagebox.showinfo(_tr(self.launcher, "CONTENT_TAB", "Content"), _tr(self.launcher, "CONTENT_MODPACK_DONE", "Imported as '{profile}'.\n{message}").format(profile=profile_name, message=message))
+            else:
+                button.setEnabled(True)
+                button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+                messagebox.showerror(_tr(self.launcher, "CONTENT_TAB", "Content"), _tr(self.launcher, "CONTENT_MODPACK_FAIL", "Import failed: {message}").format(message=message))
+
+        def fail(err):
+            button.setEnabled(True)
+            button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALL_FAILED", "Install failed: {error}").format(error=err))
+        _qt_run_bg(work, done, fail)
+
+
+class QtModrinthVersionDialog(QtWidgets.QDialog):
+    def __init__(self, launcher, title, fetch, accept=None, parent=None):
+        super().__init__(parent or launcher)
+        self.launcher = launcher
+        self.chosen = None
+        self.setWindowTitle(_qt_t("QT_VERSION_PICKER_TITLE", "{title} - versions").format(title=title))
+        self.resize(720, 480)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.addWidget(_qt_label(title, "h2"))
+        self.status = _qt_label(_qt_t("QT_VERSION_PICKER_LOADING", "Loading versions..."), "muted", wrap=True)
+        lay.addWidget(self.status)
+        self.list = QtWidgets.QListWidget()
+        self.list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.list.itemDoubleClicked.connect(lambda *_: self._accept())
+        lay.addWidget(self.list, 1)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addStretch(1)
+        self.install_btn = _qt_button(_tr(launcher, "CONTENT_INSTALL_BTN", "Install"), self._accept, kind="accent")
+        self.install_btn.setEnabled(False)
+        btns.addWidget(self.install_btn)
+        btns.addWidget(_qt_button(_tr(launcher, "CANCEL", "Cancel"), self.reject))
+        lay.addLayout(btns)
+        self.versions = []
+
+        def work():
+            versions = fetch()
+            if accept:
+                versions = [v for v in versions if accept(v)]
+            recommended = pick_modrinth_version(versions)
+            ordered = sorted(versions, key=lambda v: v.get("date_published") or "", reverse=True)
+            return ordered, recommended
+        _qt_run_bg(work, self._loaded, lambda e: self.status.setText(_qt_t("QT_SEARCH_FAILED", "Search failed: {error}").format(error=e)))
+
+    def _loaded(self, result):
+        ordered, recommended = result
+        self.versions = ordered
+        if not ordered:
+            self.status.setText(_qt_t("QT_VERSION_PICKER_EMPTY", "No versions match the current filters."))
+            return
+        self.status.setText(_qt_t("QT_VERSION_PICKER_COUNT", "{count} versions - newest first").format(count=len(ordered)))
+        rec_id = (recommended or {}).get("id")
+        for v in ordered:
+            name = v.get("name") or v.get("version_number") or "?"
+            number = v.get("version_number") or ""
+            head = name if not number or number in name else f"{name}  ({number})"
+            if v.get("id") == rec_id:
+                head += "  ·  " + _qt_t("QT_VERSION_RECOMMENDED", "Recommended")
+            gv = ", ".join(v.get("game_versions") or [])
+            if len(gv) > 60:
+                gv = gv[:57] + "..."
+            loaders = ", ".join(v.get("loaders") or [])
+            date = (v.get("date_published") or "")[:10]
+            channel = (v.get("version_type") or "release").lower()
+            size = self._size(v)
+            detail = "  ·  ".join(x for x in (gv, loaders, channel, date, size) if x)
+            item = QtWidgets.QListWidgetItem(f"{head}\n{detail}")
+            item.setData(Qt.UserRole, v)
+            self.list.addItem(item)
+            if v.get("id") == rec_id:
+                self.list.setCurrentItem(item)
+        if self.list.currentItem() is None:
+            self.list.setCurrentRow(0)
+        self.install_btn.setEnabled(True)
+
+    @staticmethod
+    def _size(version):
+        files = version.get("files") or []
+        primary = next((f for f in files if f.get("primary")), files[0] if files else None)
+        return _human_size(primary.get("size")) if primary and primary.get("size") else ""
+
+    def _accept(self):
+        item = self.list.currentItem()
+        if item is None:
+            return
+        self.chosen = item.data(Qt.UserRole)
+        self.accept()
+
+
+class QtSkinPreview(QtWidgets.QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(_SKIN_PREVIEW_W, _SKIN_PREVIEW_H)
+        self.setAlignment(Qt.AlignCenter)
+        self.state = None
+        self._last = None
+        self.setCursor(Qt.OpenHandCursor)
+
+    def set_skin(self, skin, slim, cape):
+        if skin is None:
+            self.state = None
+            self.setPixmap(QtGui.QPixmap())
+            self.setText(_qt_t("QT_NO_SKIN_PREVIEW", "No skin preview available"))
+            return
+        self.state = {"skin": skin, "slim": slim, "cape": cape, "yaw": 25.0, "pitch": 10.0}
+        self.render()
+
+    def render(self):
+        st = self.state
+        if not st:
+            return
+        try:
+            img = _render_skin_3d(st["skin"], _SKIN_PREVIEW_W, _SKIN_PREVIEW_H, yaw_deg=st["yaw"], pitch_deg=st["pitch"], slim=st["slim"], cape=st.get("cape"))
+            self.setText("")
+            self.setPixmap(QtGui.QPixmap.fromImage(img))
+        except Exception as e:
+            print(f"[Skin] render failed: {e}")
+
+    def mousePressEvent(self, event):
+        self._last = event.position()
+        self.setCursor(Qt.ClosedHandCursor)
+
+    def mouseReleaseEvent(self, event):
+        self._last = None
+        self.setCursor(Qt.OpenHandCursor)
+
+    def mouseMoveEvent(self, event):
+        if self._last is None or not self.state:
+            return
+        pos = event.position()
+        self.state["yaw"] += (pos.x() - self._last.x()) * 0.8
+        self.state["pitch"] = max(-60.0, min(60.0, self.state["pitch"] + (pos.y() - self._last.y()) * 0.4))
+        self._last = pos
+        self.render()
+
+
+class QtSettingsPage(QtWidgets.QWidget):
+    def __init__(self, launcher, parent=None):
+        super().__init__(parent)
+        self.launcher = launcher
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        nav = QtWidgets.QFrame()
+        nav.setObjectName("sideNav")
+        nav.setFixedWidth(220)
+        nl = QtWidgets.QVBoxLayout(nav)
+        nl.setContentsMargins(12, 20, 12, 12)
+        nl.setSpacing(2)
+        nl.addWidget(_qt_label(_tr(launcher, "SETTINGS", "Settings"), "h1"))
+        nl.addSpacing(10)
+        self.stack = QtWidgets.QStackedWidget()
+        self.nav_group = QtWidgets.QButtonGroup(self)
+        self.pages = {}
+        for key, default, icon, builder in (("SETTINGS_NAV_GENERAL", "General", "general", self._build_general), ("SETTINGS_NAV_ACCOUNTS", "Accounts", "accounts", self._build_accounts), ("SETTINGS_NAV_ADVANCED", "Advanced", "advanced", self._build_advanced), ("SETTINGS_NAV_ABOUT", "About", "about", self._build_about)):
+            b = QtWidgets.QPushButton(_tr(launcher, key, default))
+            b.setObjectName("nav")
+            b.setCheckable(True)
+            b.setIcon(_qt_icon(icon, 18, launcher.theme.c("fg_secondary")))
+            b.setIconSize(QSize(18, 18))
+            b.setCursor(Qt.PointingHandCursor)
+            page = builder()
+            idx = self.stack.addWidget(page)
+            self.pages[default] = page
+            b.clicked.connect(lambda _=False, i=idx: self.stack.setCurrentIndex(i))
+            self.nav_group.addButton(b)
+            nl.addWidget(b)
+            if idx == 0:
+                b.setChecked(True)
+        nl.addStretch(1)
+        lay.addWidget(nav)
+        lay.addWidget(self.stack, 1)
+
+    def _page(self):
+        page, lay = _qt_page(spacing=16, margins=(32, 26, 32, 26))
+        return page, lay
+        #Settings general page
+    def _build_general(self):
+        page, lay = self._page()
+        L = self.launcher
+        card = _Card(_tr(L, "SETTINGS_CARD_LANGUAGE", "Language"))
+        card.add(_qt_label(_tr(L, "SETTINGS_LANG_LABEL", "Launcher language"), "muted"))
+        self.lang_combo = QtWidgets.QComboBox()
+        names = {'en-US': 'English (United States)', 'lt-LT': 'Lietuvių (Lithuania)', 'ru-RU': 'Русский (Russia)', 'pl-PL': 'Polski (Poland)', 'de-DE': 'Deutsch (Germany)', 'lv-LV': 'Latviešu (Latvia)', 'na-NA': 'For Translators'}
+        for code in L.locales:
+            self.lang_combo.addItem(names.get(code, code), code)
+        idx = self.lang_combo.findData(L.current_locale)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+        self.lang_combo.setMaximumWidth(320)
+
+        def on_lang():
+            code = self.lang_combo.currentData()
+            if code and code != L.current_locale:
+                _save_language_preference(code)
+                L.current_locale = code
+                L.translations = L.locales.get(code, {})
+                _save_settings(L)
+                messagebox.showinfo(_tr(L, "LANGUAGE_CHANGED_TITLE", "Language"), _qt_t("QT_LANGUAGE_SAVED", "Language preference saved. Restart the launcher to apply the change."))
+        self.lang_combo.activated.connect(lambda *_: on_lang())
+        card.add(self.lang_combo)
+        card.add(_qt_label(_tr(L, "SETTINGS_LANG_WARNING", "Restart the launcher to apply."), "hint"))
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_CARD_THEME", "Theme"))
+        card.add(_qt_label(_tr(L, "SETTINGS_THEME_DESC", "Pick how the launcher looks."), "muted"))
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(6)
+        self.theme_group = QtWidgets.QButtonGroup(self)
+        descriptions = {QT_THEME_SYSTEM: _qt_t("QT_THEME_SYSTEM_DESC", "Follows your desktop color"), "Arc": _tr(L, "THEME_ARC_DESC", "Balanced gray"), "Dark Prism": _tr(L, "THEME_DARK_PRISM_DESC", "Pure black"), "Light Mode": _tr(L, "THEME_LIGHT_DESC", "Bright")}
+        swatches = {QT_THEME_SYSTEM: L.theme.c("accent_primary") if L.theme.name == QT_THEME_SYSTEM else "#5a5a5a", "Arc": "#2b2b2b", "Dark Prism": "#000000", "Light Mode": "#f0f0f0"}
+        
+        for name in L.theme.available():
+            row = QtWidgets.QHBoxLayout()
+            row.setSpacing(10)
+            rb = QtWidgets.QRadioButton(_qt_t("QT_THEME_SYSTEM", "System") if name == QT_THEME_SYSTEM else name)
+            rb.setProperty("theme", name)
+            rb.setChecked(name == L.theme.name)
+            rb.setCursor(Qt.PointingHandCursor)
+            rb.clicked.connect(lambda _=False, n=name: L.apply_theme(n))
+            self.theme_group.addButton(rb)
+            sw = QtWidgets.QFrame()
+            sw.setFixedSize(22, 22)
+            sw.setStyleSheet(f"background: {swatches.get(name, '#888')}; border: 1px solid {L.theme.c('border')}; border-radius: 4px;")
+            row.addWidget(sw)
+            row.addWidget(rb)
+            row.addWidget(_qt_label(descriptions.get(name, ""), "muted"), 1)
+            col.addLayout(row)
+
+        card.add_layout(col)
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_GPU_SECTION", _qt_t("QT_GRAPHICS", "Graphics")))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_GPU_DRI_PRIME", "Use the discrete GPU (DRI_PRIME)"), _tr(L, "SETTINGS_GPU_DRI_PRIME_DESC", "Launch Minecraft on the dedicated GPU on hybrid laptops."), L.use_dri_prime, lambda: _save_settings(L)))
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_SHARED_FILES", "Shared files"))
+        card.add(_qt_label(_tr(L, "SETTINGS_SHARED_FILES_DESC", "Share these between all instances via symlinks."), "muted", wrap=True))
+        for attr, key, dkey in (("share_options", "SETTINGS_SHARED_OPTIONS_TXT", "SETTINGS_SHARED_OPTIONS_DESC"), ("share_resourcepacks", "SETTINGS_SHARED_RESOURCEPACKS", "SETTINGS_SHARED_RESOURCEPACKS_DESC"), ("share_shaderpacks", "SETTINGS_SHARED_SHADERPACKS", "SETTINGS_SHARED_SHADERPACKS_DESC"), ("share_servers", "SETTINGS_SHARED_SERVERS", "SETTINGS_SHARED_SERVERS_DESC"), ("share_screenshots", "SETTINGS_SHARED_SCREENSHOTS", "SETTINGS_SHARED_SCREENSHOTS_DESC")):
+            card.add(_ToggleRow(_tr(L, key, attr.replace("share_", "").title()), _tr(L, dkey, ""), getattr(L, attr), lambda: _on_share_toggle(L)))
+        b = _qt_button(_tr(L, "SETTINGS_SHARED_APPLY_ALL", "Apply to all instances"), lambda: _qt_run_bg(L._apply_sharing_all, lambda _: messagebox.showinfo(_tr(L, "SETTINGS_SHARED_FILES", "Shared files"), _tr(L, "SETTINGS_SHARED_UPDATED", "Sharing updated."))))
+        hb = QtWidgets.QHBoxLayout()
+        hb.addWidget(b)
+        hb.addStretch(1)
+        card.add_layout(hb)
+        lay.addWidget(card)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+        # account page
+    def _build_accounts(self):
+        page, lay = self._page()
+        L = self.launcher
+        card = _Card(_tr(L, "SETTINGS_ACCOUNTS_TITLE", "Accounts"))
+        card.add(_qt_label(_tr(L, "SETTINGS_ACCOUNTS_DESC", "Manage Microsoft and offline accounts."), "muted", wrap=True))
+        row = QtWidgets.QHBoxLayout()
+        self.acc_list = QtWidgets.QListWidget()
+        self.acc_list.setMinimumHeight(220)
+        self.acc_list.currentRowChanged.connect(self._on_account_row)
+        row.addWidget(self.acc_list, 1)
+        pv = QtWidgets.QVBoxLayout()
+        self.skin = QtSkinPreview()
+        pv.addWidget(self.skin, 0, Qt.AlignHCenter)
+        self.skin_caption = _qt_label("", "h3", align=Qt.AlignCenter)
+        pv.addWidget(self.skin_caption)
+        pv.addWidget(_qt_label(_qt_t("QT_DRAG_ROTATE", "Drag to rotate"), "hint", align=Qt.AlignCenter))
+        pv.addStretch(1)
+        row.addLayout(pv)
+        card.add_layout(row)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(_qt_button(_tr(L, "SETTINGS_ACCOUNTS_ADD_MS", "Add Microsoft account"), lambda: L.add_account("microsoft"), kind="accent", icon="microsoft", launcher=L))
+        btns.addWidget(_qt_button(_qt_t("QT_MS_BROWSER_OPTION", "Microsoft via browser"), lambda: L.add_account("microsoft", mode="browser"), icon="microsoft", launcher=L, tooltip=_qt_t("QT_MS_BROWSER_OPTION_TIP", "Opens microsoft.com/link in your web browser with a one-time code already filled in; the launcher finishes the login by itself once you signed in there.")))
+        btns.addWidget(_qt_button(_tr(L, "SETTINGS_ACCOUNTS_ADD_OFFLINE", "Add offline account"), lambda: L.add_account("offline"), icon="offline", launcher=L))
+        btns.addWidget(_qt_button(_tr(L, "REMOVE", "Remove"), self._remove_account, icon="trash", launcher=L))
+        btns.addStretch(1)
+        card.add_layout(btns)
+        card.add(_qt_label(_qt_t("QT_MS_TWO_WAYS", "Two ways to sign in: the embedded window logs you in inside the launcher; the browser option opens your default browser with a one-time code and the launcher picks the login up automatically."), "hint", wrap=True))
+        lay.addWidget(card)
+        lay.addStretch(1)
+        self.refresh_accounts()
+        return _qt_scroll(page)
+
+    def refresh_accounts(self):
+        self.acc_list.clear()
+        try:
+            accounts = load_profiles()
+        except Exception:
+            accounts = []
+        self._accounts = accounts
+        for acc in accounts:
+            self.acc_list.addItem(f"{acc.get('username', 'Unknown')}  ({acc.get('type', '?').title()})")
+        if not accounts:
+            self.acc_list.addItem(_tr(self.launcher, "NO_ACCOUNTS", "No accounts yet"))
+            self.skin.set_skin(None, False, None)
+            self.skin_caption.setText("")
+        else:
+            self.acc_list.setCurrentRow(0)
+
+    def _on_account_row(self, row):
+        if row < 0 or row >= len(getattr(self, "_accounts", [])):
+            return
+        acc = self._accounts[row]
+        self.skin_caption.setText(acc.get("username", ""))
+
+        def done(result):
+            skin, slim, cape = result
+            self.skin.set_skin(skin, slim, cape)
+        _qt_run_bg(lambda: _fetch_skin_texture(acc), done, lambda e: self.skin.set_skin(None, False, None))
+
+    def _remove_account(self):
+        row = self.acc_list.currentRow()
+        if row < 0 or row >= len(self._accounts):
+            return
+        username = self._accounts[row].get("username", "?")
+        if not messagebox.askyesno(_tr(self.launcher, "ACCOUNT_REMOVE_TITLE", "Remove account"), _tr(self.launcher, "ACCOUNT_REMOVE_CONFIRM", "Remove {username}?").format(username=username)):
+            return
+        accounts = load_profiles()
+        if row < len(accounts):
+            del accounts[row]
+            save_profiles(accounts)
+        self.refresh_accounts()
+        self.launcher.refresh_accounts()
+
+        # intresting section of the settings page
+    def _build_advanced(self):
+        
+        page, lay = self._page()
+        L = self.launcher
+        card = _Card(_tr(L, "SETTINGS_CARD_DISCORD", "Discord"))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_DISCORD_ENABLE", "Discord Rich Presence"), _tr(L, "SETTINGS_DISCORD_DESC", "Show what you play on Discord."), L.discord_rpc_enabled, lambda: _save_and_apply(L, lambda: _toggle_discord_rpc(L))))
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_CARD_TELEMETRY", "Privacy"))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_TELEMETRY_DELETE", "Delete telemetry on startup"), _tr(L, "SETTINGS_TELEMETRY_DESC", "Removes Mojang telemetry logs from every instance when the launcher starts."), L.delete_telemetry_on_startup, lambda: _save_settings(L)))
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_PROGRESS_BAR", "Interface"))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_SHOW_PROGRESS_BAR", "Show the progress bar"), _tr(L, "SETTINGS_SHOW_PROGRESS_BAR_DESC", "Shows download/installation progress under the Play button."), L.show_progress_bar, lambda: (_save_settings(L), L.update_bottom_visibility())))
+        card.add(_ToggleRow(_tr(L, "SHOW_STATUS_BAR", "Show the status bar"), _qt_t("QT_STATUS_BAR_DESC", "Status text with the current instance and account."), L.show_status_bar, lambda: (_save_settings(L), L.update_bottom_visibility())))
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_CARD_DEBUG", "Debug"))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_DEBUG_ENABLE", "Debug mode"), _tr(L, "SETTINGS_DEBUG_DESC", "Writes launcher output to ~/.local/share/oranglauncher/logs."), L.debug_mode_enabled, lambda: _toggle_debug_mode(L)))
+        card.add(_qt_label(_qt_t("QT_DEBUG_CRASH_HINT", "Crashes are always written to crash_*.log in that folder, even with debug mode off."), "hint", wrap=True))
+        hb = QtWidgets.QHBoxLayout()
+        hb.addWidget(_qt_button(_qt_t("QT_DEBUG_OPEN_LOGS", "Open log folder"), lambda: open_path_native(_launcher_log_dir()), icon="folder", launcher=L))
+        hb.addWidget(_qt_button(_qt_t("QT_SYSTEM_INFO", "Show system info"), self._show_debug_info, icon="logs", launcher=L))
+        hb.addStretch(1)
+        card.add_layout(hb)
+        lay.addWidget(card)
+        card = _Card(_tr(L, "SETTINGS_CARD_PLUGINS", "Plugins"))
+        card.add(_qt_label(_tr(L, "SETTINGS_PLUGINS_DESC", "Python plugins from ~/.local/share/oranglauncher/plugins."), "muted", wrap=True))
+        self.plugin_list = QtWidgets.QListWidget()
+        self.plugin_list.setMaximumHeight(120)
+        card.add(self.plugin_list)
+        self._refresh_plugins()
+        hb = QtWidgets.QHBoxLayout()
+        hb.addWidget(_qt_button(_tr(L, "SETTINGS_PLUGIN_ADD", "Add plugin"), lambda: _add_plugin_file(L), icon="plus", launcher=L))
+        hb.addWidget(_qt_button(_tr(L, "SETTINGS_PLUGIN_REFRESH", "Reload plugins"), lambda: (_refresh_plugins_runtime_qt(L), self._refresh_plugins()), icon="refresh", launcher=L))
+        hb.addWidget(_qt_button(_qt_t("QT_PLUGINS_FOLDER", "Open plugins folder"), lambda: open_path_native(Path.home() / ".local" / "share" / "oranglauncher" / "plugins"), icon="folder", launcher=L))
+        hb.addStretch(1)
+        card.add_layout(hb)
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_JAVA_RUNTIMES", "Java runtimes"))
+        card.add(_qt_label(_qt_t("QT_JAVA_RUNTIMES_DESC", "Install or update Java runtimes. The launcher checks pacman / apt first, then downloads directly from Adoptium if needed."), "muted", wrap=True))
+        not_found = _qt_t("QT_NOT_FOUND", "not found")
+        
+        for major in (8, 17, 21, 25):
+            row = QtWidgets.QHBoxLayout()
+            path = find_java_executable(major)
+            lbl = _qt_label(f"Java {major}  ✓  {path}" if path else f"Java {major}  -  {not_found}", "accent" if path else "muted")
+            row.addWidget(lbl, 1)
+
+            def make_install(m, label):
+                def on_install():
+                    label.setText(f"Java {m}  …  {_qt_t('QT_WORKING', 'working')}")
+
+                    def set_status(msg):
+                        _qt_later(lambda: label.setText(f"Java {m}  -  {msg}"))
+
+                    def on_done(ok, msg):
+                        p = find_java_executable(m)
+                        _qt_later(lambda: label.setText(f"Java {m}  {'✓' if ok else '✗'}  {p or msg}"))
+                    _install_java_pm_or_download(m, set_status, on_done)
+                return on_install
+            row.addWidget(_qt_button(_qt_t("QT_INSTALL_UPDATE", "Install / Update"), make_install(major, lbl)))
+            card.add_layout(row)
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_LAUNCHER_NETWORK", "Launcher network"))
+        proxy = QtWidgets.QLineEdit(str(_adv_get("proxy_url", "") or ""))
+        proxy.setPlaceholderText("http://host:port   socks5h://host:port   http://user:pass@host:port")
+        card.add(_qt_form_row(_qt_t("QT_PROXY_LABEL", "Proxy for the launcher only"), proxy, _qt_t("QT_PROXY_HINT", "Used for Modrinth, Mojang, Java and news downloads. Minecraft itself is launched without it. SOCKS needs the PySocks package.")))
+        self.proxy_status = _qt_label("", "hint", wrap=True)
+        card.add(self.proxy_status)
+        # I never tested this.
+        def apply_proxy():
+            value = proxy.text().strip()
+            _adv_set("proxy_url", value)
+            ok, msg = apply_launcher_proxy()
+            self.proxy_status.setText(msg)
+            if not ok:
+                messagebox.showerror(_qt_t("QT_PROXY", "Proxy"), msg)
+            else:
+                messagebox.showinfo(_qt_t("QT_PROXY", "Proxy"), _qt_t("QT_PROXY_APPLIED", "Proxy applied to launcher downloads.") if value else _qt_t("QT_PROXY_CLEARED", "Proxy cleared."))
+
+        def test_proxy():
+            value = proxy.text().strip()
+            self.proxy_status.setText(_qt_t("QT_PROXY_TESTING", "Testing proxy..."))
+
+            def work():
+                return test_launcher_proxy(value)
+
+            def done(result):
+                ok, msg = result
+                self.proxy_status.setText(msg)
+                (messagebox.showinfo if ok else messagebox.showerror)(_qt_t("QT_PROXY", "Proxy"), msg)
+            _qt_run_bg(work, done, lambda e: self.proxy_status.setText(str(e)))
+        hb = QtWidgets.QHBoxLayout()
+        hb.addWidget(_qt_button(_qt_t("QT_PROXY_APPLY", "Apply proxy"), apply_proxy, kind="accent"))
+        hb.addWidget(_qt_button(_qt_t("QT_PROXY_TEST", "Test proxy"), test_proxy))
+        hb.addStretch(1)
+        card.add_layout(hb)
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_OPEN_WITH", "Open with"))
+        browser = QtWidgets.QLineEdit(str(_adv_get("custom_browser", "") or ""))
+        browser.editingFinished.connect(lambda: _adv_set("custom_browser", browser.text().strip()))
+        card.add(_qt_form_row(_qt_t("QT_BROWSER_OVERRIDE", "Browser command override (empty = system default)"), browser, _qt_t("QT_BROWSER_OVERRIDE_HINT", "Example: firefox   or   flatpak run org.chromium.Chromium")))
+        editor = QtWidgets.QLineEdit(str(_adv_get("custom_editor", "") or ""))
+        editor.editingFinished.connect(lambda: _adv_set("custom_editor", editor.text().strip()))
+        card.add(_qt_form_row(_qt_t("QT_EDITOR_OVERRIDE", "Text editor command override (empty = system default)"), editor, _qt_t("QT_EDITOR_OVERRIDE_HINT", "Used for opening logs and config files. Example: kate   or   code --wait")))
+        
+        if platform.system() == "Linux":
+            picker_var = _Var(bool(_adv_get("native_file_picker", True)))
+            detected = _native_picker_tool() or _qt_t("QT_PICKER_NONE", "none, the Qt dialog is used")
+            card.add(_ToggleRow(_qt_t("QT_NATIVE_PICKER", "Use the desktop's file picker"), _qt_t("QT_NATIVE_PICKER_DESC", "kdialog on Plasma, zenity elsewhere. Detected: {tool}").format(tool=detected), picker_var, lambda: _adv_set("native_file_picker", bool(picker_var.get()))))
+        lay.addWidget(card)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+    def _refresh_plugins(self):
+        self.plugin_list.clear()
+        plugins = getattr(self.launcher, "loaded_plugins", []) or []
+        if not plugins:
+            self.plugin_list.addItem(_tr(self.launcher, "PLUGINS_NONE", "No plugins loaded"))
+        for p in plugins:
+            if isinstance(p, dict):
+                self.plugin_list.addItem(f"{p.get('name', '?')}  ({p.get('type', '?')})  -  {p.get('path', '')}")
+            else:
+                self.plugin_list.addItem(str(p))
+
+    def _show_debug_info(self):
+        L = self.launcher
+        lines = ["=== SYSTEM INFO ===", f"Platform: {platform.platform()}", f"Python: {sys.version}", f"Qt: {QtCore.qVersion()} (PySide6)", f"Desktop: {os.environ.get('XDG_CURRENT_DESKTOP', '?')} / {os.environ.get('XDG_SESSION_TYPE', '?')}", f"Theme: {L.theme.name}", f"Locale: {L.current_locale}", f"Debug mode: {'ON' if L.debug_mode_enabled.get() else 'OFF'}"]
+        if getattr(L, "_current_log_file", None):
+            lines.append(f"Log file: {L._current_log_file}")
+        lines.append(f"Instances: {len(L.instance_manager.instances)}")
+        lines.append(f"Java: " + ", ".join(f"{m}={find_java_executable(m) or '-'}" for m in (8, 17, 21, 25)))
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(_qt_t("QT_DEBUG_INFO", "Debug info"))
+        dlg.resize(700, 420)
+        v = QtWidgets.QVBoxLayout(dlg)
+        txt = QtWidgets.QPlainTextEdit("\n".join(lines))
+        txt.setReadOnly(True)
+        v.addWidget(txt)
+        hb = QtWidgets.QHBoxLayout()
+        hb.addStretch(1)
+        hb.addWidget(_qt_button(_qt_t("QT_COPY", "Copy"), lambda: QtWidgets.QApplication.clipboard().setText(txt.toPlainText())))
+        hb.addWidget(_qt_button(_qt_t("QT_CLOSE", "Close"), dlg.accept, kind="accent"))
+        v.addLayout(hb)
+        dlg.exec()
+    # credits basicly, this is about page of the settings page (OrangLauncher)
+    def _build_about(self):
+        page, lay = self._page()
+        L = self.launcher
+        card = _Card(_tr(L, "SETTINGS_ABOUT_TITLE", "About"))
+        row = QtWidgets.QHBoxLayout()
+        logo = QtWidgets.QLabel()
+        logo_path = find_resource("oranglauncher/images/orange.png")
+        if logo_path:
+            logo.setPixmap(_qt_pixmap_from_path(str(logo_path), (72, 72)) or QtGui.QPixmap())
+        logo.setFixedSize(72, 72)
+        logo.setScaledContents(True)
+        logo.setCursor(Qt.PointingHandCursor)
+        logo.mousePressEvent = lambda e: L.toggle_music()
+        row.addWidget(logo, 0, Qt.AlignTop)
+        col = QtWidgets.QVBoxLayout()
+        
+        col.addWidget(_qt_label("OrangLauncher", "h1"))
+        col.addWidget(_qt_label(_qt_t("QT_VERSION", "Version") + f": {CURRENT_VERSION}  ·  PySide6 {QtCore.qVersion()}", "muted"))
+        col.addWidget(_qt_label(_tr(L, "SETTINGS_ABOUT_AUTHOR", "by Orang Studio"), "muted"))
+        col.addWidget(_qt_label(_tr(L, "SETTINGS_ABOUT_DESC", "A modular, open source Minecraft launcher."), "hint", wrap=True))
+        
+        row.addLayout(col, 1)
+        card.add_layout(row)
+        btns = QtWidgets.QHBoxLayout()
+        
+        btns.addWidget(_qt_button(_tr(L, "SETTINGS_ABOUT_CHECK_UPDATES", _qt_t("QT_CHECK_UPDATES", "Check for updates")), L.check_updates, kind="accent", icon="update", launcher=L))
+        btns.addWidget(_qt_button(_tr(L, "SETTINGS_ABOUT_GITHUB", "GitHub"), lambda: open_with_browser("https://github.com/Orang-Studio/OrangLaunch"), icon="github", launcher=L))
+        btns.addWidget(_qt_button(_qt_t("QT_LICENSE", "License"), lambda: open_with_browser("https://github.com/Orang-Studio/OrangLaunch?tab=GPL-3.0-1-ov-file"), kind="flat"))
+        btns.addStretch(1)
+        card.add_layout(btns)
+        lay.addWidget(card)
+        card = _Card(_qt_t("QT_SOURCE_PACKAGE", "Build-from-source package"))
+        card.add(_qt_label(_qt_t("QT_SOURCE_PACKAGE_DESC", "There's an oranglauncher AUR package that builds the launcher with Nuitka on your machine instead of shipping a prebuilt binary. Prefer compiling yourself? Install that one. Want the quick prebuilt? Keep oranglauncher-bin."), "muted", wrap=True))
+        hb = QtWidgets.QHBoxLayout()
+        hb.addWidget(_qt_button(_qt_t("QT_VIEW_ON_AUR", "View on AUR"), lambda: open_with_browser("https://aur.archlinux.org/packages/oranglauncher"), kind="accent"))
+        hb.addStretch(1)
+        card.add_layout(hb)
+        lay.addWidget(card)
+        lay.addStretch(1)
+        return _qt_scroll(page)
+
+
+def _refresh_plugins_runtime_qt(launcher):
+    try:
+        launcher._initialize_plugins()
+        messagebox.showinfo(_tr(launcher, "SETTINGS_CARD_PLUGINS", "Plugins"), _qt_t("QT_PLUGINS_RELOADED", "Plugins have been reloaded."))
+    except Exception as e:
+        messagebox.showerror(_tr(launcher, "SETTINGS_CARD_PLUGINS", "Plugins"), _qt_t("QT_PLUGINS_RELOAD_FAIL", "Error refreshing plugins: {error}").format(error=e))
+
+# still hate this annoyance, but it is for new people, so it is needed. I guess.
+class QtWelcomeWizard(QtWidgets.QDialog):
+    def __init__(self, launcher):
+        super().__init__(launcher)
+        self.launcher = launcher
+        self.setWindowTitle(_qt_t("QT_WELCOME_TITLE", "Welcome to OrangLauncher"))
+        self.setModal(True)
+        self.resize(720, 560)
+        self.page = 0
+        self.profile_created = False
+        self.java_choice = "Auto"
+        self.rec_vars = {}
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        head = QtWidgets.QFrame()
+        head.setObjectName("sideNav")
+        hl = QtWidgets.QHBoxLayout(head)
+        hl.setContentsMargins(22, 16, 22, 16)
+        logo = QtWidgets.QLabel()
+        lp = find_resource("oranglauncher/images/orange.png")
+        if lp:
+            logo.setPixmap(_qt_pixmap_from_path(str(lp), (40, 40)) or QtGui.QPixmap())
+        hl.addWidget(logo)
+        col = QtWidgets.QVBoxLayout()
+        col.addWidget(_qt_label("OrangLauncher", "h2"))
+        self.subtitle = _qt_label("", "muted")
+        col.addWidget(self.subtitle)
+        hl.addLayout(col, 1)
+        self.steps_label = _qt_label("", "muted")
+        hl.addWidget(self.steps_label)
+        lay.addWidget(head)
+        self.body_host = QtWidgets.QWidget()
+        self.body = QtWidgets.QVBoxLayout(self.body_host)
+        self.body.setContentsMargins(26, 20, 26, 12)
+        self.body.setSpacing(10)
+        lay.addWidget(_qt_scroll(self.body_host), 1)
+        foot = QtWidgets.QHBoxLayout()
+        foot.setContentsMargins(22, 10, 22, 16)
+        self.back_btn = _qt_button(_qt_t("QT_BACK", "Back"), self._go_back)
+        foot.addWidget(self.back_btn)
+        foot.addStretch(1)
+        self.next_btn = _qt_button(_qt_t("QT_NEXT", "Next"), self._go_next, kind="accent")
+        foot.addWidget(self.next_btn)
+        lay.addLayout(foot)
+        self.pages = [self._page_greet, self._page_account, self._page_java, self._page_profile, self._page_settings]
+        self._render()
+
+    def _t(self, key, default):
+        return _tr(self.launcher, key, default)
+
+    def _clear(self):
+        while self.body.count():
+            item = self.body.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _render(self):
+        self._clear()
+        self.steps_label.setText(_qt_t("QT_WIZARD_STEP", "Step {step} / {total}").format(step=self.page + 1, total=len(self.pages)))
+        self.back_btn.setVisible(self.page > 0)
+        self.next_btn.setText(_qt_t("QT_FINISH", "Finish") if self.page == len(self.pages) - 1 else _qt_t("QT_NEXT", "Next"))
+        self.pages[self.page]()
+        self.body.addStretch(1)
 
     def _go_back(self):
         if self.page > 0:
             self.page -= 1
-            self._render_page()
+            self._render()
 
     def _go_next(self):
-        if not self.completed[self.page]:
-            return
         if self.page == 3 and not self.profile_created:
             if not self._create_profile():
                 return
-        if self.page == self.PAGE_COUNT - 1:
+        if self.page == len(self.pages) - 1:
             self._finish()
             return
         self.page += 1
-        self._render_page()
+        self._render()
 
     def _finish(self):
         self._apply_recommended_settings()
         mark_setup_done(True)
-        try:
-            self.launcher._refresh_profiles()
-            self.launcher._refresh_game_profiles()
-        except Exception:
-            pass
-        self._on_close()
-    def _render_page(self):
-        self._clear_body()
-        self.next_btn.pack(side="right")
-        [self._page_greet, self._page_account, self._page_java,
-         self._page_profile, self._page_settings][self.page]()
-        self._refresh_nav()
+        self.launcher.refresh_accounts()
+        self.launcher.refresh_instance_display()
+        self.launcher.instances_page.refresh(force=True)
+        self.accept()
 
     def _heading(self, text, sub=None):
-        tk.Label(self.body, text=text, font=("Segoe UI", 16, "bold"),
-                 bg=self._c('bg_secondary'), fg=self._c('fg_primary')).pack(anchor="w", padx=24, pady=(22, 4))
+        self.body.addWidget(_qt_label(text, "h1"))
         if sub:
-            tk.Label(self.body, text=sub, font=("Segoe UI", 10), justify="left",
-                     wraplength=560, bg=self._c('bg_secondary'),
-                     fg=self._c('fg_secondary')).pack(anchor="w", padx=24, pady=(0, 8))
+            self.body.addWidget(_qt_label(sub, "muted", wrap=True))
 
     def _page_greet(self):
-        self.subtitle.config(text=self.launcher._t('WIZARD_STEP_GREET'))
-        bg = self._c('bg_secondary')
-        acc = self._c('accent_primary')
-
-        mid = tk.Frame(self.body, bg=bg)
-        mid.pack(fill="both", expand=True, padx=28, pady=(24, 0))
-
-        tk.Label(mid, text=self.launcher._t('WIZARD_GREET_TAGLINE'),
-                 font=("Segoe UI", 13), bg=bg, fg=self._c('fg_secondary')).pack(anchor="w", pady=(0, 20))
-
-        for i, (t_key, d_key) in enumerate([
-            ('WIZARD_GREET_STEP_ACCOUNT', 'WIZARD_GREET_STEP_ACCOUNT_DESC'),
-            ('WIZARD_GREET_STEP_JAVA',    'WIZARD_GREET_STEP_JAVA_DESC'),
-            ('WIZARD_GREET_STEP_PROFILE', 'WIZARD_GREET_STEP_PROFILE_DESC'),
-            ('WIZARD_GREET_STEP_SETTINGS','WIZARD_GREET_STEP_SETTINGS_DESC'),
-        ]):
-            row = tk.Frame(mid, bg=bg)
-            row.pack(fill="x", pady=7)
-            num_bg = tk.Frame(row, bg=acc, width=26, height=26)
-            num_bg.pack(side="left", padx=(0, 14))
-            num_bg.pack_propagate(False)
-            tk.Label(num_bg, text=str(i + 1), font=("Segoe UI", 10, "bold"),
-                     bg=acc, fg="#ffffff").pack(expand=True)
-            info = tk.Frame(row, bg=bg)
-            info.pack(side="left", fill="x", expand=True)
-            tk.Label(info, text=self.launcher._t(t_key), font=("Segoe UI", 10, "bold"),
-                     bg=bg, fg=self._c('fg_primary'), anchor="w").pack(anchor="w")
-            tk.Label(info, text=self.launcher._t(d_key), font=("Segoe UI", 9),
-                     bg=bg, fg=self._c('fg_secondary'), anchor="w").pack(anchor="w")
-
-        spacer = tk.Frame(mid, bg=bg)
-        spacer.pack(fill="both", expand=True)
-
-        foot = tk.Frame(self.body, bg=bg)
-        foot.pack(fill="x", padx=28, pady=(0, 18))
-        tk.Button(foot, text=self.launcher._t('WIZARD_SKIP_ALL'), command=self._skip_all,
-                  bg=self._c('bg_tertiary'), fg=self._c('fg_tertiary'),
-                  font=("Segoe UI", 9), bd=0, relief="flat", padx=14, pady=6,
-                  cursor="hand2", activebackground=self._c('bg_hover'),
-                  activeforeground=self._c('fg_primary')).pack(side="left")
-
-    def _skip_all(self):
-        mark_setup_done(True)
-        self._on_close()
+        self.subtitle.setText(self._t("WIZARD_STEP_GREET", "Welcome"))
+        self._heading(self._t("WIZARD_GREET_TAGLINE", "Let's get you playing in a minute."))
+        for i, (t_key, d_key, t_def, d_def) in enumerate([("WIZARD_GREET_STEP_ACCOUNT", "WIZARD_GREET_STEP_ACCOUNT_DESC", _qt_t("QT_ACCOUNT", "Account"), _qt_t("QT_WIZ_ACCOUNT_DESC", "Sign in with Microsoft or use an offline name")), ("WIZARD_GREET_STEP_JAVA", "WIZARD_GREET_STEP_JAVA_DESC", "Java", _qt_t("QT_WIZ_JAVA_DESC", "Pick a Java runtime (auto works fine)")), ("WIZARD_GREET_STEP_PROFILE", "WIZARD_GREET_STEP_PROFILE_DESC", _qt_t("QT_INSTANCE", "Instance"), _qt_t("QT_WIZ_PROFILE_DESC", "Create your first instance or grab a modpack")), ("WIZARD_GREET_STEP_SETTINGS", "WIZARD_GREET_STEP_SETTINGS_DESC", _tr(self.launcher, "SETTINGS", "Settings"), _qt_t("QT_WIZ_SETTINGS_DESC", "A few recommended toggles"))]):
+            row = QtWidgets.QHBoxLayout()
+            num = QtWidgets.QLabel(str(i + 1))
+            num.setFixedSize(28, 28)
+            num.setAlignment(Qt.AlignCenter)
+            num.setStyleSheet(f"background: {self.launcher.theme.c('accent_primary')}; color: {self.launcher.theme.c('selection_fg', '#fff')}; border-radius: 14px; font-weight: 700;")
+            row.addWidget(num)
+            col = QtWidgets.QVBoxLayout()
+            col.addWidget(_qt_label(self._t(t_key, t_def), "h3"))
+            col.addWidget(_qt_label(self._t(d_key, d_def), "muted"))
+            row.addLayout(col, 1)
+            box = QtWidgets.QWidget()
+            box.setLayout(row)
+            self.body.addWidget(box)
+        skip = _qt_button(self._t("WIZARD_SKIP_ALL", "Skip setup"), lambda: (mark_setup_done(True), self.reject()), kind="flat")
+        self.body.addWidget(skip, 0, Qt.AlignLeft)
 
     def _page_account(self):
-        self.subtitle.config(text=self.launcher._t('WIZARD_STEP_ACCOUNT'))
-        self.next_btn.pack_forget()
-        self._heading(self.launcher._t('WIZARD_ACCOUNT_TITLE'),
-                      self.launcher._t('WIZARD_ACCOUNT_DESC'))
-        self.acc_status = tk.Label(self.body, text="", font=("Segoe UI", 10),
-                                   bg=self._c('bg_secondary'), fg=self._c('fg_secondary'))
-        self.acc_status.pack(anchor="w", padx=24, pady=(0, 12))
+        self.subtitle.setText(self._t("WIZARD_STEP_ACCOUNT", _qt_t("QT_ACCOUNT", "Account")))
+        self._heading(self._t("WIZARD_ACCOUNT_TITLE", "Sign in"), self._t("WIZARD_ACCOUNT_DESC", "A Microsoft account is needed for online servers. Offline names work for singleplayer."))
+        self.acc_status = _qt_label("", "muted")
+        self.body.addWidget(self.acc_status)
         self._update_account_status()
-        row = tk.Frame(self.body, bg=self._c('bg_secondary'))
-        row.pack(anchor="w", padx=24, pady=(0, 8))
-        tk.Button(row, text=self.launcher._t('WIZARD_ACCOUNT_LOGIN_MS'),
-                  command=self._do_ms_login,
-                  bg=self._c('accent_primary'), fg="#ffffff",
-                  font=("Segoe UI", 10, "bold"), bd=0, relief="flat",
-                  padx=18, pady=8, cursor="hand2",
-                  activebackground=self._c('accent_hover'),
-                  activeforeground="#ffffff").pack(side="left", padx=(0, 10))
-        tk.Button(row, text=self.launcher._t('WIZARD_ACCOUNT_SKIP'),
-                  command=self._account_skip,
-                  bg=self._c('bg_tertiary'), fg=self._c('fg_secondary'),
-                  font=("Segoe UI", 10), bd=0, relief="flat",
-                  padx=18, pady=8, cursor="hand2",
-                  activebackground=self._c('bg_hover'),
-                  activeforeground=self._c('fg_primary')).pack(side="left")
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(_qt_button(self._t("WIZARD_ACCOUNT_LOGIN_MS", "Sign in with Microsoft"), lambda: self._add("microsoft"), kind="accent", icon="microsoft", launcher=self.launcher))
+        row.addWidget(_qt_button(_qt_t("QT_OFFLINE_ACCOUNT", "Offline account"), lambda: self._add("offline"), icon="offline", launcher=self.launcher))
+        row.addWidget(_qt_button(self._t("WIZARD_ACCOUNT_SKIP", "Skip"), self._go_next_plain, kind="flat"))
+        row.addStretch(1)
+        box = QtWidgets.QWidget()
+        box.setLayout(row)
+        self.body.addWidget(box)
+
+    def _go_next_plain(self):
+        self.page += 1
+        self._render()
+
+    def _add(self, kind):
+        self.launcher.add_account(kind)
+        self._update_account_status()
 
     def _update_account_status(self):
         try:
@@ -10740,264 +11242,199 @@ class WelcomeWizard(tk.Frame):
         except Exception:
             accounts = []
         if accounts:
-            names = ", ".join(a.get('username', '?') for a in accounts)
-            try:
-                self.acc_status.config(
-                    text=self.launcher._t('WIZARD_ACCOUNT_SIGNED_IN').format(names=names),
-                    fg=self._c('accent_primary'))
-            except Exception:
-                pass
-            self._set_complete(1)
-            return True
+            self.acc_status.setText(self._t("WIZARD_ACCOUNT_SIGNED_IN", "Signed in: {names}").format(names=", ".join(a.get("username", "?") for a in accounts)))
+            self.acc_status.setObjectName("accent")
         else:
-            try:
-                self.acc_status.config(text=self.launcher._t('WIZARD_ACCOUNT_NO_ACCOUNTS'),
-                                       fg=self._c('fg_secondary'))
-            except Exception:
-                pass
-            return False
-
-    def _account_skip(self):
-        self._set_complete(1)
-        self.page += 1
-        self._render_page()
-
-    def _do_ms_login(self):
-        try:
-            add_profile(parent=self)
-        except Exception as e:
-            messagebox.showerror("Error", f"Microsoft sign-in failed:\n{e}", parent=self)
-        if self._update_account_status():
-            self.page += 1
-            self._render_page()
+            self.acc_status.setText(self._t("WIZARD_ACCOUNT_NO_ACCOUNTS", "No accounts yet."))
+        self.acc_status.style().unpolish(self.acc_status)
+        self.acc_status.style().polish(self.acc_status)
 
     def _page_java(self):
-        self.subtitle.config(text=self.launcher._t('WIZARD_STEP_JAVA'))
-        self._heading(self.launcher._t('WIZARD_JAVA_TITLE'),
-                      self.launcher._t('WIZARD_JAVA_DESC'))
+        self.subtitle.setText(self._t("WIZARD_STEP_JAVA", "Java"))
+        self._heading(self._t("WIZARD_JAVA_TITLE", _qt_t("QT_JAVA_RUNTIME", "Java runtime")), self._t("WIZARD_JAVA_DESC", "Auto picks the right Java for each Minecraft version and downloads it when missing."))
         installed = _wizard_detect_javas()
-        opts = tk.Frame(self.body, bg=self._c('bg_secondary'))
-        opts.pack(anchor="w", padx=24, pady=(0, 8), fill="x")
-        self.java_choices = {}
-        radio_items = []
-        if installed:
-            newest_major = installed[0][0]
-            for major, path in installed:
-                label = f"Java {major}"
-                if major == newest_major:
-                    label += f"  -  {self.launcher._t('WIZARD_JAVA_RECOMMENDED')}"
-                    self.recommended_java_label = label
-                self.java_choices[label] = path
-                radio_items.append(label)
-        auto_label = self.launcher._t('WIZARD_JAVA_AUTO')
-        self.java_choices[auto_label] = "Auto"
-        radio_items.append(auto_label)
-        if not installed:
-            self.recommended_java_label = auto_label
-        if not self.java_var.get():
-            self.java_var.set(self.recommended_java_label or auto_label)
-        for label in radio_items:
-            rb = tk.Radiobutton(opts, text=label, value=label, variable=self.java_var,
-                                bg=self._c('bg_secondary'), fg=self._c('fg_primary'),
-                                selectcolor=self._c('bg_input'), anchor="w",
-                                activebackground=self._c('bg_secondary'),
-                                activeforeground=self._c('fg_primary'),
-                                font=("Segoe UI", 10), bd=0, highlightthickness=0,
-                                command=lambda: self._set_complete(2))
-            rb.pack(anchor="w", pady=3, fill="x")
-        self._set_complete(2)
+        self.java_group = QtWidgets.QButtonGroup(self)
+        first = True
+        for major, path in installed:
+            rb = QtWidgets.QRadioButton(f"Java {major}  -  {path}" + (f"  ({self._t('WIZARD_JAVA_RECOMMENDED', 'recommended')})" if first else ""))
+            rb.setProperty("java", path)
+            self.java_group.addButton(rb)
+            self.body.addWidget(rb)
+            first = False
+        rb = QtWidgets.QRadioButton(self._t("WIZARD_JAVA_AUTO", "Auto (recommended)"))
+        rb.setProperty("java", "Auto")
+        rb.setChecked(True)
+        self.java_group.addButton(rb)
+        self.body.addWidget(rb)
 
     def _page_profile(self):
-        self.subtitle.config(text=self.launcher._t('WIZARD_STEP_PROFILE'))
-        self._heading(self.launcher._t('WIZARD_PROFILE_TITLE'),
-                      self.launcher._t('WIZARD_PROFILE_DESC'))
-        if not self.p_version.get():
-            vers = self.launcher_versions()
-            self.p_version.set(vers[0] if vers else "")
-        grid = tk.Frame(self.body, bg=self._c('bg_secondary'))
-        grid.pack(anchor="w", padx=24, pady=(0, 6), fill="x")
-        grid.columnconfigure(1, weight=1)
-        def label(r, text):
-            tk.Label(grid, text=text, width=14, anchor="w",
-                     bg=self._c('bg_secondary'), fg=self._c('fg_primary'),
-                     font=("Segoe UI", 10)).grid(row=r, column=0, sticky="w", pady=6, padx=(0, 10))
-        label(0, "Name")
-        ttk.Entry(grid, textvariable=self.p_name, width=34, style="Modern.TEntry").grid(row=0, column=1, sticky="ew", pady=6)
-        label(1, "Loader")
-        loader_combo = ttk.Combobox(grid, textvariable=self.p_loader, state="readonly",
-                                    values=["vanilla", "forge", "neoforge", "fabric", "quilt"],
-                                    style="Modern.TCombobox")
-        loader_combo.grid(row=1, column=1, sticky="ew", pady=6)
-        label(2, "Version")
-        version_combo = ttk.Combobox(grid, textvariable=self.p_version,
-                                    values=self.launcher_versions(), style="Modern.TCombobox")
-        version_combo.grid(row=2, column=1, sticky="ew", pady=6)
-        label(3, "Loader version")
-        self.p_loader_combo = ttk.Combobox(grid, textvariable=self.p_loader_version,
-                                          state="disabled", style="Modern.TCombobox")
-        self.p_loader_combo.grid(row=3, column=1, sticky="ew", pady=6)
-        ram_cell = tk.Frame(grid, bg=self._c('bg_secondary'))
-        ram_cell.grid(row=4, column=1, sticky="ew", pady=6)
-        label(4, "RAM")
-        _make_ram_slider(ram_cell, self._c('bg_secondary'), self.p_ram,
-                         self._c('accent_primary'), self._c('fg_primary'),
-                         self._c('fg_secondary'), wizard_fmt=True).pack(fill="x")
-
-        if not self.p_name.get():
-            base = "My Profile"
-            name = base
-            i = 1
-            while self.launcher.instance_manager.get_instance_by_name(name):
-                i += 1
-                name = f"{base} {i}"
-            self.p_name.set(name)
-
-        def on_loader_change(*_):
-            self._refresh_loader_versions()
-        loader_combo.bind("<<ComboboxSelected>>", on_loader_change)
-        version_combo.bind("<<ComboboxSelected>>", on_loader_change)
-
-        self.profile_status = tk.Label(self.body, text="", font=("Segoe UI", 9),
-                                       bg=self._c('bg_secondary'), fg=self._c('fg_secondary'))
-        self.profile_status.pack(anchor="w", padx=24, pady=(4, 0))
-        self._set_complete(3, bool(self.p_name.get().strip()))
-        self.p_name.trace_add("write", lambda *_: self._set_complete(3, bool(self.p_name.get().strip())))
-
-    def launcher_versions(self):
-        try:
-            return get_available_versions()
-        except Exception:
-            return []
+        self.subtitle.setText(self._t("WIZARD_STEP_PROFILE", _qt_t("QT_INSTANCE", "Instance")))
+        self._heading(self._t("WIZARD_PROFILE_TITLE", "First instance"), self._t("WIZARD_PROFILE_DESC", "Pick a Minecraft version and, optionally, a mod loader."))
+        form = QtWidgets.QFormLayout()
+        self.p_name = QtWidgets.QLineEdit()
+        base = "My Profile"
+        name = base
+        i = 1
+        while self.launcher.instance_manager.get_instance_by_name(name):
+            i += 1
+            name = f"{base} {i}"
+        self.p_name.setText(name)
+        form.addRow(_qt_t("QT_NAME", "Name"), self.p_name)
+        self.p_loader = QtWidgets.QComboBox()
+        self.p_loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt"])
+        form.addRow(_qt_t("QT_LOADER", "Loader"), self.p_loader)
+        self.p_version = QtWidgets.QComboBox()
+        self.p_version.setEditable(True)
+        self.p_version.setMaxVisibleItems(14)
+        self.p_version.addItems(self.launcher.version_values())
+        form.addRow(_qt_t("QT_VERSION", "Version"), self.p_version)
+        self.p_loader_version = QtWidgets.QComboBox()
+        self.p_loader_version.setEnabled(False)
+        form.addRow(_qt_t("QT_LOADER_VERSION", "Loader version"), self.p_loader_version)
+        self.p_ram = QtWidgets.QSpinBox()
+        self.p_ram.setRange(1, max(2, (_get_system_ram_mb() - 1024) // 1024))
+        self.p_ram.setValue(min(4, self.p_ram.maximum()))
+        self.p_ram.setSuffix(" GB")
+        form.addRow(_qt_t("QT_RAM", "RAM"), self.p_ram)
+        box = QtWidgets.QWidget()
+        box.setLayout(form)
+        self.body.addWidget(box)
+        self.p_loader.currentTextChanged.connect(lambda *_: self._refresh_loader_versions())
+        self.p_version.currentTextChanged.connect(lambda *_: self._refresh_loader_versions())
+        self.body.addWidget(_qt_label(_qt_t("QT_NOT_SURE", "Not sure yet? You can skip this step, or grab a ready-made modpack instead:"), "muted"))
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(_qt_button(_qt_t("QT_SKIP_PROFILE", "Skip, no instance for now"), self._skip_profile))
+        row.addWidget(_qt_button(_qt_t("QT_GET_MODPACK", "Get a modpack from Modrinth"), self._goto_content, kind="accent"))
+        row.addWidget(_qt_button(_qt_t("QT_IMPORT_PACK_FILE", "Import pack file..."), self._import_pack_file, icon="mrpack", launcher=self.launcher))
+        row.addStretch(1)
+        b2 = QtWidgets.QWidget()
+        b2.setLayout(row)
+        self.body.addWidget(b2)
 
     def _refresh_loader_versions(self):
-        loader = self.p_loader.get().lower()
+        loader = self.p_loader.currentText().lower()
+        self.p_loader_version.clear()
         if loader == "vanilla":
-            self.p_loader_combo.configure(state="disabled", values=[])
-            self.p_loader_version.set("N/A")
+            self.p_loader_version.setEnabled(False)
             return
-        self.p_loader_combo.configure(state="readonly", values=["Loading…"])
-        self.p_loader_version.set("Loading…")
-        mc = self.p_version.get()
-        def work():
-            versions = _wizard_loader_versions(loader, mc)
-            def apply():
-                if not self.p_loader_combo.winfo_exists():
-                    return
-                self.p_loader_combo.configure(values=versions or ["Latest"])
-                self.p_loader_version.set(versions[0] if versions else "Latest")
+        self.p_loader_version.setEnabled(True)
+        self.p_loader_version.addItem(_qt_t("QT_LOADING", "Loading…"))
+        mc = self.p_version.currentText().strip()
+
+        def done(versions):
             try:
-                self.after(0, apply)
-            except Exception:
+                self.p_loader_version.clear()
+                self.p_loader_version.addItems(versions or ["Latest"])
+            except RuntimeError:
                 pass
-        threading.Thread(target=work, daemon=True).start()
+        _qt_run_bg(lambda: _wizard_loader_versions(loader, mc), done, lambda e: None)
+
+    def _skip_profile(self):
+        self.profile_created = True
+        self.page += 1
+        self._render()
+
+    def _goto_content(self):
+        self._apply_recommended_settings()
+        mark_setup_done(True)
+        self.launcher.refresh_accounts()
+        self.accept()
+        self.launcher.show_content("modpack")
+
+    def _import_pack_file(self):
+        path = _pick_open_file(title=_tr(self.launcher, "MODS_IMPORT_TITLE", "Import modpack"), filetypes=[(_qt_t("QT_FT_MODPACKS", "Modpacks"), "*.mrpack *.orangpack *.zip"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not path:
+            return
+        self.profile_created = True
+        self._finish()
+        _qt_later(lambda: self.launcher._open_file_from_cli(path), 300)
 
     def _create_profile(self):
-        name = self.p_name.get().strip()
-        version = self.p_version.get().strip()
-        loader = self.p_loader.get().strip().lower()
+        name = self.p_name.text().strip()
+        version = self.p_version.currentText().strip()
+        loader = self.p_loader.currentText().lower()
         if not name or not version:
-            messagebox.showerror("Missing info", "Please enter a name and pick a version.", parent=self)
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_INVALID_TITLE", "Invalid"), _tr(self.launcher, "GAME_PROFILES_INVALID_MSG", "Name and version are required."), parent=self)
             return False
         if self.launcher.instance_manager.get_instance_by_name(name):
-            messagebox.showerror("Name taken", f"A profile called '{name}' already exists.", parent=self)
+            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_INVALID_TITLE", "Invalid"), _qt_t("QT_NAME_TAKEN", "An instance called '{name}' already exists.").format(name=name), parent=self)
             return False
-        lv = self.p_loader_version.get().strip()
-        if loader == "vanilla" or lv in ("", "N/A", "Latest", "Loading…"):
+        lv = self.p_loader_version.currentText().strip()
+        if loader == "vanilla" or lv in ("", "N/A", "Latest", "Loading…", _qt_t("QT_LOADING", "Loading…")):
             lv = ""
         try:
-            inst = self.launcher.instance_manager.create_instance(
-                name=name, version=version, mod_loader=loader,
-                ram=self.p_ram.get(), loader_version=lv or None)
+            inst = self.launcher.instance_manager.create_instance(name=name, version=version, mod_loader=loader, ram=f"{self.p_ram.value()}G", loader_version=lv or None)
             if inst is None:
                 raise RuntimeError("instance creation returned None")
-            java_val = self.java_choices.get(self.java_var.get(), "Auto")
+            checked = self.java_group.checkedButton() if hasattr(self, "java_group") else None
+            java_val = checked.property("java") if checked else "Auto"
             if java_val and java_val != "Auto":
                 inst.java_path = java_val
                 self.launcher.instance_manager.save_instances()
+            self.launcher.instance_manager.set_selected_instance(inst.instance_id)
         except Exception as e:
-            messagebox.showerror("Error", f"Could not create profile:\n{e}", parent=self)
+            messagebox.showerror(_tr(self.launcher, "ERROR", "Error"), _qt_t("QT_CREATE_INSTANCE_FAIL", "Could not create the instance:\n{error}").format(error=e), parent=self)
             return False
         self.profile_created = True
         return True
 
     def _page_settings(self):
-        self.subtitle.config(text=self.launcher._t('WIZARD_STEP_SETTINGS'))
-        self._heading(self.launcher._t('WIZARD_SETTINGS_TITLE'),
-                      self.launcher._t('WIZARD_SETTINGS_DESC'))
-        recs = [
-            ("show_progress_bar",           self.launcher._t('WIZARD_SETTINGS_SHOW_PROGRESS'), True),
-            ("discord_rpc_enabled",         self.launcher._t('WIZARD_SETTINGS_DISCORD'), bool(Presence)),
-            ("delete_telemetry_on_startup", self.launcher._t('WIZARD_SETTINGS_TELEMETRY'), True),
-            ("show_status_bar",             self.launcher._t('WIZARD_SETTINGS_STATUS_BAR'), True),
-        ]
-        box = tk.Frame(self.body, bg=self._c('bg_secondary'))
-        box.pack(anchor="w", padx=24, pady=(4, 8), fill="x")
-        self.rec_vars = {}
-        for key, text, default in recs:
-            row = tk.Frame(box, bg=self._c('bg_secondary'))
-            row.pack(fill="x", pady=5)
-            var = tk.BooleanVar(value=default)
+        self.subtitle.setText(self._t("WIZARD_STEP_SETTINGS", "Settings"))
+        self._heading(self._t("WIZARD_SETTINGS_TITLE", "Recommended settings"), self._t("WIZARD_SETTINGS_DESC", "You can change all of these later in Settings."))
+        for key, tkey, default_text, default in (("show_progress_bar", "WIZARD_SETTINGS_SHOW_PROGRESS", "Show the progress bar", True), ("discord_rpc_enabled", "WIZARD_SETTINGS_DISCORD", "Discord Rich Presence", True), ("delete_telemetry_on_startup", "WIZARD_SETTINGS_TELEMETRY", "Delete telemetry on startup", True), ("show_status_bar", "WIZARD_SETTINGS_STATUS_BAR", "Show the status bar", True)):
+            var = _Var(default)
             self.rec_vars[key] = var
-            ToggleSwitch(row, var, bg=self._c('bg_secondary')).pack(side="left", padx=(0, 12))
-            tk.Label(row, text=text, bg=self._c('bg_secondary'), fg=self._c('fg_primary'),
-                     font=("Segoe UI", 10)).pack(side="left")
-        # theme selector
-        themes = self.launcher.theme_manager.get_available_themes()
-        if themes:
-            sep = tk.Frame(box, bg=self._c('border'), height=1)
-            sep.pack(fill="x", pady=(8, 8))
-            theme_row = tk.Frame(box, bg=self._c('bg_secondary'))
-            theme_row.pack(fill="x", pady=4)
-            tk.Label(theme_row, text=self.launcher._t('WIZARD_SETTINGS_THEME'),
-                     bg=self._c('bg_secondary'), fg=self._c('fg_primary'),
-                     font=("Segoe UI", 10)).pack(side="left", padx=(0, 12))
-            self._theme_var = tk.StringVar(value=self.launcher.theme_manager.current_theme or (themes[0] if themes else ""))
-            theme_combo = ttk.Combobox(theme_row, textvariable=self._theme_var,
-                                       values=themes, state="readonly", width=20,
-                                       style="Modern.TCombobox")
-            theme_combo.pack(side="left")
-            tk.Label(theme_row, text=self.launcher._t('WIZARD_SETTINGS_THEME_HINT'),
-                     bg=self._c('bg_secondary'), fg=self._c('fg_secondary'),
-                     font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
-        tk.Label(self.body, text=self.launcher._t('WIZARD_SETTINGS_FINISH_HINT'),
-                 font=("Segoe UI", 9, "italic"),
-                 bg=self._c('bg_secondary'), fg=self._c('fg_secondary')).pack(anchor="w", padx=24, pady=(10, 0))
-        self._set_complete(4)
+            self.body.addWidget(_ToggleRow(self._t(tkey, default_text), "", var))
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(_qt_label(self._t("WIZARD_SETTINGS_THEME", "Theme")))
+        self.theme_combo = QtWidgets.QComboBox()
+        self.theme_combo.addItems(self.launcher.theme.available())
+        self.theme_combo.setCurrentText(self.launcher.theme.name or QT_THEME_SYSTEM)
+        self.theme_combo.activated.connect(lambda *_: self.launcher.apply_theme(self.theme_combo.currentText()))
+        row.addWidget(self.theme_combo)
+        row.addStretch(1)
+        box = QtWidgets.QWidget()
+        box.setLayout(row)
+        self.body.addWidget(box)
+        self.body.addWidget(_qt_label(self._t("WIZARD_SETTINGS_FINISH_HINT", "Press Finish to start using the launcher."), "hint"))
 
     def _apply_recommended_settings(self):
         try:
             for key, var in self.rec_vars.items():
                 target = getattr(self.launcher, key, None)
-                if isinstance(target, tk.BooleanVar):
+                if target is not None:
                     target.set(var.get())
-                else:
-                    setattr(self.launcher, key, tk.BooleanVar(value=var.get()))
             _save_settings(self.launcher)
-            # apply visual effects that depend on the toggles
-            try:
-                self.launcher._toggle_status_bar()
-            except Exception:
-                pass
-            try:
-                _toggle_discord_rpc(self.launcher)
-            except Exception:
-                pass
-            try:
-                pb = getattr(self.launcher, 'show_progress_bar', None)
-                sbf = getattr(self.launcher, 'status_bar_frame', None)
-                if pb and sbf:
-                    if pb.get():
-                        sbf.pack(fill="x", side="bottom", pady=(0, 4))
-                    else:
-                        sbf.pack_forget()
-            except Exception:
-                pass
+            _toggle_discord_rpc(self.launcher)
+            self.launcher.update_bottom_visibility()
         except Exception as e:
             print(f"[setup] applying recommended settings failed: {e}")
 
+    # My version of CrashAssistant mod
+class QtCrashDialog(QtWidgets.QDialog):
+    def __init__(self, launcher, exit_code, report_path, summary):
+        super().__init__(launcher)
+        self.setWindowTitle(_qt_t("QT_CRASHED", "Minecraft Crashed"))
+        self.resize(720, 460)
+        lay = QtWidgets.QVBoxLayout(self)
+        title = _qt_label(_qt_t("QT_EXITED_WITH", "Minecraft exited with code {code}").format(code=exit_code), "h2")
+        title.setStyleSheet("color: #f25c5c;")
+        lay.addWidget(title)
+        lay.addWidget(_qt_label(_qt_t("QT_LATEST_CRASH_REPORT", "Latest crash report: {name}").format(name=report_path.name), "muted"))
+        txt = QtWidgets.QPlainTextEdit(summary)
+        txt.setReadOnly(True)
+        txt.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
+        lay.addWidget(txt, 1)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(_qt_button(_qt_t("QT_OPEN_REPORT", "Open full report"), lambda: open_with_editor(report_path)))
+        row.addWidget(_qt_button(_qt_t("QT_OPEN_CRASH_FOLDER", "Open crash-reports folder"), lambda: open_path_native(report_path.parent)))
+        row.addWidget(_qt_button(_qt_t("QT_SHOW_LOG", "Show launcher log"), lambda: (launcher.show_page("logs"), self.accept())))
+        row.addStretch(1)
+        row.addWidget(_qt_button(_qt_t("QT_CLOSE", "Close"), self.accept, kind="accent"))
+        lay.addLayout(row)
 
-# main app
-class MinecraftLauncher(tk.Tk):
+
+class LauncherCore:
     def _load_locales(self):
         self.locales = {}
         self.locale_names = {}
@@ -11026,19 +11463,6 @@ class MinecraftLauncher(tk.Tk):
             }.get(code, code)
         self.current_locale = 'en-US'
         self.translations = self.locales.get(self.current_locale, {})
-    def _set_locale(self, code):
-        if code in self.locales:
-            old_locale = self.current_locale
-            self.current_locale = code
-            self.translations = self.locales[code]
-            print(f"[DEBUG] Changed language from {old_locale} to {code}")
-            self._update_ui_language()
-            try:
-                _save_settings(self)
-            except Exception as e:
-                print(f"[DEBUG] Error saving language setting: {e}")
-        else:
-            print(f"[DEBUG] Locale {code} not found in available locales")
     def _t(self, key, **kwargs):
         text = self.translations.get(key, key)
         if kwargs:
@@ -11047,1055 +11471,6 @@ class MinecraftLauncher(tk.Tk):
             except Exception:
                 return text
         return text
-    def _get_theme_color(self, color_key):
-        return self.theme_manager.get_color(color_key)
-    def _update_ui_language(self):
-        print(f"[DEBUG] Updating UI language to: {self.current_locale}")
-        if hasattr(self, 'play_btn'):
-            self.play_btn.config(text=self._t('PLAY'))
-        self._refresh_tabs_styling()
-
-    def _load_themed_icon(self, icon_name, size=(24, 24), force_color=None):
-        current_theme = self.theme_manager.current_theme
-        color = force_color if force_color else self.theme_manager.get_color('fg_primary')
-        
-        cache_key = (icon_name, size, color, current_theme)
-        if cache_key in self.icon_cache:
-            return self.icon_cache[cache_key]
-            
-        icon_path = find_resource(f"oranglauncher/images/icons/{icon_name}.png")
-        if not icon_path:
-            icon_path = find_resource(f"oranglauncher/images/{icon_name}.png")
-            
-        if not icon_path:
-            print(f"[WARN] Icon {icon_name} not found at {icon_path}")
-            return None
-            
-        try:
-            image = Image.open(icon_path).convert("RGBA")
-            image = image.resize(size, Image.Resampling.LANCZOS)
-            
-            r, g, b = self.winfo_rgb(color) # returns 16-bit values
-            color_tuple = (r//256, g//256, b//256, 255)
-            
-            colored_image = Image.new("RGBA", size, color_tuple)
-            mask = image.split()[3]
-            colored_image.putalpha(mask)
-            
-            photo = ImageTk.PhotoImage(colored_image)
-            self.icon_cache[cache_key] = photo
-            return photo
-        except Exception as e:
-            print(f"[ERROR] Failed to load icon {icon_name}: {e}")
-            return None
-
-    # ordered (title_key, icon) spec matching the build order in _build_interface
-    TAB_SPEC = [
-        ('UPDATE_NOTES', 'news'),
-        ('LAUNCHER_LOG', 'logs'),
-        ('GAME_PROFILES_TITLE', 'instances'),
-        ('MODS_TAB_TITLE', 'modding'),
-        ('SERVERS', 'plugin'),
-        ('RES_SH_TAB_TITLE', 'rs_sh'),
-        ('CONTENT_TAB', 'file'),
-        ('SETTINGS', 'settings'),
-    ]
-
-    def _refresh_tabs_styling(self):
-        if hasattr(self, 'notebook'):
-            for tab_id, (title_key, icon_name) in zip(self.notebook.tabs(), self.TAB_SPEC):
-                title = self._t(title_key)
-                if title == 'CONTENT_TAB':
-                    title = 'Content'
-                try:
-                    self.notebook.tab(tab_id, text=title)
-                except Exception as e:
-                    print(f"Error setting tab title: {e}")
-                icon = self._load_themed_icon(icon_name, size=(20, 20))
-                if icon:
-                    try:
-                        self.notebook.tab(tab_id, image=icon, compound="left")
-                        if not hasattr(self.notebook, '_tab_icons'): self.notebook._tab_icons = {}
-                        self.notebook._tab_icons[tab_id] = icon
-                    except Exception as e:
-                        print(f"Error setting tab icon: {e}")
-
-        if hasattr(self, '_settings_nav_buttons_data'):
-            for btn, icon_name, text_key in self._settings_nav_buttons_data:
-                try:
-                    icon = self._load_themed_icon(icon_name, size=(20, 20))
-                    if icon:
-                        btn.config(image=icon, compound="left", text=f"  {self._t(text_key)}")
-                        btn._icon_ref = icon
-                except Exception:
-                    pass
-
-        if hasattr(self, 'music_btn') and self.music_btn is not None:
-            try:
-                self.music_btn.config(text=self._t('PLAY_MUSIC'))
-            except Exception:
-                pass
-        if hasattr(self, 'profile_cb') and self.profile_cb is not None:
-            pass
-        if hasattr(self, 'status_label') and self.status_label is not None:
-            try:
-                self.status_label.config(text=self._t('WELCOME'))
-            except Exception:
-                pass
-        if hasattr(self, 'profile_label') and self.profile_label is not None:
-            try:
-                self.profile_label.config(text=self._t('PROFILE'))
-            except Exception:
-                pass
-        if hasattr(self, 'new_profile_btn') and self.new_profile_btn is not None:
-            try:
-                self.new_profile_btn.config(text=self._t('NEW_PROFILE'))
-            except Exception:
-                pass
-        if hasattr(self, 'version_title_label') and self.version_title_label is not None:
-            try:
-                self.version_title_label.config(text=self._t('GAME_PROFILES'))
-            except Exception:
-                pass
-        if hasattr(self, 'game_profile_cb'):
-            self._refresh_game_profiles()
-        try:
-            update_language_ui(self)
-        except Exception as e:
-            print(f"[DEBUG] Error updating settings language UI: {e}")
-        print(f"[DEBUG] UI language update completed")
-    def _toggle_status_bar(self, *args):
-        if hasattr(self, 'status_bar_frame'):
-            if self.show_status_bar.get():
-                self.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
-            else:
-                self.status_bar_frame.pack_forget()
-        self._save_settings()
-    def _cancel_launch(self):
-        if hasattr(self, 'mc_process') and self.mc_process is not None:
-            try:
-                self.mc_process.terminate()
-                try:
-                    self.mc_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.mc_process.kill()
-                    self.mc_process.wait(timeout=5)
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"Error stopping Minecraft: {e}")
-            self.mc_process = None
-            self.status_label.config(text=self._t("STOPPED"))
-            self._restore_ui()
-        else:
-            self.cancel_requested = True
-            self.play_btn.config(state="disabled", text=self._t("CANCELLING"))
-            self.status_label.config(text=self._t("CANCELLING_LAUNCH"))
-            try:
-                if hasattr(self, 'launcher') and hasattr(self.launcher, 'stop_minecraft'):
-                    self.launcher.stop_minecraft()
-            except Exception as e:
-                print(f"Error cancelling launch: {e}")
-    def _set_window_icon(self):
-        try:
-            icon_path = find_resource("oranglauncher/images/minecraft.png")
-            if icon_path:
-                img = Image.open(str(icon_path))
-                img = img.resize((64, 64), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
-                self.iconphoto(False, photo)
-                self._icon_photo = photo   
-        except Exception as e:
-            print(f"Could not set window icon: {e}")
-    
-    def _initialize_plugins(self):
-        try:
-            
-            #
-            # Time wasted here: 5 h now
-            # add more if you encounter issues with loading of plugins
-            #
-            builtin_plugin_dir = Path(__file__).parent / "oranglauncher" / "plugin"
-            launcher_root = Path.home() / ".local" / "share" / "oranglauncher"
-            user_plugin_dir = launcher_root / "plugins"
-            self.loaded_plugins = []
-            if builtin_plugin_dir.exists():
-                for plugin_path in builtin_plugin_dir.glob("*.py"):
-                    if plugin_path.name.startswith("_"):
-                        continue
-                    try:
-                        spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
-                        if spec and spec.loader:
-                            module = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(module)
-                            if hasattr(module, 'init_plugin'):
-                                module.init_plugin(self)
-                                plugin_info = {
-                                    'name': plugin_path.stem,
-                                    'type': 'builtin',
-                                    'module': module,
-                                    'path': str(plugin_path)
-                                }
-                                self.loaded_plugins.append(plugin_info)
-                                print(f"[Plugins] Loaded built-in plugin: {plugin_path.stem}")
-                    except Exception as e:
-                        print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
-                        traceback.print_exc()
-            user_plugin_dir.mkdir(parents=True, exist_ok=True)
-            
-            for plugin_path in user_plugin_dir.glob("*.py"):
-                if plugin_path.name.startswith("_"):
-                    continue
-                try:
-                    spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
-                    if spec and spec.loader:
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                        if hasattr(module, 'init_plugin'):
-                            module.init_plugin(self)
-                            plugin_info = {
-                                'name': plugin_path.stem,
-                                'type': 'user',
-                                'module': module,
-                                'path': str(plugin_path)
-                            }
-                            self.loaded_plugins.append(plugin_info)
-                            print(f"[Plugins] Loaded user plugin: {plugin_path.stem}")
-                except Exception as e:
-                    print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
-                    traceback.print_exc()
-            print(f"[Plugins] Loaded {len(self.loaded_plugins)} plugin(s) total")
-            for plugin in self.loaded_plugins:
-                print(f"  - {plugin['name']} ({plugin['type']})")
-        except Exception as e:
-            print(f"[Plugins] Error initializing plugin system: {e}")
-            traceback.print_exc()
-    def _start_discord_rpc(self):
-        if not Presence:
-            print("[DEBUG] pypresence not installed, Discord RPC disabled")
-            return
-        try:
-            if self.discord_rpc_mgr is None:
-                app_id = '1411624079701573703'
-                self.discord_start_time = int(time.time())
-                self.discord_rpc_mgr = DiscordRPCManager(
-                    app_id,
-                    on_connected=lambda: self.after(0, lambda: self._update_discord_rpc("Idling in launcher"))
-                )
-                self.discord_rpc_mgr.start()
-        except Exception:
-            self.discord_rpc_mgr = None
-    def _stop_discord_rpc(self):
-        try:
-            if self.discord_rpc_mgr:
-                self.discord_rpc_mgr.stop()
-                self.discord_rpc_mgr = None
-        except Exception:
-            pass
-    def _update_discord_rpc(self, state, details=None):
-        if not self.discord_rpc_enabled.get() or not getattr(self, 'discord_rpc_mgr', None):
-            return
-        try:
-            presence_data = {
-                "state": state,
-                "start": self.discord_start_time,
-            }
-            if details:
-                presence_data["details"] = details
-            self.discord_rpc_mgr.update(**presence_data)
-        except Exception:
-            pass
-    def __init__(self):
-        super().__init__()
-        try:
-            _orig_call = self.tk.call
-            def _call_with_geometry_debug(*args):
-                is_external_geometry = (
-                    len(args) >= 4
-                    and args[0] == "wm"
-                    and args[1] == "geometry"
-                    and args[2] == self._w
-                    and not getattr(self, "_geometry_lock", False)
-                )
-                if getattr(self, "_geometry_debug", False) and is_external_geometry:
-                    try:
-                        stack = ''.join(tb.format_stack(limit=6))
-                        print(f"[DEBUG] tk.call geometry: {args[3]}\n{stack}")
-                    except Exception:
-                        pass
-                if is_external_geometry:
-                    self._record_external_geometry(args[3])
-                return _orig_call(*args)
-            self._orig_tk_call = _orig_call
-            self.tk.call = _call_with_geometry_debug
-        except Exception:
-            pass
-        self.use_default_args = tk.BooleanVar(value=True)
-        self.custom_args = tk.StringVar()
-        self.show_status_bar = tk.BooleanVar(value=False)
-        self.discord_rpc_enabled = tk.BooleanVar(value=bool(Presence))
-        self.discord_rpc_mgr = None
-        self.discord_start_time = None
-        self._main_thread_id = threading.get_ident()
-        self._progress_queue = queue.Queue(maxsize=32)
-        try:
-            global _APP_REF
-            _APP_REF = weakref.ref(self)
-        except Exception:
-            pass
-        self.game_profile_manager = get_game_profile_manager()
-        self.instance_manager = get_instance_manager()
-        self.icon_cache = {}
-        self.icons = {}
-        self.selected_game_profile = tk.StringVar()
-        register_mod_change_callback(self._on_game_profile_changed)
-        self.theme_manager = get_theme_manager()
-        self.style = make_style(self)
-        self._load_locales()
-        try:
-            saved_language = load_saved_language()
-            if saved_language in self.locales:
-                self.current_locale = saved_language
-                self.translations = self.locales.get(saved_language, {})
-            else:
-                print(f"[DEBUG] Saved language {saved_language} not available, using default")
-        except Exception as e:
-            print(f"[DEBUG] Error loading saved language: {e}")
-        self.title("OrangLauncher")
-        icon_path = find_resource("oranglauncher/images/orange.ico")
-        if icon_path:
-            try:
-                icon_image = Image.open(icon_path)
-                icon_photo = ImageTk.PhotoImage(icon_image)
-                self.iconphoto(True, icon_photo)
-            except Exception as e:
-                print(f"Failed to load icon: {e}")
-        self.os_type = platform.system()
-        self._geometry_lock = False
-        self._initial_geometry = None
-        self._user_geometry = None
-        self._capture_initial_geometry = True
-        self._forced_move_threshold = 48
-        self._last_geometry = None
-        self._ignore_forced_until = 0.0
-        self._forced_return_window = 24
-        self._forced_size_window = 16
-        self._last_forced_source = None
-        self._initial_restore_done = False
-        self._forced_teleport_delta = 128
-        self._user_geometry_history = deque(maxlen=25)
-        self._history_suppress_seconds = 12.0
-        self._last_forced_time = 0.0
-        self._last_external_geometry = None
-        self._last_external_geometry_time = 0.0
-        self._recent_external_window = 2.0
-        self._last_user_move_time = 0.0
-        self._recent_user_move_window = 6.0
-        try:
-            self.bind("<Configure>", self._on_root_configure, add="+")
-        except Exception:
-            pass
-        initial_width, initial_height = 1200, 900
-        self._apply_geometry(initial_width, initial_height)
-        self._capture_initial_geometry = True
-        self.minsize(960, 750)
-        self.configure(bg=self.theme_manager.get_color('bg_primary'))
-        try:
-            self.protocol("WM_DELETE_WINDOW", self.destroy)
-        except Exception:
-            pass
-        self.selected_mod_loader = tk.StringVar(value="None")
-        self._set_window_icon()
-        self.music_thread = None
-        self.music_stop_event = threading.Event()
-        self.music_playing = False
-        self.music_playlist = []   
-        self.current_music_index = 0   
-        self._music_monitor_active = False   
-        self.selected_profile = tk.StringVar()
-        self.progress = tk.DoubleVar(value=0)
-        self.launch_thread = None
-        self.cancel_requested = False
-        self.profiles_list = []
-        self.play_btn = None
-        self.music_btn = None
-        self.progress_bar = None
-        self.status_label = None
-        self.loaded_plugins = []
-        self._profiles_cache = None   
-        self._build_interface()
-        try:
-            self._refresh_profiles()
-            self._refresh_game_profiles()
-        except Exception as e:
-            print(f"[DEBUG] Exception in _refresh_profiles: {e}")
-        try:
-            initialize_settings_on_startup(self)
-            update_language_ui(self)
-            self._update_ui_language() # Force refresh styling
-            if self.discord_rpc_enabled.get():
-                self._start_discord_rpc()
-            if hasattr(self, 'status_bar_frame') and self.status_bar_frame is not None:
-                if self.show_progress_bar.get():
-                    self.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
-                else:
-                    self.status_bar_frame.pack_forget()
-        except Exception as e:
-            
-            print(f"Settings initialization failed: {e}")
-            traceback.print_exc()
-        self.after(1000, self._on_tab_changed)
-        self._progress_polling_active = False
-        self._offline = False
-        self._offline_label = None
-        self.after(100, self._initialize_plugins)
-        self.after(500, self._periodic_debug_update)
-        self.after(2000, self._check_connectivity)
-        self._pending_quickplay = None
-        self._pending_open_file = None
-        self.after(1500, self._startup_sync_sharing)
-        self.after(400, self._maybe_show_welcome)
-    def _maybe_show_welcome(self):
-        try:
-            done = is_setup_done()
-            print(f"[setup] setup_done={done}")
-            if not done:
-                print("[setup] showing welcome wizard")
-                WelcomeWizard(self)
-                print("[setup] wizard created ok")
-        except Exception as e:
-            print(f"[setup] welcome wizard failed: {e}")
-            traceback.print_exc()
-        if self._pending_open_file:
-            path = self._pending_open_file
-            self._pending_open_file = None
-            self.after(800, lambda: self._open_file_from_cli(path))
-
-    def _open_file_from_cli(self, path: str):
-        p = path.lower()
-        if p.endswith('.mrpack'):
-            self._do_import_mrpack_path(path)
-        elif p.endswith('.zip'):
-            self._do_import_curseforge_path(path)
-
-    def _do_import_mrpack_path(self, mrpack_path: str):
-        if hasattr(self, 'status_label'):
-            self.status_label.config(text="Importing modpack...")
-        if hasattr(self, 'status_bar_progress'):
-            self.status_bar_progress.config(mode='indeterminate')
-            self.status_bar_progress.start(15)
-        def _restore():
-            if hasattr(self, 'status_bar_progress'):
-                self.status_bar_progress.stop()
-                self.status_bar_progress.config(mode='determinate')
-                if hasattr(self, 'progress'):
-                    self.progress.set(0)
-            if hasattr(self, 'status_label'):
-                self.status_label.config(text="Ready")
-        def _do():
-            try:
-                success, message, profile_name = import_modpack(mrpack_path, self)
-                def done():
-                    _restore()
-                    if success:
-                        messagebox.showinfo("Modpack Imported", f"Imported as '{profile_name}'\n{message}")
-                        if hasattr(self, '_refresh_game_profiles'):
-                            self._refresh_game_profiles()
-                    else:
-                        messagebox.showerror("Import Failed", message)
-                self.after(0, done)
-            except Exception as e:
-                self.after(0, lambda: (_restore(), messagebox.showerror("Import Error", str(e))))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def _do_import_curseforge_path(self, zip_path: str):
-        if hasattr(self, 'status_label'):
-            self.status_label.config(text="Importing CurseForge pack...")
-        if hasattr(self, 'status_bar_progress'):
-            self.status_bar_progress.config(mode='indeterminate')
-            self.status_bar_progress.start(15)
-        def _restore():
-            if hasattr(self, 'status_bar_progress'):
-                self.status_bar_progress.stop()
-                self.status_bar_progress.config(mode='determinate')
-                if hasattr(self, 'progress'):
-                    self.progress.set(0)
-            if hasattr(self, 'status_label'):
-                self.status_label.config(text="Ready")
-        def _do():
-            try:
-                success, message, profile_name = import_curseforge_pack(zip_path, self)
-                def done():
-                    _restore()
-                    if success:
-                        messagebox.showinfo("Pack Imported", f"Imported as '{profile_name}'\n{message}")
-                        if hasattr(self, '_refresh_game_profiles'):
-                            self._refresh_game_profiles()
-                    else:
-                        messagebox.showerror("Import Failed", message)
-                self.after(0, done)
-            except Exception as e:
-                self.after(0, lambda: (_restore(), messagebox.showerror("Import Error", str(e))))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def _startup_sync_sharing(self):
-        # re-link shared folders for every instance so sharing is live from launch
-        try:
-            if any(getattr(self, a, None) and getattr(self, a).get()
-                   for a in ('share_options', 'share_resourcepacks', 'share_shaderpacks', 'share_servers', 'share_screenshots')):
-                threading.Thread(target=self._apply_sharing_all, daemon=True).start()
-        except Exception as e:
-            print(f"[Sharing] startup sync failed: {e}")
-    @property
-    def profiles(self):
-        if self._profiles_cache is None:
-            self._profiles_cache = load_profiles_safe()
-        return self._profiles_cache
-    def _on_game_profile_changed(self):
-        if hasattr(self, 'modding_tab'):
-            self.modding_tab.refresh_ui()
-        current_profile = self.game_profile_manager.get_selected_profile()
-        if current_profile:
-            self.selected_mod_loader.set(current_profile.mod_loader)
-    def _toggle_music(self):
-        global pygame_mixer_initialized
-        if not pygame or not pygame_available:
-            messagebox.showerror(self._t("MUSIC_ERROR"), self._t("PYGAME_NOT_INSTALLED"))
-            return
-        if not pygame_mixer_initialized:
-            try:
-                if not pygame.display.get_init():
-                    pygame.init()
-                pygame.mixer.init()
-                pygame_mixer_initialized = True
-                print("[Music] Pygame mixer initialized on first music play")
-            except Exception as e:
-                print(f"Warning: pygame mixer module not available, audio disabled")
-                print(f"Audio init error: {e}")
-                messagebox.showerror(self._t("MUSIC_ERROR"), self._t("PYGAME_NOT_INSTALLED"))
-                return
-        
-        if self.music_playing:
-            try:
-                pygame.mixer.music.stop()
-            except Exception as e:
-                print(f"Music stop error: {e}")
-            self.music_playing = False
-            self._music_monitor_active = False
-            self.music_stop_event.set()
-            self.music_playlist = []
-            self.current_music_index = 0
-            if self.music_btn:
-                try:
-                    self.music_btn.config(text=self._t("PLAY_MUSIC"))
-                except tk.TclError as e:
-                    print(f"Music button config error (stop): {e}")
-        else:
-            music_dir = find_resource("oranglauncher/music")
-            if not music_dir or not music_dir.exists():
-                base_dir = get_resource_path()
-                music_dir = base_dir / "oranglauncher" / "music"
-            if not music_dir or not music_dir.exists():
-                messagebox.showwarning(
-                    self._t("MUSIC_ERROR"), 
-                    "Music folder not found at oranglauncher/music/"
-                )
-                return
-            music_files = []
-            for ext in ['*.mp3', '*.ogg', '*.wav']:
-                music_files.extend(list(music_dir.glob(ext)))
-            if not music_files:
-                messagebox.showwarning(
-                    self._t("MUSIC_ERROR"), 
-                    "No music files found in oranglauncher/music/\nSupported formats: .mp3, .ogg, .wav, .flac"
-                )
-                return
-            random.shuffle(music_files)
-            self.music_playlist = music_files
-            self.current_music_index = 0
-            self._play_next_song()
-            if not self._music_monitor_active:
-                self._music_monitor_active = True
-                self.music_stop_event.clear()
-                threading.Thread(target=self._monitor_music_end, daemon=True).start()
-    def _play_next_song(self):
-        if not self.music_playlist or self.current_music_index >= len(self.music_playlist):
-            self.current_music_index = 0
-        if not self.music_playlist:
-            return
-        music_path = self.music_playlist[self.current_music_index]
-        try:
-            pygame.mixer.music.load(str(music_path))
-            pygame.mixer.music.play(0)   
-            self.music_playing = True
-            if self.music_btn:
-                try:
-                    self.music_btn.config(text=self._t("STOP_MUSIC"))
-                except tk.TclError as e:
-                    print(f"Music button config error (play): {e}")
-            print(f"[Music] Now playing ({self.current_music_index + 1}/{len(self.music_playlist)}): {music_path.name}")
-            self.current_music_index += 1
-        except Exception as e:
-            print(f"Music play error: {e}")
-            messagebox.showerror(
-                self._t("MUSIC_ERROR"), 
-                self._t("MUSIC_PLAY_FAILED") + f"\n{e}"
-            )
-    def _monitor_music_end(self):
-        while self._music_monitor_active:
-            try:
-                if self.music_playing and pygame and pygame_available:
-                    if not pygame.mixer.music.get_busy():
-                        self._play_next_song()
-                if self.music_stop_event.wait(timeout=1.0):
-                    break
-            except Exception as e:
-                print(f"Music monitor error: {e}")
-                if self.music_stop_event.wait(timeout=2.0):
-                    break
-    def _build_bottom_section(self, parent):
-        bottom_frame = ttk.Frame(parent)
-        bottom_frame.pack(side="bottom", fill="x", pady=(0, 8))
-        bottom_frame.columnconfigure(0, weight=0)
-        bottom_frame.columnconfigure(1, weight=1)
-        bottom_frame.columnconfigure(2, weight=0)
-        left_frame = ttk.Frame(bottom_frame)
-        left_frame.grid(row=0, column=0, sticky="nw")
-        self.profile_label = ttk.Label(left_frame, text=self._t("PROFILE"), style="Header.TLabel")
-        self.profile_label.grid(row=0, column=0, sticky="w", padx=(0, 5))
-        self.profile_cb = ttk.Combobox(
-            left_frame,
-            textvariable=self.selected_profile,
-            state="readonly",
-            width=25,
-            font=("Segoe UI", 9)
-        )
-        self.profile_cb.grid(row=1, column=0, pady=(5, 0))
-        self.profile_cb.bind("<<ComboboxSelected>>", self._on_profile_selected)
-        btn_frame = ttk.Frame(left_frame)
-        btn_frame.grid(row=2, column=0, pady=(5, 0), sticky="w")
-        plus_icon_main = self._load_themed_icon("plus", size=(16, 16))
-        self.new_profile_btn = tk.Button(btn_frame, 
-                                        text=f"  {self._t('NEW_PROFILE')}",
-                                        image=plus_icon_main,
-                                        compound="left",
-                                        bg=self.theme_manager.get_color('bg_hover'),
-                                        fg=self.theme_manager.get_color('fg_primary'),
-                                        activebackground=self.theme_manager.get_color('bg_pressed'),
-                                        activeforeground=self.theme_manager.get_color('fg_primary'),
-                                        font=("Segoe UI", 9),
-                                        relief="flat",
-                                        bd=0,
-                                        padx=10,
-                                        pady=6,
-                                        cursor="hand2",
-                                        command=self._new_profile)
-        self.new_profile_btn.image = plus_icon_main  # type: ignore
-        self.new_profile_btn.pack(side="left", padx=(0, 5))
-        center_frame = ttk.Frame(bottom_frame)
-        center_frame.grid(row=0, column=1, sticky="n", padx=20)
-        content_frame = ttk.Frame(center_frame)
-        content_frame.grid(row=0, column=0, sticky="n")
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.configure(width=420)
-        self.version_title_label = ttk.Label(
-            content_frame,
-            text=self._t("GAME_PROFILES"),
-            style="Header.TLabel",
-            anchor="center",
-            justify="center"
-        )
-        self.version_title_label.grid(row=0, column=0, pady=(0, 5), sticky="n")
-        selected_instance = self.instance_manager.get_selected_instance()
-        selected_profile = self.game_profile_manager.get_selected_profile()
-        if selected_instance:
-            display_text = f"Instance: {selected_instance.name} | {selected_instance.version} ({selected_instance.mod_loader})"
-        elif selected_profile:
-            display_text = f"Profile: {selected_profile.name} | {selected_profile.version} ({selected_profile.mod_loader})"
-        else:
-            display_text = self._t("NO_PROFILE_SELECTED")
-        self.version_label = ttk.Label(
-            content_frame,
-            text=display_text,
-            style="Header.TLabel",
-            anchor="center",
-            justify="center",
-            width=58,
-            wraplength=380
-        )
-        self.version_label.grid(row=1, column=0, pady=(5, 0), sticky="ew")
-        def _update_version_wrap(event=None):
-            try:
-                width = content_frame.winfo_width()
-                wrap = max(width - 40, 260)
-                self.version_label.config(wraplength=wrap)
-            except Exception:
-                pass
-        content_frame.bind("<Configure>", _update_version_wrap)
-        self.after_idle(_update_version_wrap)
-        self.play_btn = ttk.Button(
-            content_frame,
-            text=self._t("PLAY"),
-            style="Play.TButton",
-            command=self._launch_game,
-            width=12
-        )
-        self.play_btn.grid(row=2, column=0, pady=(12, 0))
-        right_frame = ttk.Frame(bottom_frame)
-        right_frame.grid(row=0, column=2, sticky="ne", padx=(0, 20))
-        right_frame.grid_columnconfigure(0, weight=1)
-        self.status_label = ttk.Label(
-            right_frame,
-            text=self._t("WELCOME"),
-            style="News.TLabel",
-            justify="right",
-            anchor="e"
-        )
-        self.status_label.pack(anchor="e")
-        style = ttk.Style()
-        style_name = "Gray.TCombobox"
-        combo_bg = self.theme_manager.get_color('bg_section')
-        self.option_add('*TCombobox*Listbox.background', self.theme_manager.get_color('bg_secondary'))
-        self.option_add('*TCombobox*Listbox.foreground', self.theme_manager.get_color('fg_primary'))
-        self.option_add('*TCombobox*Listbox.selectBackground', self.theme_manager.get_color('accent_primary'))
-        self.option_add('*TCombobox*Listbox.selectForeground', self.theme_manager.get_color('fg_primary'))
-        style.configure(
-            style_name, 
-            fieldbackground=combo_bg,
-            background=self.theme_manager.get_color('bg_secondary'),
-            foreground=self.theme_manager.get_color('fg_primary'),
-            arrowcolor=self.theme_manager.get_color('fg_primary'),
-            bordercolor=self.theme_manager.get_color('bg_secondary'),
-            darkcolor=self.theme_manager.get_color('bg_secondary'),
-            lightcolor=self.theme_manager.get_color('bg_secondary'),
-        )
-        style.map(
-            style_name,
-            fieldbackground=[('readonly', combo_bg)],
-            selectbackground=[('readonly', combo_bg)],
-            selectforeground=[('readonly', self.theme_manager.get_color('fg_primary'))],
-            background=[('readonly', self.theme_manager.get_color('bg_secondary'))]
-        )
-        self.game_profile_cb = ttk.Combobox(
-            right_frame,
-            textvariable=self.selected_game_profile,
-            state="readonly",
-            width=30,
-            font=("Segoe UI", 9),
-            style=style_name,
-            justify="left"
-        )
-        self.game_profile_cb.pack(anchor="e", pady=(5, 0))
-        self.game_profile_cb.bind("<<ComboboxSelected>>", self._on_game_profile_selected)
-        self.status_bar_frame = ttk.Frame(self)
-        self.status_bar_progress = ttk.Progressbar(
-            self.status_bar_frame,
-            variable=self.progress,
-            maximum=100,
-            length=300,
-            mode="determinate"
-        )
-        self.status_bar_progress.pack(anchor="w", padx=10, pady=(0, 4), fill="x")
-        if hasattr(self, 'show_progress_bar') and self.show_progress_bar.get():
-            self.status_bar_frame.pack(fill="x", side="bottom", pady=(0, 4))
-        else:
-            self.status_bar_frame.pack_forget()
-    def _refresh_game_profiles(self):
-        try:
-            instance_names = self.instance_manager.get_instance_names()
-            old_profile_names = get_game_profile_names()
-            all_profiles = []
-            for name in instance_names:
-                if name != "Latest Release":
-                    all_profiles.append(name)
-            for name in old_profile_names:
-                if name not in all_profiles and name != "Latest Release":
-                    all_profiles.append(name)
-            if hasattr(self, 'game_profile_cb'):
-                self.game_profile_cb['values'] = all_profiles
-                selected_instance = self.instance_manager.get_selected_instance()
-                if selected_instance:
-                    current_selection = self.selected_game_profile.get()
-                    if current_selection not in all_profiles:
-                        self.selected_game_profile.set(selected_instance.name)
-                    if hasattr(self, 'version_label'):
-                        self.version_label.config(text=f"{selected_instance.version} ({selected_instance.mod_loader})")
-                else:
-                    selected_profile = self.game_profile_manager.get_selected_profile()
-                    if selected_profile:
-                        current_selection = self.selected_game_profile.get()
-                        if current_selection not in all_profiles:
-                            self.selected_game_profile.set(selected_profile.name)
-                        if hasattr(self, 'version_label'):
-                            self.version_label.config(text=f"{selected_profile.version} ({selected_profile.mod_loader})")
-                    elif all_profiles:
-                        self.selected_game_profile.set(all_profiles[0])
-                        if instance_names:
-                            first_instance = self.instance_manager.get_instance_by_name(instance_names[0])
-                            if first_instance:
-                                self.instance_manager.set_selected_instance(first_instance.instance_id)
-        except Exception as e:
-            print(f"Error refreshing game profiles: {e}")
-    def _refresh_profiles(self):
-        self._profiles_cache = None
-        try:
-            profile_data = load_profiles()
-            self.profiles_list = [f"{p['username']} ({p['type']})" for p in profile_data]
-            if hasattr(self, 'profile_cb') and self.profile_cb:
-                self.profile_cb['values'] = self.profiles_list + [self._t("LOADING_PROFILES")]
-                if self.profiles_list:
-                    self.profile_cb.current(0)
-                    self.selected_profile.set(self.profiles_list[0])
-                    username = profile_data[0]['username']
-                    self.status_label.config(text=self._t("WELCOME_USER", username=username))
-                else:
-                    self.profile_cb.current(len(self.profiles_list))
-                    self.selected_profile.set(self._t("LOADING_PROFILES"))    
-        except Exception as e:
-            print(f"Error refreshing profiles: {e}")
-            if hasattr(self, 'profile_cb') and self.profile_cb:
-                self.profile_cb['values'] = [self._t("LOADING_PROFILES")]
-                self.profile_cb.current(0)
-    def _on_profile_selected(self, event=None):
-        selection = self.selected_profile.get()
-        if selection == self._t("LOADING_PROFILES"):
-            self._new_profile()
-        else:
-            try:
-                username = selection.split(' (')[0]
-                self.status_label.config(text=self._t("WELCOME_USER", username=username))
-                self._update_profile_display()
-            except Exception as e:
-                print(f"Error updating welcome message: {e}")
-    def _update_profile_display(self):
-        try:
-            selected_instance = self.instance_manager.get_selected_instance()
-            if selected_instance:
-                self.version_label.config(text=f"Instance: {selected_instance.name} | {selected_instance.version} ({selected_instance.mod_loader})")
-                return
-            current_game_profile = self.game_profile_manager.get_selected_profile()
-            if current_game_profile:
-                self.version_label.config(text=f"Profile: {current_game_profile.name} | {current_game_profile.version} ({current_game_profile.mod_loader})")
-            else:
-                self.version_label.config(text=self._t("NO_PROFILE_SELECTED"))
-        except Exception as e:
-            print(f"Error updating profile display: {e}")
-            self.version_label.config(text=self._t("NO_PROFILE_SELECTED"))
-    def _on_tab_changed(self, event=None):
-        try:
-            selected_tab_index = self.notebook.index(self.notebook.select())
-            if selected_tab_index == 0:
-                self._show_news_embed()
-            else:
-                self._hide_news_embed()
-        except Exception as e:
-            print(f"[DEBUG] Error handling tab change: {e}")
-    def _show_news_embed(self):
-        try:
-            if hasattr(self, 'news_viewer') and self.news_viewer:
-                if hasattr(self.news_viewer, 'enable_embed'):
-                    self.news_viewer.enable_embed()
-        except Exception as e:
-            print(f"[DEBUG] Error showing news embed: {e}")
-    def _hide_news_embed(self):
-        try:
-            if hasattr(self, 'news_viewer') and self.news_viewer:
-                if hasattr(self.news_viewer, 'disable_embed'):
-                    self.news_viewer.disable_embed()
-        except Exception as e:
-            print(f"[DEBUG] Error hiding news embed: {e}")
-    def _new_profile(self):
-        try:
-            result = add_profile(parent=self)
-            self._refresh_profiles()
-            if result:
-                new_label = f"{result['username']} ({result['type']})"
-                self.selected_profile.set(new_label)
-                for i, profile in enumerate(self.profile_cb['values']):
-                    if profile == new_label:
-                        self.profile_cb.current(i)
-                        break
-        except Exception as e:
-            messagebox.showerror(self._t("PROFILE_ERROR"), f"{self._t('FAILED_CREATE_PROFILE')}\n{e}")
-    def _progress_callback(self, current, total, message=None):
-        if self.cancel_requested:
-            raise Exception("Operation cancelled by user.")
-        try:
-            if isinstance(current, dict):
-                status = current
-                current = status.get("task", 0)
-                total = status.get("total", 100)
-                message = status.get("status", message)
-        except Exception:
-            pass
-        total = max(total or 1, 1)
-        percent = max(0.0, min(100.0, (current / total) * 100.0))
-        files_done = None
-        files_total = None
-        base_msg = message
-        if isinstance(message, dict):
-            base_msg = message.get("text") or "Preparing..."
-            files_done = message.get("files_done")
-            files_total = message.get("files_total")
-        else:
-            base_msg = message or "Preparing..."
-        message_parts = []
-        trimmed_msg = (base_msg or "").strip()
-        if trimmed_msg:
-            message_parts.append(trimmed_msg)
-        if isinstance(files_done, int) and isinstance(files_total, int) and files_total > 0:
-            files_left = max(files_total - files_done, 0)
-            files_total_str = str(files_total)
-            if len(files_total_str) > 8:
-                files_total_str = f"{files_total_str[:5]}..."
-            files_done_str = str(files_done)
-            if len(files_done_str) > 8:
-                files_done_str = f"{files_done_str[:5]}..."
-            message_parts.append(f"{files_done_str}/{files_total_str} files ({files_left} left)")
-        status_body = " - ".join(message_parts) if message_parts else "Preparing..."
-        status_text = f"{status_body} ({percent:.1f}%)"
-        self._submit_progress_update(percent, status_text)
-    def _submit_progress_update(self, percent, status_text):
-        if threading.get_ident() == getattr(self, "_main_thread_id", None):
-            self._apply_progress_update(percent, status_text)
-            return
-        if not hasattr(self, "_progress_queue") or self._progress_queue is None:
-            return
-        was_empty = self._progress_queue.empty()
-        try:
-            self._progress_queue.put_nowait((percent, status_text))
-        except queue.Full:
-            try:
-                self._progress_queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                self._progress_queue.put_nowait((percent, status_text))
-            except queue.Full:
-                pass
-        if was_empty and not getattr(self, '_progress_polling_active', False):
-            try:
-                self.after(0, self._process_progress_events)
-            except Exception:
-                pass
-    def _process_progress_events(self):
-        if not hasattr(self, "_progress_queue") or self._progress_queue is None:
-            self._progress_polling_active = False
-            return
-        self._progress_polling_active = True
-        try:
-            while True:
-                percent, status_text = self._progress_queue.get_nowait()
-                self._apply_progress_update(percent, status_text)
-        except queue.Empty:
-            pass
-        try:
-            if not self._progress_queue.empty() and self.winfo_exists():
-                self.after(100, self._process_progress_events)
-            else:
-                self._progress_polling_active = False
-        except Exception:
-            self._progress_polling_active = False
-    def _apply_progress_update(self, percent, status_text):
-        try:
-            percent = min(max(percent, 0), 100)
-            if hasattr(self, "progress"):
-                self.progress.set(percent)
-            status_label = getattr(self, "status_label", None)
-            if status_label is not None:
-                status_label.config(text=status_text)
-        except Exception:
-            pass
-    def _launch_game(self):
-        if getattr(self, 'launch_thread', None) and self.launch_thread and self.launch_thread.is_alive():
-            messagebox.showinfo(self._t("LAUNCHER_BUSY"), self._t("LAUNCHER_BUSY_MSG"))
-            return
-        selected_name = self.selected_profile.get()
-        if not selected_name or selected_name == self._t("LOADING_PROFILES"):
-            messagebox.showerror(self._t("PROFILE_ERROR"), self._t("SELECT_VALID_PROFILE"))
-            return
-        selected_profile = None
-        try:
-            profile_data = load_profiles()
-            for prof in profile_data:
-                label = f"{prof['username']} ({prof['type']})"
-                if label == selected_name:
-                    selected_profile = prof
-                    break
-        except Exception as e:
-            messagebox.showerror(self._t("PROFILE_ERROR"), f"{self._t('ERROR_LOADING_PROFILES')}\n{e}")
-            return
-        if not selected_profile:
-            messagebox.showerror(self._t("PROFILE_ERROR"), self._t("SELECTED_PROFILE_NOT_FOUND"))
-            return
-        current_game_profile = self.game_profile_manager.get_selected_profile()
-        current_instance = self.instance_manager.get_selected_instance()
-        if current_instance:
-            version = current_instance.version
-            mod_loader = current_instance.mod_loader
-            ram = current_instance.ram
-            launch_name = current_instance.name
-        elif current_game_profile:
-            version = current_game_profile.version
-            mod_loader = current_game_profile.mod_loader.lower()
-            ram = current_game_profile.ram
-            launch_name = current_game_profile.name
-        else:
-            try:
-                default_instance = self.instance_manager.create_instance(
-                    "Default Instance", "26.1.2", "vanilla", "4G"
-                )
-                if default_instance:
-                    self.instance_manager.set_selected_instance(default_instance.instance_id)
-                    self._refresh_game_profiles()
-                    version = default_instance.version
-                    mod_loader = default_instance.mod_loader
-                    ram = default_instance.ram
-                    launch_name = default_instance.name
-                else:
-                    messagebox.showerror("Instance Error", "Failed to create default instance. Please create an instance manually.")
-                    return
-            except Exception as e:
-                messagebox.showerror("Instance Error", f"Failed to create default instance: {e}")
-                return
-        username = selected_profile.get("username", "")
-        uuid = selected_profile.get("uuid", "")
-        if not uuid or uuid == "0-0-0-0":
-            uuid = str(uuid_module.uuid4())
-        if not version or version.strip() == "":
-            messagebox.showerror("Version Error", f"Selected instance has no Minecraft version set. Please edit the instance to set a valid version.")
-            return
-        print(f"Playing Minecraft {version} ({mod_loader}) as {username} with {ram} RAM...")
-        print(f"Using instance/profile: {launch_name}")
-        if getattr(self, 'discord_rpc_mgr', None) and self.discord_rpc_enabled.get():
-            self._update_discord_rpc(
-                "Playing Minecraft", 
-                f"{version} ({mod_loader})"
-            )
-        if current_game_profile:
-            mark_profile_used(current_game_profile.name)
-        self.progress.set(0)
-        self.cancel_requested = False
-        self.play_btn.config(text=self._t("STOP"), state="normal", command=self._cancel_launch)
-        self.profile_cb.config(state="disabled")
-        self.status_label.config(text=f"Launching {version} ({mod_loader})... 0%")
-        if hasattr(self, 'log_text'):
-            self.log_text.config(state="normal")
-            self.log_text.delete("1.0", tk.END)
-            self.log_text.insert(tk.END, f"[Launcher] Launching Minecraft {version} ({mod_loader}) as {username}...\n")
-            self.log_text.config(state="disabled")
-        self.mc_process = None
-        if not ram.endswith('G') and not ram.endswith('M'):
-            ram = f"{ram}G"
-            print(f"{ram}")
-        quick_play_server = getattr(self, '_pending_quickplay', None)
-        self._pending_quickplay = None
-        self.launch_thread = threading.Thread(
-            target=self._run_launcher_thread,
-            args=(current_instance, launch_name, version, mod_loader, ram, selected_profile, username, uuid, quick_play_server),
-            daemon=True
-        )
-        self.launch_thread.start()
     def _run_launcher_thread(self, current_instance, launch_name, version, mod_loader, ram, selected_profile, username, uuid, quick_play_server=None):
         try:
             if selected_profile.get("type") == "microsoft":
@@ -12121,13 +11496,28 @@ class MinecraftLauncher(tk.Tk):
             Path(minecraft_directory).mkdir(parents=True, exist_ok=True)
             java_exe = resolve_java_for_instance(current_instance, version, log_fn=self._safe_append_log)
             self._safe_append_log(f"[Java] Using: {java_exe}")
+            jvm_args = memory_jvm_args(current_instance, ram)
+            jvm_args += extra_jvm_args(current_instance)
+            jvm_args += native_library_jvm_args(current_instance)
             options = {
                 'username': username,
                 'uuid': uuid,
                 'token': access_token,
                 'executablePath': java_exe,
-                'jvmArguments': [f"-Xmx{ram}", f"-Xms{ram}"]
+                'jvmArguments': jvm_args,
+                'launcherName': 'OrangLauncher',
+                'launcherVersion': CURRENT_VERSION
             }
+            if current_instance is not None:
+                res_w = current_instance.opt("res_width")
+                res_h = current_instance.opt("res_height")
+                if res_w and res_h:
+                    options['customResolution'] = True
+                    options['resolutionWidth'] = str(int(res_w))
+                    options['resolutionHeight'] = str(int(res_h))
+                if current_instance.opt("demo", False):
+                    options['demo'] = True
+                    self._safe_append_log("[Launcher] Demo mode: passing --demo to the game")
             if quick_play_server:
                 options['quickPlayMultiplayer'] = quick_play_server
                 self._safe_append_log(f"[Launcher] Quick Play -> joining {quick_play_server}")
@@ -12138,6 +11528,15 @@ class MinecraftLauncher(tk.Tk):
                 if current_instance.installed_version_id and current_instance.installed_version_id not in ['Latest', 'N/A', '']:
                     local_versions_dir = Path(minecraft_directory) / "versions" / current_instance.installed_version_id
                     version_exists = local_versions_dir.exists() and (local_versions_dir / f"{current_instance.installed_version_id}.json").exists()
+                    if not version_exists:
+                        recovered = find_installed_loader_version(minecraft_directory, mod_loader, version,
+                                                                  getattr(current_instance, 'loader_version', '') or '')
+                        if recovered:
+                            self._safe_append_log(f"[Launcher] Recovered installed version id: {recovered}")
+                            current_instance.installed_version_id = recovered
+                            self.instance_manager.save_instances()
+                            local_versions_dir = Path(minecraft_directory) / "versions" / recovered
+                            version_exists = True
                     if version_exists:
                         version = current_instance.installed_version_id
                         self._safe_append_log(f"[Launcher] Using installed version: {version}")
@@ -12145,7 +11544,15 @@ class MinecraftLauncher(tk.Tk):
                         needs_loader_install = True
                         self._safe_append_log(f"[Launcher] Version {current_instance.installed_version_id} not found locally, will install...")
                 else:
-                    needs_loader_install = True
+                    recovered = find_installed_loader_version(minecraft_directory, mod_loader, version,
+                                                              getattr(current_instance, 'loader_version', '') or '')
+                    if recovered and getattr(current_instance, 'loader_version', ''):
+                        self._safe_append_log(f"[Launcher] Using already installed version: {recovered}")
+                        current_instance.installed_version_id = recovered
+                        self.instance_manager.save_instances()
+                        version = recovered
+                    else:
+                        needs_loader_install = True
                 if needs_loader_install:
                     if mod_loader.lower() == "forge":
                         stored_lv = getattr(current_instance, 'loader_version', '') or ''
@@ -12238,9 +11645,7 @@ class MinecraftLauncher(tk.Tk):
                             base_mc = current_instance.version
                             of_file = getattr(current_instance, 'loader_version', '') or None
                             def _of_progress(p, msg): self._submit_progress_update(p, msg)
-                            version = install_optifine(base_mc, minecraft_directory, java_exe,
-                                                       filename=of_file, log_fn=self._safe_append_log,
-                                                       progress_fn=_of_progress)
+                            version = install_optifine(base_mc, minecraft_directory, java_exe, filename=of_file, log_fn=self._safe_append_log, progress_fn=_of_progress)
                             current_instance.installed_version_id = version
                             self.instance_manager.save_instances()
                             loader_installed = True
@@ -12263,18 +11668,55 @@ class MinecraftLauncher(tk.Tk):
                     callback={"setProgress": install_progress, "setMax": install_set_max, "setStatus": lambda x: self._safe_append_log(f"[Install] {x}")}
                 )
             self._submit_progress_update(100, "Installation complete!")
+            try:
+                apply_video_options(current_instance)
+            except Exception as e:
+                self._safe_append_log(f"[Launcher] options.txt update skipped: {e}")
+            java_major = 0
+            try:
+                java_major = get_required_java_version(current_instance.version if current_instance else version)
+            except Exception:
+                pass
+            options['jvmArguments'] = options['jvmArguments'] + legacy_jvm_args(current_instance, current_instance.version if current_instance else version, java_major)
             self._safe_append_log(f"[Launcher] Starting Minecraft...")
             command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
             command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
+            command = strip_server_blocklist(command, current_instance, current_instance.version if current_instance else version, log_fn=self._safe_append_log)
+            try:
+                def _lwjgl_progress(cur, total, name):
+                    self._submit_progress_update(min(int(cur / max(total, 1) * 100), 100), f"Preparing LWJGL... {name}")
+                lwjgl_override = resolve_lwjgl_override(current_instance, minecraft_directory, version,
+                                                        log_fn=self._safe_append_log, progress_fn=_lwjgl_progress)
+                if lwjgl_override:
+                    command = LwjglManager.rewrite_command(command, lwjgl_override["jars"], lwjgl_override["natives_dir"])
+                    self._safe_append_log(f"[LWJGL] Active LWJGL: {lwjgl_override['version']}")
+                else:
+                    stock_lwjgl, _lw_major = LwjglManager.stock_version(minecraft_directory, version)
+                    if stock_lwjgl:
+                        self._safe_append_log(f"[LWJGL] Using stock LWJGL {stock_lwjgl}")
+                if platform.system() == "Darwin":
+                    _stock, _major = LwjglManager.stock_version(minecraft_directory, version)
+                    if _major == 3 and "-XstartOnFirstThread" not in command:
+                        command.insert(1, "-XstartOnFirstThread")
+            except Exception as e:
+                self._safe_append_log(f"[LWJGL] override failed, using stock libraries: {e}")
+            launch_env = build_launch_env(current_instance, self)
+            if platform.system() == "Linux" and _is_wayland_session():
+                self._safe_append_log(f"[Launcher] Display backend: {'X11 (XWayland)' if launch_env.get('XDG_SESSION_TYPE') == 'x11' else 'Wayland (native)'}")
+                mc_tuple = _version_tuple(current_instance.version if current_instance else version)
+                if launch_env.get('XDG_SESSION_TYPE') != 'x11' and mc_tuple and mc_tuple < (1, 20, 2):
+                    self._safe_append_log("[Launcher] Warning: native Wayland on this version fails at glfwSetWindowIcon unless a Wayland-fix mod is installed; switch the display backend to X11 in Other settings if the window never appears")
+            hook_env = dict(launch_env)
+            hook_env.update(instance_command_vars(current_instance, java_exe, version))
+            if current_instance is not None and current_instance.opt("pre_launch_cmd"):
+                self._safe_append_log("[Hook] Running pre-launch command...")
+                rc = run_hook_command(current_instance.opt("pre_launch_cmd"), minecraft_directory, hook_env, log_fn=self._safe_append_log)
+                if rc != 0:
+                    self._safe_append_log(f"[Hook] Pre-launch command exited with {rc}, aborting launch")
+                    return
+            if current_instance is not None:
+                command = apply_wrapper_command(command, current_instance.opt("wrapper_cmd"))
             self.after(0, self._on_mc_started)
-            launch_env = os.environ.copy()
-            if getattr(self, 'use_dri_prime', None) and self.use_dri_prime.get():
-                launch_env['DRI_PRIME'] = '1'
-            if current_instance and getattr(current_instance, 'env_vars', None):
-                for line in current_instance.env_vars.splitlines():
-                    if '=' in line and not line.strip().startswith('#'):
-                        k, _, v = line.partition('=')
-                        launch_env[k.strip()] = v.strip()
             _launch_start = time.time()
             self.mc_process = subprocess.Popen(
                 command,
@@ -12285,13 +11727,36 @@ class MinecraftLauncher(tk.Tk):
                 bufsize=1,
                 env=launch_env
             )
+            game_log = None
+            try:
+                game_log_path = _launcher_log_dir() / f"game_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+                game_log = open(game_log_path, "w", encoding="utf-8", errors="replace")
+                game_log.write(f"# {version} ({mod_loader}) in {minecraft_directory}\n")
+                self._safe_append_log(f"[Launcher] Game output is saved to {game_log_path}")
+            except Exception:
+                game_log = None
             for line in self.mc_process.stdout:
                 if self.cancel_requested:
                     self.mc_process.terminate()
                     break
                 self._safe_append_log(line.rstrip())
+                if game_log is not None:
+                    try:
+                        game_log.write(line)
+                    except Exception:
+                        pass
             self.mc_process.wait()
             exit_code = self.mc_process.returncode
+            if game_log is not None:
+                try:
+                    game_log.write(f"# exit code {exit_code}\n")
+                    game_log.close()
+                except Exception:
+                    pass
+            if current_instance is not None and current_instance.opt("post_exit_cmd"):
+                hook_env["INST_EXIT_CODE"] = str(exit_code)
+                self._safe_append_log("[Hook] Running post-exit command...")
+                run_hook_command(current_instance.opt("post_exit_cmd"), minecraft_directory, hook_env, log_fn=self._safe_append_log)
             elapsed = int(time.time() - _launch_start)
             if current_instance and elapsed > 5:
                 current_instance.play_time = (current_instance.play_time or 0) + elapsed
@@ -12312,397 +11777,13 @@ class MinecraftLauncher(tk.Tk):
             except Exception:
                 hint = ""
             self._safe_append_log(f"[ERROR] Version '{bad_ver}' does not exist.{hint}")
-            self.after(0, lambda: messagebox.showerror(
-                "Version Not Found",
-                f"Minecraft version '{bad_ver}' does not exist.{hint}\n\nPlease check the version name and try again."
+            self.after(0, lambda: messagebox.showerror("Version Not Found", f"Minecraft version '{bad_ver}' does not exist.{hint}\n\nPlease check the version name and try again."
             ))
         except Exception as e:
             self._safe_append_log(f"[ERROR] Launch failed: {e}")
             self._safe_append_log(traceback.format_exc())
         finally:
             self.after(0, self._restore_ui)
-    def _safe_append_log(self, line):
-        try:
-            self.after(0, self._append_log, line)
-        except Exception:
-            pass
-    _SHARE_TARGETS = [
-        ('share_options',       'options.txt',    'options.txt',         True),
-        ('share_resourcepacks', 'resourcepacks',  'resourcepacks',       False),
-        ('share_shaderpacks',   'shaderpacks',    'shaderpacks',         False),
-        ('share_servers',       'servers.dat',    'servers.dat',         True),
-        ('share_screenshots',   'screenshots',    'screenshots',         False),
-    ]
-    def _check_connectivity(self):
-        def _ping():
-            try:
-                _http_session.get("https://launchermeta.mojang.com/mc/game/version_manifest.json",
-                             timeout=5, stream=True).close()
-                online = True
-            except Exception:
-                online = False
-            self.after(0, lambda: self._set_connectivity(online))
-        threading.Thread(target=_ping, daemon=True).start()
-        try:
-            if self.winfo_exists():
-                self.after(60000, self._check_connectivity)
-        except Exception:
-            pass
-    def _set_connectivity(self, online):
-        self._offline = not online
-        if not hasattr(self, 'status_label') or self.status_label is None:
-            return
-        try:
-            parent = self.status_label.master
-        except Exception:
-            return
-        if online:
-            if self._offline_label and self._offline_label.winfo_exists():
-                self._offline_label.pack_forget()
-        else:
-            if not self._offline_label or not self._offline_label.winfo_exists():
-                self._offline_label = tk.Label(
-                    parent, text=" ⚠ Offline ",
-                    bg="#cc3333", fg="#ffffff",
-                    font=("Segoe UI", 8, "bold"),
-                    relief="flat", padx=4, pady=2
-                )
-                self._offline_label.pack(side="right", padx=(0, 8))
-    def _periodic_debug_update(self):
-        try:
-            if hasattr(self, 'debug_mode_enabled') and self.debug_mode_enabled.get():
-                if hasattr(self, '_debug_text_widget') and self._debug_text_widget is not None:
-                    try:
-                        if self._debug_text_widget.winfo_exists():
-                            _update_debug_info(self)
-                    except tk.TclError:
-                        pass
-        except Exception:
-            pass
-        try:
-            if self.winfo_exists():
-                self.after(500, self._periodic_debug_update)
-        except Exception:
-            pass
-
-    def _apply_sharing_for_instance(self, instance):
-        shared_dir = Path.home() / ".config" / "oranglauncher" / "shared"
-        shared_dir.mkdir(parents=True, exist_ok=True)
-        for attr, shared_name, rel_path, is_file in self._SHARE_TARGETS:
-            shared_target = shared_dir / shared_name
-            inst_path = instance.minecraft_dir / rel_path
-            enabled = getattr(self, attr, None)
-            enabled = enabled.get() if enabled else False
-            try:
-                if enabled:
-                    if not shared_target.exists() and not shared_target.is_symlink():
-                        if inst_path.exists() and not inst_path.is_symlink():
-                            if is_file:
-                                shutil.copy2(inst_path, shared_target)
-                            else:
-                                shutil.copytree(str(inst_path), str(shared_target))
-                        else:
-                            if is_file:
-                                shared_target.touch()
-                            else:
-                                shared_target.mkdir(parents=True, exist_ok=True)
-                    if inst_path.is_symlink():
-                        try:
-                            if inst_path.resolve() == shared_target.resolve():
-                                continue
-                        except Exception:
-                            pass
-                        inst_path.unlink()
-                    elif inst_path.exists():
-                        if is_file:
-                            inst_path.unlink()
-                        else:
-                            # merge this instance's packs into the shared folder so nothing is lost
-                            try:
-                                for item in inst_path.iterdir():
-                                    dest = shared_target / item.name
-                                    if dest.exists():
-                                        continue
-                                    if item.is_dir():
-                                        shutil.copytree(str(item), str(dest))
-                                    else:
-                                        shutil.copy2(str(item), str(dest))
-                            except Exception as e:
-                                self._safe_append_log(f"[Sharing] merge {shared_name} / {instance.name}: {e}")
-                            shutil.rmtree(str(inst_path))
-                    inst_path.symlink_to(shared_target)
-                else:
-                    if inst_path.is_symlink():
-                        inst_path.unlink()
-                        if shared_target.exists():
-                            if is_file:
-                                shutil.copy2(shared_target, inst_path)
-                            else:
-                                shutil.copytree(str(shared_target), str(inst_path))
-                        elif not is_file:
-                            inst_path.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                self._safe_append_log(f"[Sharing] {shared_name} / {instance.name}: {e}")
-
-    def _apply_sharing_all(self):
-        for instance in self.instance_manager.instances.values():
-            self._apply_sharing_for_instance(instance)
-    def _check_crash_report(self, minecraft_directory, exit_code):
-        try:
-            crash_dir = Path(minecraft_directory) / "crash-reports"
-            if not crash_dir.exists():
-                return
-            reports = sorted(crash_dir.glob("crash-*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
-            if not reports:
-                return
-            latest = reports[0]
-            content = latest.read_text(encoding="utf-8", errors="replace")
-            lines = content.splitlines()
-            summary_lines = [l for l in lines[:60] if l.strip()][:12]
-            summary = "\n".join(summary_lines)
-            win = tk.Toplevel(self)
-            win.title("Minecraft Crashed")
-            win.configure(bg=self._get_theme_color('bg_primary'))
-            win.resizable(True, True)
-            win.geometry("640x400")
-            win.transient(self)
-            tk.Label(win, text=f"Minecraft exited with code {exit_code}",
-                     bg=self._get_theme_color('bg_primary'), fg="#ff6b6b",
-                     font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(16, 4))
-            tk.Label(win, text=f"Latest crash report: {latest.name}",
-                     bg=self._get_theme_color('bg_primary'), fg=self._get_theme_color('fg_secondary'),
-                     font=("Segoe UI", 9)).pack(anchor="w", padx=16, pady=(0, 8))
-            txt = scrolledtext.ScrolledText(win, font=("Consolas", 8),
-                                            bg=self._get_theme_color('bg_input'),
-                                            fg=self._get_theme_color('fg_primary'),
-                                            relief="flat", bd=0)
-            txt.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-            txt.insert("1.0", summary)
-            txt.config(state="disabled")
-            btn_row = tk.Frame(win, bg=self._get_theme_color('bg_primary'))
-            btn_row.pack(fill="x", padx=16, pady=(0, 12))
-            def _open_full():
-                
-                _sp.Popen(["xdg-open", str(latest)])
-            tk.Button(btn_row, text="Open full report", command=_open_full,
-                      bg=self._get_theme_color('bg_tertiary'), fg=self._get_theme_color('fg_primary'),
-                      relief="flat", bd=0, padx=12, pady=6, cursor="hand2").pack(side="left", padx=(0, 8))
-            tk.Button(btn_row, text="Close", command=win.destroy,
-                      bg=self._get_theme_color('accent_primary'), fg="#ffffff",
-                      relief="flat", bd=0, padx=12, pady=6, cursor="hand2").pack(side="left")
-        except Exception as e:
-            print(f"[DEBUG] Error reading crash report: {e}")
-    def _set_status_text(self, text):
-        self.status_label.config(text=text)
-    def _on_mc_started(self):
-        current_game_profile = self.game_profile_manager.get_selected_profile()
-        selected_name = self.selected_profile.get()
-        username = selected_name.split(' (')[0] if selected_name else ''
-        selected_instance = self.instance_manager.get_selected_instance()
-        if selected_instance:
-            self.status_label.config(text=f"Minecraft {selected_instance.version} ({selected_instance.mod_loader}) running as {username}")
-            self.version_label.config(text=f"Instance: {selected_instance.name} | {selected_instance.version} ({selected_instance.mod_loader})")
-            if getattr(self, 'discord_rpc_mgr', None) and self.discord_rpc_enabled.get():
-                self._update_discord_rpc(
-                    "Playing Minecraft",
-                    f"{selected_instance.version} ({selected_instance.mod_loader})"
-                )
-        elif current_game_profile:
-            self.status_label.config(text=f"Minecraft {current_game_profile.version} ({current_game_profile.mod_loader}) running as {username}")
-            self.version_label.config(text=f"Profile: {current_game_profile.name} | {current_game_profile.version} ({current_game_profile.mod_loader})")
-            if getattr(self, 'discord_rpc_mgr', None) and self.discord_rpc_enabled.get():
-                self._update_discord_rpc(
-                    "Playing Minecraft",
-                    f"{current_game_profile.version} ({current_game_profile.mod_loader})"
-                )
-        else:
-            self.status_label.config(text=f"Minecraft running as {username}")
-        self.play_btn.config(text=self._t("STOP"), state="normal", command=self._cancel_launch)
-    def _restore_ui(self):
-        self.play_btn.config(text=self._t("PLAY"), state="normal", command=self._launch_game)
-        self.profile_cb.config(state="readonly")
-        if hasattr(self, '_progress_queue') and self._progress_queue is not None:
-            try:
-                while True:
-                    self._progress_queue.get_nowait()
-            except Exception:
-                pass
-        self.progress.set(0)
-        self.launch_thread = None
-        self.mc_process = None
-        selected_name = self.selected_profile.get()
-        if selected_name and selected_name != self._t("LOADING_PROFILES"):
-            username = selected_name.split(' (')[0]
-            self.status_label.config(text=self._t("WELCOME_USER", username=username))
-        if getattr(self, 'discord_rpc_mgr', None) and self.discord_rpc_enabled.get():
-            self._update_discord_rpc("Idling in Launcher")
-    def _append_log(self, message):
-        if hasattr(self, 'log_text'):
-
-            message = message.rstrip()
-            if not message:
-                return
-            plain = _re.sub(r'(?:\x1b|\033)\[([0-9;]*)m|\[([0-9;]+)m', '', message)
-            msg_lower = plain.lower()
-            _mc_level = _re.search(r'\[(?:[^\]]+)/([A-Z]+)\]', plain)
-            if _mc_level:
-                level = _mc_level.group(1)
-                if level in ("ERROR", "FATAL"):
-                    tag = "error"
-                elif level == "WARN":
-                    tag = "warning"
-                elif level == "INFO":
-                    tag = "info"
-                else:
-                    tag = None
-            elif any(k in msg_lower for k in ("[error]", "error:", "exception", "traceback", "failed")):
-                tag = "error"
-            elif any(k in msg_lower for k in ("[warn]", "warning")):
-                tag = "warning"
-            elif any(k in msg_lower for k in ("success", "done", "finished", "installed", "complete")):
-                tag = "success"
-            elif any(k in msg_lower for k in ("[launcher]", "[forge]", "[fabric]", "[quilt]", "[install]", "[updater]")):
-                tag = "info"
-            else:
-                tag = None
-            if hasattr(self, '_log_buffer'):
-                self._log_buffer.append((message, tag))
-            show = True
-            if hasattr(self, '_log_filter_vars'):
-                show = self._log_filter_vars.get(tag, tk.BooleanVar(value=True)).get()
-            if show and hasattr(self, '_log_search_var'):
-                search = self._log_search_var.get()
-                if search and search != "Type to filter logs..." and search.lower() not in msg_lower:
-                    show = False
-            if show:
-                self.log_text.config(state="normal")
-                if hasattr(self, '_insert_ansi_line'):
-                    self._insert_ansi_line(message, tag)
-                else:
-                    self.log_text.insert(tk.END, f"{plain}\n", tag)
-                self.log_text.see(tk.END)
-                self.log_text.config(state="disabled")
-    def log_message(self, message):
-        if hasattr(self, 'log_text'):
-            self.log_text.config(state="normal")
-            self.log_text.insert(tk.END, f"{message}\n")
-            self.log_text.see(tk.END)
-            self.log_text.config(state="disabled")
-    def _save_settings(self):
-        config_dir = Path.home() / ".config" / "oranglauncher"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "launcher_config.json"
-        try:
-            with open(config_path, "r") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-        data["custom_args"] = self.custom_args.get()
-        data["use_default_args"] = self.use_default_args.get()
-        if hasattr(self, 'show_status_bar'):
-            data["show_status_bar"] = self.show_status_bar.get()
-        if hasattr(self, 'discord_rpc_enabled'):
-            data["discord_rpc_enabled"] = self.discord_rpc_enabled.get()
-        data["language"] = self.current_locale
-        try:
-            with open(config_path, "w") as f:
-                json.dump(data, f, indent=2)
-        except Exception:
-            pass
-    def _build_interface(self):
-        main_frame = ttk.Frame(self)
-        main_frame.pack(fill="both", expand=True, padx=8, pady=8)
-        self._build_bottom_section(main_frame)
-        self.notebook = ttk.Notebook(main_frame)
-        self.notebook.pack(fill="both", expand=True, pady=(0, 8))
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
-        
-        def _on_mousewheel(event):
-            try:
-                delta = 0
-                if event.num == 5:
-                    delta = -1
-                elif event.num == 4: 
-                    delta = 1
-                elif event.delta:
-                    if abs(event.delta) >= 120:
-                        delta = int(event.delta / 120)
-                    else: 
-                        delta = 1 if event.delta > 0 else -1
-                
-                if delta == 0:
-                    return
-                x, y = self.winfo_pointerxy()
-                widget_under_mouse = self.winfo_containing(x, y)
-                current_scrollable = None
-                if widget_under_mouse:
-                    if hasattr(widget_under_mouse, 'yview_scroll'):
-                        current_scrollable = widget_under_mouse
-                    else:
-                        parent = widget_under_mouse
-                        count = 0 
-                        while parent and count < 10:
-                            if hasattr(parent, 'yview_scroll'):
-                                current_scrollable = parent
-                                break
-                            if isinstance(parent, ttk.Notebook):
-                                break
-                            if not hasattr(parent, 'master'):
-                                break
-                            parent = parent.master
-                            count += 1
-                if not current_scrollable:
-                    current_tab = self.notebook.select()
-                    if current_tab:
-                        try:
-                            tab_frame = self.notebook.nametowidget(current_tab)
-                            def find_primary_scrollable(widget):
-                                for child in widget.winfo_children():
-                                    if hasattr(child, 'yview_scroll') and widget.winfo_ismapped():
-                                        return child
-                                    found = find_primary_scrollable(child)
-                                    if found: return found
-                                return None
-                            current_scrollable = find_primary_scrollable(tab_frame)
-                        except: pass
-                if current_scrollable:
-                     current_scrollable.yview_scroll(int(-1 * delta), "units")
-            except Exception:
-                pass
-
-        self.bind_all("<MouseWheel>", _on_mousewheel)
-        self.bind_all("<Button-4>", _on_mousewheel)
-        self.bind_all("<Button-5>", _on_mousewheel)
-        build_news_tab(self, self.notebook)
-        build_launcher_log_tab(self, self.notebook)
-        build_game_profiles_tab(self, self.notebook)
-        try:
-            build_modding_tab(self, self.notebook, self.selected_mod_loader)
-        except Exception as e:
-            print(f"Error building modding tab: {e}")
-        try:
-            build_servers_tab(self, self.notebook)
-        except Exception as e:
-            print(f"Error building Servers tab: {e}")
-        try:
-            build_res_sh_tab(self, self.notebook, get_instance_manager())
-        except Exception as e:
-            print(f"Error building resource & shader packs tab: {e}")
-        try:
-            build_content_store_tab(self, self.notebook, get_instance_manager())
-        except Exception as e:
-            print(f"Error building content store tab: {e}")
-        build_settings_tab(self, self.notebook)
-    def _load_plugins(self):
-        if hasattr(self, 'loaded_plugins'):
-            for plugin_info in self.loaded_plugins:
-                try:
-                    mod = plugin_info.get('module') if isinstance(plugin_info, dict) else plugin_info
-                    if mod and hasattr(mod, 'deinit_plugin'):
-                        mod.deinit_plugin(self)
-                except Exception as e:
-                    print(f"[Plugins] Error during deinit_plugin: {e}")
-
     def install_loader_for_instance(self, instance, loader, loader_version=None):
         def worker():
             try:
@@ -12792,7 +11873,7 @@ class MinecraftLauncher(tk.Tk):
                     self.after(0, lambda: messagebox.showerror(self._t("ERROR"), f"Failed to install {loader.title()} {loader_version or ''}"))
             except Exception as e:
                 self._safe_append_log(f"[Installer] Error installing {loader}: {e}")
-                self.after(0, lambda: messagebox.showerror(self._t("ERROR"), f"Failed to install {loader.title()} {loader_version or ''}: {e}"))
+                self.after(0, lambda m=str(e): messagebox.showerror(self._t("ERROR"), f"Failed to install {loader.title()} {loader_version or ''}: {m}"))
             finally:
                 self._submit_progress_update(100, "Installation complete!")
                 if hasattr(self, '_progress_queue') and self._progress_queue is not None:
@@ -12804,585 +11885,1183 @@ class MinecraftLauncher(tk.Tk):
                 self.after(0, lambda: self._apply_progress_update(0, ""))
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-    def destroy(self):
+    def _apply_sharing_for_instance(self, instance):
+        shared_dir = Path.home() / ".config" / "oranglauncher" / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        for attr, shared_name, rel_path, is_file in self._SHARE_TARGETS:
+            shared_target = shared_dir / shared_name
+            inst_path = instance.minecraft_dir / rel_path
+            enabled = getattr(self, attr, None)
+            enabled = enabled.get() if enabled else False
+            try:
+                if enabled:
+                    if not shared_target.exists() and not shared_target.is_symlink():
+                        if inst_path.exists() and not inst_path.is_symlink():
+                            if is_file:
+                                shutil.copy2(inst_path, shared_target)
+                            else:
+                                shutil.copytree(str(inst_path), str(shared_target))
+                        else:
+                            if is_file:
+                                shared_target.touch()
+                            else:
+                                shared_target.mkdir(parents=True, exist_ok=True)
+                    if inst_path.is_symlink():
+                        try:
+                            if inst_path.resolve() == shared_target.resolve():
+                                continue
+                        except Exception:
+                            pass
+                        inst_path.unlink()
+                    elif inst_path.exists():
+                        if is_file:
+                            inst_path.unlink()
+                        else:
+                            # merge this instance's packs into the shared folder so nothing lost
+                            try:
+                                for item in inst_path.iterdir():
+                                    dest = shared_target / item.name
+                                    if dest.exists():
+                                        continue
+                                    if item.is_dir():
+                                        shutil.copytree(str(item), str(dest))
+                                    else:
+                                        shutil.copy2(str(item), str(dest))
+                            except Exception as e:
+                                self._safe_append_log(f"[Sharing] merge {shared_name} / {instance.name}: {e}")
+                            shutil.rmtree(str(inst_path))
+                    inst_path.symlink_to(shared_target)
+                else:
+                    if inst_path.is_symlink():
+                        inst_path.unlink()
+                        if shared_target.exists():
+                            if is_file:
+                                shutil.copy2(shared_target, inst_path)
+                            else:
+                                shutil.copytree(str(shared_target), str(inst_path))
+                        elif not is_file:
+                            inst_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                self._safe_append_log(f"[Sharing] {shared_name} / {instance.name}: {e}")
+    def _apply_sharing_all(self):
+        for instance in self.instance_manager.instances.values():
+            self._apply_sharing_for_instance(instance)
+    _SHARE_TARGETS = [
+        ('share_options',       'options.txt',    'options.txt',         True),
+        ('share_resourcepacks', 'resourcepacks',  'resourcepacks',       False),
+        ('share_shaderpacks',   'shaderpacks',    'shaderpacks',         False),
+        ('share_servers',       'servers.dat',    'servers.dat',         True),
+        ('share_screenshots',   'screenshots',    'screenshots',         False),
+    ]
+    def _progress_callback(self, current, total, message=None):
+        if self.cancel_requested:
+            raise Exception("Operation cancelled by user.")
+        try:
+            if isinstance(current, dict):
+                status = current
+                current = status.get("task", 0)
+                total = status.get("total", 100)
+                message = status.get("status", message)
+        except Exception:
+            pass
+        total = max(total or 1, 1)
+        percent = max(0.0, min(100.0, (current / total) * 100.0))
+        files_done = None
+        files_total = None
+        base_msg = message
+        if isinstance(message, dict):
+            base_msg = message.get("text") or "Preparing..."
+            files_done = message.get("files_done")
+            files_total = message.get("files_total")
+        else:
+            base_msg = message or "Preparing..."
+        message_parts = []
+        trimmed_msg = (base_msg or "").strip()
+        if trimmed_msg:
+            message_parts.append(trimmed_msg)
+        if isinstance(files_done, int) and isinstance(files_total, int) and files_total > 0:
+            files_left = max(files_total - files_done, 0)
+            files_total_str = str(files_total)
+            if len(files_total_str) > 8:
+                files_total_str = f"{files_total_str[:5]}..."
+            files_done_str = str(files_done)
+            if len(files_done_str) > 8:
+                files_done_str = f"{files_done_str[:5]}..."
+            message_parts.append(f"{files_done_str}/{files_total_str} files ({files_left} left)")
+        status_body = " - ".join(message_parts) if message_parts else "Preparing..."
+        status_text = f"{status_body} ({percent:.1f}%)"
+        self._submit_progress_update(percent, status_text)
+    def _submit_progress_update(self, percent, status_text):
+        if threading.get_ident() == getattr(self, "_main_thread_id", None):
+            self._apply_progress_update(percent, status_text)
+            return
+        if not hasattr(self, "_progress_queue") or self._progress_queue is None:
+            return
+        was_empty = self._progress_queue.empty()
+        try:
+            self._progress_queue.put_nowait((percent, status_text))
+        except queue.Full:
+            try:
+                self._progress_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._progress_queue.put_nowait((percent, status_text))
+            except queue.Full:
+                pass
+        if was_empty and not getattr(self, '_progress_polling_active', False):
+            try:
+                self.after(0, self._process_progress_events)
+            except Exception:
+                pass
+    def _process_progress_events(self):
+        if not hasattr(self, "_progress_queue") or self._progress_queue is None:
+            self._progress_polling_active = False
+            return
+        self._progress_polling_active = True
+        try:
+            while True:
+                percent, status_text = self._progress_queue.get_nowait()
+                self._apply_progress_update(percent, status_text)
+        except queue.Empty:
+            pass
+        try:
+            if not self._progress_queue.empty() and self.winfo_exists():
+                self.after(100, self._process_progress_events)
+            else:
+                self._progress_polling_active = False
+        except Exception:
+            self._progress_polling_active = False
+    def _start_discord_rpc(self):
+        try:
+            if self.discord_rpc_mgr is None:
+                app_id = '1411624079701573703'
+                self.discord_start_time = int(time.time())
+                self.discord_rpc_mgr = DiscordRPCManager(
+                    app_id,
+                    on_connected=lambda: self.after(0, lambda: self._update_discord_rpc("Idling in launcher"))
+                )
+                self.discord_rpc_mgr.start()
+        except Exception:
+            self.discord_rpc_mgr = None
+    def _stop_discord_rpc(self):
+        try:
+            if self.discord_rpc_mgr:
+                self.discord_rpc_mgr.stop()
+                self.discord_rpc_mgr = None
+        except Exception:
+            pass
+    def _update_discord_rpc(self, state, details=None):
+        if not self.discord_rpc_enabled.get() or not getattr(self, 'discord_rpc_mgr', None):
+            return
+        try:
+            presence_data = {
+                "state": state,
+                "start": self.discord_start_time,
+            }
+            if details:
+                presence_data["details"] = details
+            self.discord_rpc_mgr.update(**presence_data)
+        except Exception:
+            pass
+    def _music_player(self):
+        if self._music is None:
+            try:
+                from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+            except Exception as e:
+                print(f"[Music] QtMultimedia unavailable: {e}")
+                return None
+            player = QMediaPlayer()
+            output = QAudioOutput()
+            player.setAudioOutput(output)
+            player.mediaStatusChanged.connect(self._on_music_status)
+            player.errorOccurred.connect(lambda err, msg: print(f"[Music] error: {msg}"))
+            self._music = (player, output)
+        return self._music[0]
+
+    def _on_music_status(self, status):
+        try:
+            from PySide6.QtMultimedia import QMediaPlayer
+            if status == QMediaPlayer.MediaStatus.EndOfMedia and self.music_playing:
+                self._play_next_song()
+        except Exception as e:
+            print(f"[Music] status error: {e}")
+
+    def _toggle_music(self):
+        player = self._music_player()
+        if player is None:
+            messagebox.showerror(self._t("MUSIC_ERROR"), _qt_t("QT_AUDIO_UNAVAILABLE", "Audio playback is unavailable (QtMultimedia missing)."))
+            return
+        if self.music_playing:
+            try:
+                player.stop()
+            except Exception as e:
+                print(f"Music stop error: {e}")
+            self.music_playing = False
+            self.music_playlist = []
+            self.current_music_index = 0
+            if self.music_btn:
+                try:
+                    self.music_btn.config(text=self._t("PLAY_MUSIC"))
+                except Exception as e:
+                    print(f"Music button config error (stop): {e}")
+        else:
+            music_dir = find_resource("oranglauncher/music")
+            if not music_dir or not music_dir.exists():
+                base_dir = get_resource_path()
+                music_dir = base_dir / "oranglauncher" / "music"
+            if not music_dir or not music_dir.exists():
+                messagebox.showwarning(self._t("MUSIC_ERROR"),"Music folder not found at oranglauncher/music/")
+                return
+            music_files = []
+            for ext in ['*.mp3', '*.ogg', '*.wav', '*.flac']:
+                music_files.extend(list(music_dir.glob(ext)))
+            if not music_files:
+                messagebox.showwarning(self._t("MUSIC_ERROR"),"No music files found in oranglauncher/music/\nSupported formats: .mp3, .ogg, .wav, .flac")
+                return
+            random.shuffle(music_files)
+            self.music_playlist = music_files
+            self.current_music_index = 0
+            self._play_next_song()
+    def _play_next_song(self):
+        if not self.music_playlist or self.current_music_index >= len(self.music_playlist):
+            self.current_music_index = 0
+        if not self.music_playlist:
+            return
+        music_path = self.music_playlist[self.current_music_index]
+        player = self._music_player()
+        if player is None:
+            return
+        try:
+            player.setSource(QtCore.QUrl.fromLocalFile(str(music_path)))
+            player.play()
+            self.music_playing = True
+            if self.music_btn:
+                try:
+                    self.music_btn.config(text=self._t("STOP_MUSIC"))
+                except Exception as e:
+                    print(f"Music button config error (play): {e}")
+            print(f"[Music] Now playing ({self.current_music_index + 1}/{len(self.music_playlist)}): {music_path.name}")
+            self.current_music_index += 1
+        except Exception as e:
+            print(f"Music play error: {e}")
+            messagebox.showerror(
+                self._t("MUSIC_ERROR"),
+                self._t("MUSIC_PLAY_FAILED") + f"\n{e}"
+            )
+    def _initialize_plugins(self):
+        try:
+            
+            #
+            # Time wasted here: 5 h now
+            # add more if you encounter issues with loading of plugins
+            #
+            builtin_plugin_dir = Path(__file__).parent / "oranglauncher" / "plugin"
+            launcher_root = Path.home() / ".local" / "share" / "oranglauncher"
+            user_plugin_dir = launcher_root / "plugins"
+            self.loaded_plugins = []
+            if builtin_plugin_dir.exists():
+                for plugin_path in builtin_plugin_dir.glob("*.py"):
+                    if plugin_path.name.startswith("_"):
+                        continue
+                    try:
+                        spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
+                        if spec and spec.loader:
+                            module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(module)
+                            if hasattr(module, 'init_plugin'):
+                                module.init_plugin(self)
+                                plugin_info = {
+                                    'name': plugin_path.stem,
+                                    'type': 'builtin',
+                                    'module': module,
+                                    'path': str(plugin_path)
+                                }
+                                self.loaded_plugins.append(plugin_info)
+                                print(f"[Plugins] Loaded built-in plugin: {plugin_path.stem}")
+                    except Exception as e:
+                        print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
+                        traceback.print_exc()
+            user_plugin_dir.mkdir(parents=True, exist_ok=True)
+            
+            for plugin_path in user_plugin_dir.glob("*.py"):
+                if plugin_path.name.startswith("_"):
+                    continue
+                try:
+                    spec = importlib.util.spec_from_file_location(plugin_path.stem, plugin_path)
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+                        if hasattr(module, 'init_plugin'):
+                            module.init_plugin(self)
+                            plugin_info = {
+                                'name': plugin_path.stem,
+                                'type': 'user',
+                                'module': module,
+                                'path': str(plugin_path)
+                            }
+                            self.loaded_plugins.append(plugin_info)
+                            print(f"[Plugins] Loaded user plugin: {plugin_path.stem}")
+                except Exception as e:
+                    print(f"[Plugins] Error loading plugin {plugin_path.name}: {e}")
+                    traceback.print_exc()
+            print(f"[Plugins] Loaded {len(self.loaded_plugins)} plugin(s) total")
+            for plugin in self.loaded_plugins:
+                print(f"  - {plugin['name']} ({plugin['type']})")
+        except Exception as e:
+            print(f"[Plugins] Error initializing plugin system: {e}")
+            traceback.print_exc()
+    def _open_file_from_cli(self, path: str):
+        p = path.lower()
+        if p.endswith('.mrpack') or p.endswith(ORANGPACK_EXT):
+            self._do_import_mrpack_path(path)
+        elif p.endswith('.zip'):
+            self._do_import_curseforge_path(path)
+    def _do_import_mrpack_path(self, mrpack_path: str):
+        if hasattr(self, 'status_label'):
+            self.status_label.config(text="Importing modpack...")
+        if hasattr(self, 'status_bar_progress'):
+            self.status_bar_progress.config(mode='indeterminate')
+            self.status_bar_progress.start(15)
+        def _restore():
+            if hasattr(self, 'status_bar_progress'):
+                self.status_bar_progress.stop()
+                self.status_bar_progress.config(mode='determinate')
+                if hasattr(self, 'progress'):
+                    self.progress.set(0)
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text="Ready")
+        def _do():
+            try:
+                success, message, profile_name = import_modpack(mrpack_path, self)
+                def done():
+                    _restore()
+                    if success:
+                        messagebox.showinfo("Modpack Imported", f"Imported as '{profile_name}'\n{message}")
+                        if hasattr(self, '_refresh_game_profiles'):
+                            self._refresh_game_profiles()
+                        if hasattr(self, 'game_profiles_tab'):
+                            try:
+                                self.game_profiles_tab._profile_fingerprints = {}
+                                self.game_profiles_tab._refresh_profiles_list()
+                            except Exception:
+                                pass
+                    else:
+                        messagebox.showerror("Import Failed", message)
+                self.after(0, done)
+            except Exception as e:
+                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror("Import Error", m)))
+        threading.Thread(target=_do, daemon=True).start()
+    def _do_import_curseforge_path(self, zip_path: str):
+        if hasattr(self, 'status_label'):
+            self.status_label.config(text="Importing CurseForge pack...")
+        if hasattr(self, 'status_bar_progress'):
+            self.status_bar_progress.config(mode='indeterminate')
+            self.status_bar_progress.start(15)
+        def _restore():
+            if hasattr(self, 'status_bar_progress'):
+                self.status_bar_progress.stop()
+                self.status_bar_progress.config(mode='determinate')
+                if hasattr(self, 'progress'):
+                    self.progress.set(0)
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text="Ready")
+        def _do():
+            try:
+                success, message, profile_name = import_curseforge_pack(zip_path, self)
+                def done():
+                    _restore()
+                    if success:
+                        messagebox.showinfo("Pack Imported", f"Imported as '{profile_name}'\n{message}")
+                        if hasattr(self, '_refresh_game_profiles'):
+                            self._refresh_game_profiles()
+                    else:
+                        messagebox.showerror("Import Failed", message)
+                self.after(0, done)
+            except Exception as e:
+                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror("Import Error", m)))
+        threading.Thread(target=_do, daemon=True).start()
+    def _startup_sync_sharing(self):
+        # re-link shared folders for every instance so sharing is live from launch
+        try:
+            if any(getattr(self, a, None) and getattr(self, a).get()
+                   for a in ('share_options', 'share_resourcepacks', 'share_shaderpacks', 'share_servers', 'share_screenshots')):
+                threading.Thread(target=self._apply_sharing_all, daemon=True).start()
+        except Exception as e:
+            print(f"[Sharing] startup sync failed: {e}")
+    @property
+    def profiles(self):
+        if self._profiles_cache is None:
+            self._profiles_cache = load_profiles_safe()
+        return self._profiles_cache
+
+
+class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
+    PAGES = [("news", "UPDATE_NOTES", "News", "news"), ("logs", "LAUNCHER_LOG", "Log", "logs"), ("instances", "GAME_PROFILES_TITLE", "Instances", "instances"), ("content", "CONTENT_TAB", "Content", "file"), ("settings", "SETTINGS", "Settings", "settings")]
+    def __init__(self):
+        super().__init__()
+        _QT_APP_REF[0] = self
+        global _APP_REF
+        try:
+            _APP_REF = weakref.ref(self)
+        except Exception:
+            pass
+        self._main_thread_id = threading.get_ident()
+        self._progress_queue = queue.Queue(maxsize=32)
+        self._progress_polling_active = False
+        self._log_buffer = deque(maxlen=20000)
+        self.use_default_args = _Var(True)
+        self.custom_args = _Var("")
+        self.show_status_bar = _Var(True)
+        self.discord_rpc_enabled = _Var(True)
+        self.delete_telemetry_on_startup = _Var(False)
+        self.custom_layout_enabled = _Var(False)
+        self.debug_mode_enabled = _Var(False)
+        self.show_progress_bar = _Var(True)
+        self.use_dri_prime = _Var(False)
+        for attr in ("share_options", "share_resourcepacks", "share_shaderpacks", "share_servers", "share_screenshots"):
+            setattr(self, attr, _Var(False))
+        self.selected_profile = _Var("")
+        self.progress = _Var(0)
+        self.discord_rpc_mgr = None
+        self.discord_start_time = None
+        self.launch_thread = None
+        self.cancel_requested = False
+        self.mc_process = None
+        self.profiles_list = []
+        self.loaded_plugins = []
+        self._profiles_cache = None
+        self._pending_quickplay = None
+        self._pending_open_file = None
+        self._offline = False
+        self._music = None
+        self.music_playing = False
+        self.music_playlist = []
+        self.current_music_index = 0
+        self.music_btn = None
+        self.os_type = platform.system()
+        self.game_profile_manager = get_game_profile_manager()
+        self.instance_manager = get_instance_manager()
+        self.theme_manager = get_theme_manager()
+        self.theme = QtTheme(self.theme_manager)
+        self._load_locales()
+        try:
+            saved_language = load_saved_language()
+            if saved_language in self.locales:
+                self.current_locale = saved_language
+                self.translations = self.locales.get(saved_language, {})
+        except Exception as e:
+            print(f"[DEBUG] Error loading saved language: {e}")
+        _load_settings(self)
+        self.theme.load(self._initial_theme_name())
+        self.theme.apply(QtWidgets.QApplication.instance())
+        self.setWindowTitle("OrangLauncher")
+        self.resize(1200, 860)
+        self.setMinimumSize(960, 700)
+        icon_path = find_resource("oranglauncher/images/orange.png")
+        if icon_path:
+            self.setWindowIcon(QtGui.QIcon(str(icon_path)))
+        self._version_cache = None
+        self._build_ui()
+        self.refresh_accounts()
+        self.refresh_instance_display()
+        self.update_bottom_visibility()
+        if self.discord_rpc_enabled.get():
+            self._start_discord_rpc()
+        if self.debug_mode_enabled.get():
+            try:
+                self._current_log_file = _start_debug_capture()
+            except Exception as e:
+                print(f"[DEBUG] {e}")
+        QTimer.singleShot(100, self._initialize_plugins)
+        QTimer.singleShot(1500, self._startup_sync_sharing)
+        QTimer.singleShot(2000, self._check_connectivity)
+        QTimer.singleShot(400, self._maybe_show_welcome)
+        QTimer.singleShot(3000, self._delete_telemetry_if_enabled)
+        QTimer.singleShot(5000, self._auto_check_updates)
+        QTimer.singleShot(1200, _trim_memory)
+
+    def _initial_theme_name(self):
+        default = QT_THEME_SYSTEM if _on_plasma() else QT_THEME_OLED
+        if not _adv_get("qt_theme_set", False):
+            return default
+        try:
+            config_path = Path.home() / ".config" / "oranglauncher" / "launcher_config.json"
+            if config_path.exists():
+                data = json.loads(config_path.read_text(encoding="utf-8"))
+                name = data.get("theme")
+                if name in self.theme.available():
+                    return name
+        except Exception:
+            pass
+        return default
+
+    def apply_theme(self, name):
+        self.theme.load(name)
+        self.theme.apply(QtWidgets.QApplication.instance())
+        save_theme_preference(name)
+        _adv_set("qt_theme_set", True)
+        self.theme_manager.current_theme = name
+        if self.page_widgets.get("settings") is not None:
+            for b in self.settings_page.theme_group.buttons():
+                b.setChecked(b.property("theme") == name)
+        self.set_status(_qt_t("QT_THEME_APPLIED", "Theme: {name}").format(name=name))
+
+    def after(self, ms, fn, *args):
+        if args:
+            _qt_later(lambda: fn(*args), ms)
+        else:
+            _qt_later(fn, ms)
+        return None
+
+    def after_cancel(self, ident):
+        pass
+
+    def winfo_exists(self):
+        return True
+
+    def _get_theme_color(self, key):
+        return self.theme.c(key)
+
+    def version_values(self):
+        if self._version_cache is None:
+            try:
+                self._version_cache = list(get_available_versions())
+            except Exception:
+                self._version_cache = []
+        return self._version_cache
+
+    def validate_version(self, version):
+        values = self.version_values()
+        if version in values or not values:
+            return True
+        suggestions = [v for v in values if version[:4] in v][:5]
+        hint = ("\n\n" + _qt_t("QT_DID_YOU_MEAN", "Did you mean: {options}?").format(options=', '.join(suggestions))) if suggestions else ""
+        messagebox.showerror(_qt_t("QT_UNKNOWN_VERSION", "Unknown version"), _qt_t("QT_UNKNOWN_VERSION_MSG", "'{version}' is not a valid Minecraft version.").format(version=version) + hint)
+        return False
+
+    def fetch_loader_versions(self, loader, mc_version):
+        if not mc_version:
+            return []
+        try:
+            if loader == "forge":
+                forge_versions = minecraft_launcher_lib.forge.list_forge_versions()
+                return [v for v in reversed(forge_versions) if v.startswith(f"{mc_version}-")]
+            if loader == "neoforge":
+                nf = _NeoforgeCompat()
+                return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
+            if loader == "fabric":
+                return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
+            if loader == "quilt":
+                return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
+            if loader == "optifine":
+                return get_optifine_files_for(mc_version)
+        except Exception as e:
+            print(f"[DEBUG] Error fetching loader versions: {e}")
+        return []
+
+    def _build_ui(self):
+        central = QtWidgets.QWidget()
+        self.setCentralWidget(central)
+        root = QtWidgets.QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        topbar = QtWidgets.QFrame()
+        topbar.setObjectName("topBar")
+        tl = QtWidgets.QHBoxLayout(topbar)
+        tl.setContentsMargins(12, 6, 12, 6)
+        tl.setSpacing(4)
+        logo = QtWidgets.QLabel()
+        lp = find_resource("oranglauncher/images/orange.png")
+        if lp:
+            logo.setPixmap(_qt_pixmap_from_path(str(lp), (26, 26)) or QtGui.QPixmap())
+        logo.setToolTip(_qt_t("QT_LOGO_TOOLTIP", "OrangLauncher"))
+        tl.addWidget(logo)
+        tl.addSpacing(8)
+        self.nav_group = QtWidgets.QButtonGroup(self)
+        self.nav_buttons = {}
+        self.stack = QtWidgets.QStackedWidget()
+        self.page_widgets = {}
+        self._page_builders = {"news": lambda: QtNewsPage(self), "logs": lambda: QtLogPage(self), "instances": lambda: QtInstancesPage(self),
+                               "content": lambda: QtContentPage(self), "settings": lambda: QtSettingsPage(self)}
+        for key, tkey, default, icon in self.PAGES:
+            b = QtWidgets.QPushButton(_tr(self, tkey, default))
+            b.setObjectName("topnav")
+            b.setCheckable(True)
+            b.setIcon(_qt_icon(icon, 18, self.theme.c("fg_secondary")))
+            b.setIconSize(QSize(18, 18))
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, k=key: self.show_page(k))
+            self.nav_group.addButton(b)
+            self.nav_buttons[key] = b
+            tl.addWidget(b)
+        self.log_page = self._page("logs")
+        self.instances_page = self._page("instances")
+        tl.addStretch(1)
+        self.offline_label = QtWidgets.QLabel(" ⚠ " + _qt_t("QT_OFFLINE", "Offline") + " ")
+        self.offline_label.setObjectName("offline")
+        self.offline_label.setVisible(False)
+        tl.addWidget(self.offline_label)
+        root.addWidget(topbar)
+        root.addWidget(self.stack, 1)
+        self._build_bottom(root)
+        self.show_page("instances" if self.instance_manager.instances else "news")
+
+    def _build_bottom(self, root):
+        bar = QtWidgets.QFrame()
+        bar.setObjectName("bottomBar")
+        outer = QtWidgets.QVBoxLayout(bar)
+        outer.setContentsMargins(16, 8, 16, 8)
+        outer.setSpacing(4)
+        grid = QtWidgets.QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(20)
+        grid.setColumnStretch(1, 1)
+        left = QtWidgets.QVBoxLayout()
+        left.setSpacing(5)
+        left.addWidget(_qt_label(_tr(self, "PROFILE", "Profile"), "h3"))
+        self.account_combo = QtWidgets.QComboBox()
+        self.account_combo.setFixedWidth(230)
+        self.account_combo.currentIndexChanged.connect(lambda *_: self._on_account_selected())
+        left.addWidget(self.account_combo)
+        left.addWidget(_qt_button(_tr(self, "NEW_PROFILE", "New Profile"), lambda: self.add_account(), icon="plus", launcher=self), 0, Qt.AlignLeft)
+        left.addStretch(1)
+        left_box = QtWidgets.QWidget()
+        left_box.setLayout(left)
+        grid.addWidget(left_box, 0, 0, Qt.AlignTop | Qt.AlignLeft)
+        center = QtWidgets.QVBoxLayout()
+        center.setSpacing(5)
+        center.addWidget(_qt_label(_tr(self, "GAME_PROFILES", "Game Profiles"), "h3", align=Qt.AlignHCenter))
+        self.version_label_widget = _qt_label("", "h3", wrap=True, align=Qt.AlignHCenter)
+        self.version_label_widget.setMinimumWidth(400)
+        self.version_label_widget.setMaximumWidth(460)
+        center.addWidget(self.version_label_widget, 0, Qt.AlignHCenter)
+        self.play_button = QtWidgets.QPushButton(_tr(self, "PLAY", "Play"))
+        self.play_button.setObjectName("play")
+        self.play_button.setCursor(Qt.PointingHandCursor)
+        self.play_button.setFixedWidth(170)
+        self.play_button.clicked.connect(lambda *_: self._on_play_clicked())
+        center.addSpacing(6)
+        center.addWidget(self.play_button, 0, Qt.AlignHCenter)
+        center_box = QtWidgets.QWidget()
+        center_box.setLayout(center)
+        grid.addWidget(center_box, 0, 1, Qt.AlignTop | Qt.AlignHCenter)
+        right = QtWidgets.QVBoxLayout()
+        right.setSpacing(5)
+        self.status_label_widget = _qt_label(_tr(self, "WELCOME", "Welcome"), "muted", align=Qt.AlignRight)
+        right.addWidget(self.status_label_widget, 0, Qt.AlignRight)
+        self.instance_combo = QtWidgets.QComboBox()
+        self.instance_combo.setFixedWidth(270)
+        self.instance_combo.currentIndexChanged.connect(lambda *_: self._on_instance_combo())
+        right.addWidget(self.instance_combo, 0, Qt.AlignRight)
+        right.addStretch(1)
+        right_box = QtWidgets.QWidget()
+        right_box.setLayout(right)
+        grid.addWidget(right_box, 0, 2, Qt.AlignTop | Qt.AlignRight)
+        outer.addLayout(grid)
+        self.status_row = QtWidgets.QWidget()
+        self.status_row.setVisible(False)
+        outer.addWidget(self.status_row)
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(8)
+        outer.addWidget(self.progress_bar)
+        root.addWidget(bar)
+        self.status_label = _LabelAdapter(self.status_label_widget)
+        self.version_label = _LabelAdapter(self.version_label_widget)
+        self.status_bar_progress = _ProgressAdapter(self.progress_bar)
+        self._play_mode = "play"
+
+    def update_bottom_visibility(self):
+        self.progress_bar.setVisible(bool(self.show_progress_bar.get()))
+        self.status_label_widget.setVisible(bool(self.show_status_bar.get()))
+
+    def _page(self, key):
+        w = self.page_widgets.get(key)
+        if w is None:
+            w = self._page_builders[key]()
+            self.page_widgets[key] = w
+            self.stack.addWidget(w)
+        return w
+
+    @property
+    def news_page(self):
+        return self._page("news")
+    @property
+    def content_page(self):
+        return self._page("content")
+    @property
+    def settings_page(self):
+        return self._page("settings")
+
+    def show_page(self, key):
+        self.nav_buttons[key].setChecked(True)
+        self.stack.setCurrentWidget(self._page(key))
+        if key == "news":
+            self.news_page.ensure_loaded()
+        elif key == "content":
+            self.content_page.refresh_instances()
+            self.content_page.ensure_loaded()
+        elif key == "instances":
+            self.instances_page.refresh()
+
+    def show_content(self, content_type):
+        self.show_page("content")
+        self.content_page.refresh_instances()
+        self.content_page.set_type(content_type)
+
+    def _select_tab_by_text(self, text):
+        for key, tkey, default, _icon in self.PAGES:
+            if _tr(self, tkey, default).strip() == str(text).strip():
+                self.show_page(key)
+                return True
+        return False
+
+    def set_status(self, text):
+        self.status_label_widget.setText(str(text))
+
+    def _apply_progress_update(self, percent, status_text):
+        try:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(int(min(max(percent, 0), 100)))
+            self.progress.set(percent)
+            if status_text:
+                self.status_label_widget.setText(str(status_text))
+        except Exception:
+            pass
+
+    def refresh_accounts(self):
+        self._profiles_cache = None
+        try:
+            data = load_profiles()
+        except Exception:
+            data = []
+        self.profiles_list = [f"{p['username']} ({p['type']})" for p in data]
+        current = self.selected_profile.get()
+        self.account_combo.blockSignals(True)
+        self.account_combo.clear()
+        if self.profiles_list:
+            self.account_combo.addItems(self.profiles_list)
+            idx = self.profiles_list.index(current) if current in self.profiles_list else 0
+            self.account_combo.setCurrentIndex(idx)
+            self.selected_profile.set(self.profiles_list[idx])
+            self.set_status(_tr(self, "WELCOME_USER", "Welcome, {username}").format(username=data[idx]["username"]))
+        else:
+            self.account_combo.addItem(_tr(self, "NO_ACCOUNTS", _qt_t("QT_NO_ACCOUNTS_ADD", "No accounts yet - press Add")))
+            self.selected_profile.set("")
+        self.account_combo.blockSignals(False)
+        if self.page_widgets.get("settings") is not None:
+            self.settings_page.refresh_accounts()
+
+    def _on_account_selected(self):
+        if not self.profiles_list:
+            return
+        idx = self.account_combo.currentIndex()
+        if 0 <= idx < len(self.profiles_list):
+            self.selected_profile.set(self.profiles_list[idx])
+            self.set_status(_tr(self, "WELCOME_USER", "Welcome, {username}").format(username=self.profiles_list[idx].split(" (")[0]))
+    # I miss mojang accounts
+    def add_account(self, kind=None, mode="embedded"):
+        if kind is None:
+            kind = _qt_ask_profile_type(self)
+        if kind not in ("offline", "microsoft"):
+            return
+        profile = {"type": kind}
+        if kind == "offline":
+            username = _qt_askstring(_tr(self, "OFFLINE_ACCOUNT_TITLE", _qt_t("QT_OFFLINE_ACCOUNT", "Offline account")), _tr(self, "OFFLINE_ACCOUNT_PROMPT", "Username:"))
+            if not username or not username.strip():
+                return
+            profile["username"] = username.strip()
+            profile["uuid"] = "00000000-0000-0000-0000-000000000000"
+            self._store_account(profile)
+            return
+        self.set_status(_qt_t("QT_MS_SIGNING_IN", "Signing in with Microsoft..."))
+
+        def work():
+            return _ms_token_flow_qt(mode)
+
+        def done(tokens):
+            profile.update(tokens)
+            self._store_account(profile)
+
+        def fail(err):
+            self.set_status(_qt_t("QT_READY", "Ready"))
+            if isinstance(err, LoginCancelled):
+                return
+            messagebox.showerror(_tr(self, "MS_AUTH_ERROR", "Microsoft sign-in"), f"{_tr(self, 'MS_AUTH_FAIL', 'Authentication failed')}\n{err}")
+        _qt_run_bg(work, done, fail)
+
+    def _store_account(self, profile):
+        try:
+            data = load_profiles()
+            if profile.get("type") == "microsoft":
+                data = [p for p in data if not (p.get("type") == "microsoft" and p.get("uuid") == profile.get("uuid"))]
+            else:
+                data = [p for p in data if not (p.get("type") == profile.get("type") and p.get("username") == profile.get("username"))]
+            data.append(profile)
+            save_profiles(data)
+        except Exception as e:
+            messagebox.showerror(_tr(self, "ERROR", "Error"), str(e))
+            return
+        self.selected_profile.set(f"{profile.get('username', '')} ({profile.get('type', '')})")
+        self.refresh_accounts()
+        self.set_status(_qt_t("QT_ACCOUNT_ADDED", "Added account {name}").format(name=profile.get('username', '')))
+
+    def refresh_instance_display(self):
+        instances = list(self.instance_manager.instances.values())
+        self.instance_combo.blockSignals(True)
+        self.instance_combo.clear()
+        for inst in instances:
+            self.instance_combo.addItem(f"{inst.name}  ·  {inst.version} ({inst.mod_loader})", inst.instance_id)
+        sel = self.instance_manager.get_selected_instance()
+        if sel is None and instances:
+            self.instance_manager.selected_instance_id = instances[0].instance_id
+            self.instance_manager.save_instances()
+            sel = instances[0]
+        if sel is not None:
+            idx = self.instance_combo.findData(sel.instance_id)
+            if idx >= 0:
+                self.instance_combo.setCurrentIndex(idx)
+            self.version_label_widget.setText(_qt_t("QT_INSTANCE", "Instance") + f": {sel.name} | {sel.version} ({sel.mod_loader})")
+        else:
+            self.instance_combo.addItem(_tr(self, "NO_PROFILE_SELECTED", _qt_t("QT_NO_INSTANCE_YET", "No instance yet - create one in Instances")))
+            self.version_label_widget.setText(_tr(self, "NO_PROFILE_SELECTED", "No instance selected"))
+        self.instance_combo.blockSignals(False)
+        if self.page_widgets.get("content") is not None:
+            self.content_page.refresh_instances()
+
+    def _on_instance_combo(self):
+        iid = self.instance_combo.currentData()
+        if iid and iid != self.instance_manager.selected_instance_id:
+            self.instance_manager.set_selected_instance(iid)
+            sel = self.instance_manager.get_selected_instance()
+            if sel is not None:
+                self.version_label_widget.setText(_qt_t("QT_INSTANCE", "Instance") + f": {sel.name} | {sel.version} ({sel.mod_loader})")
+            if self.page_widgets.get("content") is not None:
+                self.content_page.refresh_instances()
+            if self.page_widgets.get("instances") is not None:
+                self.instances_page.refresh(force=True)
+
+    def _edit_current_instance(self):
+        inst = self.instance_manager.get_selected_instance()
+        if inst is None:
+            self.show_page("instances")
+            return
+        self.show_page("instances")
+        self.instances_page.open_editor(inst)
+
+    def toggle_music(self):
+        self._toggle_music()
+
+
+    def _on_play_clicked(self):
+        if self._play_mode == "play":
+            self._launch_game()
+        else:
+            self._cancel_launch()
+
+    def _set_play_mode(self, mode):
+        self._play_mode = mode
+        if mode == "play":
+            self.play_button.setText(_tr(self, "PLAY", "Play"))
+            self.play_button.setEnabled(True)
+        elif mode == "stop":
+            self.play_button.setText(_tr(self, "STOP", "Stop"))
+            self.play_button.setEnabled(True)
+        else:
+            self.play_button.setText(_tr(self, "CANCELLING", "Cancelling..."))
+            self.play_button.setEnabled(False)
+
+    def _launch_game(self):
+        if self.launch_thread is not None and self.launch_thread.is_alive():
+            messagebox.showinfo(_tr(self, "LAUNCHER_BUSY", "Busy"), _tr(self, "LAUNCHER_BUSY_MSG", "A launch is already in progress."))
+            return
+        selected_name = self.selected_profile.get()
+        if not selected_name:
+            messagebox.showinfo(_qt_t("QT_NO_ACCOUNT_TITLE", "No account added"), _qt_t("QT_NO_ACCOUNT_MSG", "You have not added any account yet.\n\nPress 'New Profile' under the account box and choose:\n  - Microsoft: sign in with the account that owns Minecraft\n  - Offline: pick a username (singleplayer and offline-mode servers only)\n\nAccounts can also be managed in Settings > Accounts."))
+            return
+        selected_profile = None
+        try:
+            for prof in load_profiles():
+                if f"{prof['username']} ({prof['type']})" == selected_name:
+                    selected_profile = prof
+                    break
+        except Exception as e:
+            messagebox.showerror(_tr(self, "PROFILE_ERROR", _qt_t("QT_ACCOUNT", "Account")), f"{_tr(self, 'ERROR_LOADING_PROFILES', 'Could not load accounts')}\n{e}")
+            return
+        if not selected_profile:
+            messagebox.showerror(_tr(self, "PROFILE_ERROR", _qt_t("QT_ACCOUNT", "Account")), _tr(self, "SELECTED_PROFILE_NOT_FOUND", "Selected account not found."))
+            return
+        current_instance = self.instance_manager.get_selected_instance()
+        if current_instance is None:
+            messagebox.showinfo(_tr(self, "NO_PROFILE_SELECTED", "No instance selected"), _qt_t("QT_NO_INSTANCE_MSG", "There is no instance to play yet.\n\nOpen the Instances tab and press New to create one, or use Import to add a modpack (.mrpack / .orangpack / .zip)."))
+            self.show_page("instances")
+            return
+        version = current_instance.version
+        mod_loader = current_instance.mod_loader
+        ram = current_instance.ram
+        launch_name = current_instance.name
+        if not version or not version.strip():
+            messagebox.showerror(_qt_t("QT_VERSION_ERROR", "Version error"), _qt_t("QT_VERSION_ERROR_MSG", "Selected instance has no Minecraft version set. Edit the instance to set a valid version."))
+            return
+        username = selected_profile.get("username", "")
+        uuid = selected_profile.get("uuid", "")
+        if not uuid or uuid == "0-0-0-0":
+            uuid = str(uuid_module.uuid4())
+        if not ram.endswith("G") and not ram.endswith("M"):
+            ram = f"{ram}G"
+        print(f"Playing Minecraft {version} ({mod_loader}) as {username} with {ram} RAM...")
+        if getattr(self, "discord_rpc_mgr", None) and self.discord_rpc_enabled.get():
+            self._update_discord_rpc("Playing Minecraft", f"{version} ({mod_loader})")
+        self.progress_bar.setValue(0)
+        self.cancel_requested = False
+        self._set_play_mode("stop")
+        self.account_combo.setEnabled(False)
+        self.instance_combo.setEnabled(False)
+        self.set_status(_qt_t("QT_LAUNCHING", "Launching {version} ({loader})...").format(version=version, loader=mod_loader) + " 0%")
+        self.log_page.clear()
+        self._append_log(f"[Launcher] Launching Minecraft {version} ({mod_loader}) as {username}...")
+        self.mc_process = None
+        quick_play_server = self._pending_quickplay
+        self._pending_quickplay = None
+        self.launch_thread = threading.Thread(target=self._run_launcher_thread, args=(current_instance, launch_name, version, mod_loader, ram, selected_profile, username, uuid, quick_play_server), daemon=True)
+        self.launch_thread.start()
+
+    def _cancel_launch(self):
+        if self.mc_process is not None:
+            try:
+                self.mc_process.terminate()
+                try:
+                    self.mc_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.mc_process.kill()
+                    self.mc_process.wait(timeout=5)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"Error stopping Minecraft: {e}")
+            self.mc_process = None
+            self.set_status(_tr(self, "STOPPED", _qt_t("QT_STOPPED", "Stopped")))
+            self._restore_ui()
+        else:
+            self.cancel_requested = True
+            self._set_play_mode("cancelling")
+            self.set_status(_tr(self, "CANCELLING_LAUNCH", "Cancelling launch..."))
+
+    def _on_mc_started(self):
+        inst = self.instance_manager.get_selected_instance()
+        username = self.selected_profile.get().split(" (")[0]
+        if inst:
+            self.set_status(_qt_t("QT_RUNNING_AS", "Minecraft {version} ({loader}) running as {username}").format(version=inst.version, loader=inst.mod_loader, username=username))
+            if getattr(self, "discord_rpc_mgr", None) and self.discord_rpc_enabled.get():
+                self._update_discord_rpc("Playing Minecraft", f"{inst.version} ({inst.mod_loader})")
+        self._set_play_mode("stop")
+
+    def _restore_ui(self):
+        self._set_play_mode("play")
+        self.account_combo.setEnabled(True)
+        self.instance_combo.setEnabled(True)
+        try:
+            while True:
+                self._progress_queue.get_nowait()
+        except Exception:
+            pass
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.launch_thread = None
+        self.mc_process = None
+        name = self.selected_profile.get()
+        if name:
+            self.set_status(_tr(self, "WELCOME_USER", "Welcome, {username}").format(username=name.split(" (")[0]))
+        if getattr(self, "discord_rpc_mgr", None) and self.discord_rpc_enabled.get():
+            self._update_discord_rpc("Idling in Launcher")
+        try:
+            self.instances_page.refresh(force=True)
+        except Exception:
+            pass
+
+    def _append_log(self, message):
+        self.log_page.append(message)
+    def _safe_append_log(self, line):
+        _qt_later(lambda: self._append_log(line))
+    def log_message(self, message):
+        self._append_log(message)
+
+    def _check_crash_report(self, minecraft_directory, exit_code):
+        try:
+            crash_dir = Path(minecraft_directory) / "crash-reports"
+            if not crash_dir.exists():
+                return
+            reports = sorted(crash_dir.glob("crash-*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not reports:
+                return
+            latest = reports[0]
+            if time.time() - latest.stat().st_mtime > 600:
+                return
+            lines = latest.read_text(encoding="utf-8", errors="replace").splitlines()
+            summary = "\n".join([l for l in lines[:80] if l.strip()][:30])
+            QtCrashDialog(self, exit_code, latest, summary).show()
+        except Exception as e:
+            print(f"[DEBUG] Error reading crash report: {e}")
+
+    def _check_connectivity(self):
+        def work():
+            try:
+                _http_session.get("https://launchermeta.mojang.com/mc/game/version_manifest.json", timeout=5, stream=True).close()
+                return True
+            except Exception:
+                return False
+
+        def done(online):
+            self._offline = not online
+            self.offline_label.setVisible(not online)
+        _qt_run_bg(work, done, lambda e: None)
+        QTimer.singleShot(60000, self._check_connectivity)
+
+    def _delete_telemetry_if_enabled(self):
+        if not self.delete_telemetry_on_startup.get():
+            return
+
+        def work():
+            n = 0
+            for inst in list(self.instance_manager.instances.values()):
+                for sub in ("logs/telemetry", "telemetry"):
+                    d = inst.minecraft_dir / sub
+                    if d.exists() and not d.is_symlink():
+                        try:
+                            shutil.rmtree(d)
+                            n += 1
+                        except Exception:
+                            pass
+            return n
+        _qt_run_bg(work, lambda n: n and self._safe_append_log(f"[Privacy] Removed telemetry from {n} folder(s)"), lambda e: None)
+
+    def _auto_check_updates(self):
+        def done(result):
+            available, version, url, notes = result
+            if available:
+                self.set_status(_qt_t("QT_UPDATE_AVAILABLE", "Update available: {version} (Settings > About)").format(version=version))
+        _qt_run_bg(check_for_updates, done, lambda e: None)
+
+    def check_updates(self):
+        self.set_status(_qt_t("QT_CHECKING_UPDATES", "Checking for updates..."))
+
+        def done(result):
+            available, version, url, notes = result
+            if available:
+                if url == "AUR":
+                    msg = _qt_t("QT_UPDATE_AUR_MSG", "A new version ({version}) is available via AUR.\nDo you want to run 'yay -S oranglauncher-bin'?").format(version=version)
+                else:
+                    msg = _qt_t("QT_UPDATE_MSG", "A new version ({version}) is available!\n\nRelease notes:\n{notes}\n\nDo you want to update now?").format(version=version, notes=(notes or '')[:1500])
+                if messagebox.askyesno(_qt_t("QT_UPDATE_AVAILABLE_TITLE", "Update available"), msg):
+                    threading.Thread(target=perform_update, args=(url, str(Path(__file__).parent)), daemon=True).start()
+            else:
+                messagebox.showinfo(_qt_t("QT_NO_UPDATES", "No updates"), _qt_t("QT_LATEST_VERSION", "You are using the latest version ({version}).").format(version=CURRENT_VERSION))
+            self.set_status(_qt_t("QT_READY", "Ready"))
+        _qt_run_bg(check_for_updates, done, lambda e: (self.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_UPDATES", "Updates"), str(e))))
+
+    def _maybe_show_welcome(self):
+        try:
+            if not is_setup_done():
+                QtWelcomeWizard(self).exec()
+        except Exception as e:
+            print(f"[setup] welcome wizard failed: {e}")
+            traceback.print_exc()
+        if self._pending_open_file:
+            path = self._pending_open_file
+            self._pending_open_file = None
+            QTimer.singleShot(800, lambda: self._open_file_from_cli(path))
+
+    def _refresh_game_profiles(self):
+        self.refresh_instance_display()
+        try:
+            self.instances_page.refresh(force=True)
+        except Exception:
+            pass
+
+    def _refresh_profiles(self):
+        self.refresh_accounts()
+
+    def closeEvent(self, event):
         try:
             self._stop_discord_rpc()
         except Exception:
             pass
         try:
-            if pygame and getattr(pygame, "mixer", None) and pygame.mixer.get_init():
-                try:
-                    pygame.mixer.music.stop()
-                except Exception:
-                    pass
-                try:
-                    pygame.mixer.quit()
-                except Exception:
-                    pass
-            if pygame:
-                pygame.quit()
+            if self._music is not None:
+                self.music_playing = False
+                self._music[0].stop()
         except Exception:
             pass
-        super().destroy()
-        # gd betrayed me :(
-        # then you better update ts
-    def geometry(self, new_geometry=None):
-        if new_geometry is None:
-            return super().geometry()
-        external_call = not getattr(self, "_geometry_lock", False)
-        if getattr(self, "_geometry_debug", False) and external_call:
-            try:
-                stack = ''.join(tb.format_stack(limit=6))
-                print(f"[DEBUG] External geometry request: {new_geometry}\n{stack}")
-            except Exception:
-                pass
-        if external_call:
-            self._record_external_geometry(new_geometry)
-        return super().geometry(new_geometry)
-    def wm_geometry(self, new_geometry=None):
-        if new_geometry is None:
-            return super().wm_geometry()
-        external_call = not getattr(self, "_geometry_lock", False)
-        if getattr(self, "_geometry_debug", False) and external_call:
-            try:
-                stack = ''.join(tb.format_stack(limit=6))
-                print(f"[DEBUG] External wm_geometry request: {new_geometry}\n{stack}")
-            except Exception:
-                pass
-        if external_call:
-            self._record_external_geometry(new_geometry)
-        return super().wm_geometry(new_geometry)
-    @staticmethod
-    def _geometry_near(a, b, pos_window, size_window):
-        if not a or not b:
-            return False
-        return (
-            abs(a[0] - b[0]) <= pos_window
-            and abs(a[1] - b[1]) <= pos_window
-            and abs(a[2] - b[2]) <= size_window
-            and abs(a[3] - b[3]) <= size_window
-        )
-    def _record_external_geometry(self, geometry_str):
-        if not geometry_str or not isinstance(geometry_str, str):
-            return
         try:
-            width, height, x, y = self._parsegeometry(geometry_str)
-            geom = (int(x), int(y), int(width), int(height))
+            _save_settings(self)
         except Exception:
-            return
-        self._last_external_geometry = geom
-        self._last_external_geometry_time = time.monotonic()
-    def _remember_user_geometry(self, geometry, *, skip_if_recent_forced=False):
-        if not geometry:
-            return
-        history = getattr(self, "_user_geometry_history", None)
-        if history is None:
-            return
-        ts = time.monotonic()
-        if skip_if_recent_forced and self._initial_restore_done:
-            size_window = getattr(self, "_forced_size_window", 8)
-            if (
-                self._initial_geometry
-                and self._geometry_near(geometry, self._initial_geometry, self._forced_return_window, size_window)
-                and (ts - self._last_forced_time) < self._history_suppress_seconds
-            ):
-                return
-            if (
-                self._last_forced_source
-                and self._geometry_near(geometry, self._last_forced_source, self._forced_return_window, size_window)
-                and (ts - self._last_forced_time) < self._history_suppress_seconds
-            ):
-                return
-        if history and history[-1][0] == geometry:
-            history[-1] = (geometry, ts)
-        else:
-            history.append((geometry, ts))
-        if (
-            self._initial_geometry
-            and self._geometry_near(geometry, self._initial_geometry, self._forced_return_window, getattr(self, "_forced_size_window", 8))
-        ):
-            self._last_user_move_time = 0.0
-    def _apply_geometry(self, width, height, x=None, y=None):
-        try:
-            geo = f"{int(width)}x{int(height)}"
-            if x is not None and y is not None:
-                geo = f"{geo}+{int(x)}+{int(y)}"
-            self._geometry_lock = True
-            self.geometry(geo)
-        except Exception:
-            self._geometry_lock = False
-    def _on_root_configure(self, event):
-        if getattr(event, "widget", None) is not self:
-            return
-        try:
-            current = (
-                self.winfo_x(),
-                self.winfo_y(),
-                self.winfo_width(),
-                self.winfo_height(),
-            )
-        except Exception:
-            return
-        previous_user_geometry = self._user_geometry
-        now = time.monotonic()
-        prev_geometry = self._last_geometry
-        self._last_geometry = current
-        if self._ignore_forced_until and time.monotonic() < self._ignore_forced_until:
-            if getattr(self, "_geometry_debug", False):
-                print(
-                    "[DEBUG] Ignoring configure during forced recovery: current=%s user=%s" % (
-                        current,
-                        self._user_geometry,
-                    )
-                )
-            if (
-                self._user_geometry
-                and not self._geometry_lock
-            ):
-                user_x, user_y, user_w, user_h = self._user_geometry
-                size_window = getattr(self, "_forced_size_window", 8)
-                if (
-                    (
-                        abs(current[0] - user_x) > 1
-                        or abs(current[1] - user_y) > 1
-                    )
-                    and abs(current[2] - user_w) <= size_window
-                    and abs(current[3] - user_h) <= size_window
-                ):
-                    self._geometry_lock = True
-                    self.geometry(f"{user_w}x{user_h}+{user_x}+{user_y}")
-            return
-        else:
-            self._ignore_forced_until = 0.0
-        if self._geometry_lock:
-            self._geometry_lock = False
-            if self._capture_initial_geometry:
-                self._initial_geometry = current
-                self._user_geometry = current
-                self._capture_initial_geometry = False
-                self._remember_user_geometry(current)
-                return
-            if self._user_geometry is None:
-                self._user_geometry = current
-                self._remember_user_geometry(current)
-            return
-        if self._capture_initial_geometry:
-            self._initial_geometry = current
-            self._user_geometry = current
-            self._capture_initial_geometry = False
-            if getattr(self, "_geometry_debug", False):
-                print(f"[DEBUG] Initial geometry captured: {current}")
-            self._remember_user_geometry(current)
-            return
-        if self._user_geometry is None:
-            self._user_geometry = current
-            if getattr(self, "_geometry_debug", False):
-                print(f"[DEBUG] User geometry initialized: {current}")
-            self._remember_user_geometry(current)
-            return
-        if current == self._user_geometry:
-            return
-        forced_jump = False
-        size_window = getattr(self, "_forced_size_window", 8)
-        teleport_jump = False
-        position_jump = False
-        size_jump = False
-        if prev_geometry:
-            dx = abs(current[0] - prev_geometry[0])
-            dy = abs(current[1] - prev_geometry[1])
-            dw = abs(current[2] - prev_geometry[2])
-            dh = abs(current[3] - prev_geometry[3])
-            position_jump = (
-                dx >= self._forced_move_threshold
-                or dy >= self._forced_move_threshold
-            )
-            size_jump = (
-                dw >= size_window
-                or dh >= size_window
-            )
-            teleport_jump = (
-                dx >= self._forced_teleport_delta
-                or dy >= self._forced_teleport_delta
-                or dw >= self._forced_teleport_delta
-                or dh >= self._forced_teleport_delta
-            )
-        jump_event = teleport_jump or position_jump or size_jump
-        recent_external = (
-            getattr(self, "_last_external_geometry", None)
-            and self._geometry_near(
-                current,
-                self._last_external_geometry,
-                self._forced_return_window,
-                size_window,
-            )
-            and (now - self._last_external_geometry_time) < getattr(self, "_recent_external_window", 1.0)
-        )
-        recent_user_move = (
-            getattr(self, "_last_user_move_time", 0.0) > 0.0
-            and (now - self._last_user_move_time) < getattr(self, "_recent_user_move_window", 1.5)
-        )
-        if (
-            self._user_geometry is not None
-            and not self._geometry_lock
-        ):
-            initial_near = self._geometry_near(current, self._initial_geometry, self._forced_return_window, size_window)
-            user_far = (
-                abs(current[0] - self._user_geometry[0]) > self._forced_move_threshold
-                or abs(current[1] - self._user_geometry[1]) > self._forced_move_threshold
-            )
-            if (
-                self._initial_geometry
-                and self._user_geometry != self._initial_geometry
-                and initial_near
-                and user_far
-            ):
-                prev_also_near_initial = self._geometry_near(prev_geometry, self._initial_geometry, self._forced_return_window, size_window)
-                if prev_also_near_initial or jump_event or recent_external or recent_user_move:
-                    forced_jump = True
-            elif (
-                self._last_forced_source
-                and self._geometry_near(current, self._last_forced_source, self._forced_return_window, size_window)
-                and user_far
-            ):
-                prev_also_near_forced = self._geometry_near(prev_geometry, self._last_forced_source, self._forced_return_window, size_window)
-                if prev_also_near_forced or jump_event or recent_external or recent_user_move:
-                    forced_jump = True
-        if forced_jump:
-            restore_geom = self._user_geometry
-            history = getattr(self, "_user_geometry_history", None)
-            if history:
-                for recorded_geom, recorded_ts in reversed(history):
-                    if not recorded_geom:
-                        continue
-                    if (
-                        self._initial_geometry
-                        and self._initial_restore_done
-                        and self._geometry_near(recorded_geom, self._initial_geometry, self._forced_return_window, size_window)
-                        and (now - recorded_ts) < self._history_suppress_seconds
-                    ):
-                        continue
-                    if (
-                        self._geometry_near(recorded_geom, current, self._forced_return_window, size_window)
-                        and (now - recorded_ts) < self._history_suppress_seconds
-                    ):
-                        continue
-                    restore_geom = recorded_geom
-                    break
-            if not restore_geom:
-                restore_geom = self._user_geometry or self._initial_geometry or current
-            user_x, user_y, user_w, user_h = restore_geom
-            target_w = user_w
-            target_h = user_h
-            if abs(current[2] - user_w) > size_window:
-                target_w = current[2]
-            if abs(current[3] - user_h) > size_window:
-                target_h = current[3]
-            x, y, w, h = user_x, user_y, target_w, target_h
-            if getattr(self, "_geometry_debug", False):
-                print(
-                    "[DEBUG] Forced geometry jump detected: current=%s user=%s (prev=%s)" % (
-                        current,
-                        (user_x, user_y, user_w, user_h),
-                        prev_geometry,
-                    )
-                )
-            self._geometry_lock = True
-            self.geometry(f"{w}x{h}+{x}+{y}")
-            self._ignore_forced_until = now + 0.25
-            self._last_forced_source = current
-            self._last_forced_time = now
-            self._initial_restore_done = True
-            self._user_geometry = (x, y, w, h)
-            self._remember_user_geometry((x, y, w, h))
-            self._last_external_geometry = None
-            self._last_external_geometry_time = 0.0
-            self._last_user_move_time = now
-            return
-        if getattr(self, "_geometry_debug", False):
-            if (not hasattr(self, '_last_logged_geo') or
-                abs(current[0] - self._last_logged_geo[0]) > 10 or
-                abs(current[1] - self._last_logged_geo[1]) > 10 or
-                abs(current[2] - self._last_logged_geo[2]) > 20 or
-                abs(current[3] - self._last_logged_geo[3]) > 20):
-                print(
-                    "[DEBUG] Configure change detected: current=%s user=%s initial=%s" % (
-                        current,
-                        self._user_geometry,
-                        self._initial_geometry,
-                    )
-                )
-                self._last_logged_geo = current
-        if (
-            self._initial_geometry
-            and not self._initial_restore_done
-            and current == self._initial_geometry
-            and self._user_geometry != self._initial_geometry
-        ):
-            x, y, w, h = self._user_geometry
-            self._geometry_lock = True
-            self.geometry(f"{w}x{h}+{x}+{y}")
-            self._initial_restore_done = True
-            if getattr(self, "_geometry_debug", False):
-                print(
-                    "[DEBUG] Restoring user geometry: current=%s -> user=%s" % (
-                        current,
-                        self._user_geometry,
-                    )
-                )
-            return
-        self._user_geometry = current
-        self._remember_user_geometry(current, skip_if_recent_forced=True)
-        if (
-            self._initial_geometry
-            and not self._geometry_near(current, self._initial_geometry, self._forced_return_window, size_window)
-            and not self._geometry_lock
-        ):
-            self._last_user_move_time = now
-        if previous_user_geometry and previous_user_geometry != current:
-            self._initial_restore_done = True
-        if self._last_forced_source and (
-            abs(current[0] - self._last_forced_source[0]) > self._forced_return_window
-            or abs(current[1] - self._last_forced_source[1]) > self._forced_return_window
-            or abs(current[2] - self._last_forced_source[2]) > size_window
-            or abs(current[3] - self._last_forced_source[3]) > size_window
-        ):
-            self._last_forced_source = None
-        if getattr(self, "_geometry_debug", False):
-            print(f"[DEBUG] User geometry updated: {self._user_geometry}")
-    def _on_game_profile_selected(self, event=None):
-        selection = self.selected_game_profile.get()
-        if not selection:
-            return
-        instance = self.instance_manager.get_instance_by_name(selection)
-        if instance:
-            self.instance_manager.set_selected_instance(instance.instance_id)
-        self._update_profile_display()
-        self._sync_active_instance()
+            pass
+        event.accept()
 
-    def _sync_active_instance(self):
-        """Propagate the active game profile to every instance-aware part of the UI."""
-        instance = self.instance_manager.get_selected_instance()
-        if instance is not None:
-            try:
-                self.selected_mod_loader.set(instance.mod_loader)
-            except Exception:
-                pass
-        # mods tab: re-read instance + reload mod list
-        if hasattr(self, 'modding_tab'):
-            try:
-                self.modding_tab.refresh_ui()
-            except Exception as e:
-                print(f"[Profile] modding refresh failed: {e}")
-        # content tab: refresh its target-instance dropdown
-        if getattr(self, 'content_store_tab', None) is not None:
-            try:
-                self.content_store_tab.refresh_instances()
-            except Exception as e:
-                print(f"[Profile] content refresh failed: {e}")
 
-def terminal_launch_game(instance, profile, ram="4G"):
+def qt_main(open_file_arg=None):
+    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+    if _on_plasma() and not os.environ.get("QT_QPA_PLATFORMTHEME"):
+        os.environ["QT_QPA_PLATFORMTHEME"] = "kde"
+    if platform.system() == "Darwin":
+        os.environ.setdefault("QT_MAC_WANTS_LAYER", "1")
+    QtCore.QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
+    app = QtWidgets.QApplication(sys.argv)
+    app.setApplicationName("OrangLauncher")
+    app.setDesktopFileName("oranglauncher")
+    app.setOrganizationName("Orang Studio")
+    QT_ACTIVE[0] = True
+    _QT_MAIN_THREAD[0] = threading.get_ident()
+    _QT_INVOKER[0] = _QtInvoker()
+    window = QtLauncher()
+    if open_file_arg:
+        window._pending_open_file = open_file_arg
+    window.show()
+    return app.exec()
+
+
+def _reexec_as_module():
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        return
+    if __name__ != "__main__" or os.environ.get("ORANG_IMPORT_MODE") == "1":
+        return
     try:
-        version = instance.version
-        mod_loader = instance.mod_loader
-        username = profile.get("username", "Steve")
-        uuid = profile.get("uuid", str(uuid_module.uuid4()))
-        access_token = profile.get("minecraft_token", "0")
-        minecraft_directory = str(instance.minecraft_dir)
-        Path(minecraft_directory).mkdir(parents=True, exist_ok=True)
-        print(f"\n[Launcher] Launching Minecraft {version} ({mod_loader}) as {username}...")
-        java_exe = resolve_java_for_instance(instance, version, log_fn=print)
-        print(f"[Java] Using: {java_exe}")
-        if not ram.endswith('G') and not ram.endswith('M'):
-            ram = f"{ram}G"
-        options = {
-            'username': username,
-            'uuid': uuid,
-            'token': access_token,
-            'executablePath': java_exe,
-            'jvmArguments': [f"-Xmx{ram}", f"-Xms{ram}"]
-        }
-        print(f"[Launcher] Preparing {version}...")
-
-        # Handle mod loaders
-        if mod_loader and mod_loader.lower() != "vanilla" and mod_loader.lower() != "none":
-            if instance.installed_version_id and instance.installed_version_id not in ['Latest', 'N/A', '']:
-                local_versions_dir = Path(minecraft_directory) / "versions" / instance.installed_version_id
-                version_exists = local_versions_dir.exists() and (local_versions_dir / f"{instance.installed_version_id}.json").exists()
-                if version_exists:
-                    version = instance.installed_version_id
-                    print(f"[Launcher] Using installed version: {version}")
-        print(f"[Launcher] Installing Minecraft {version}...")
-        minecraft_launcher_lib.install.install_minecraft_version(version, minecraft_directory)
-        print(f"[Launcher] Starting Minecraft...")
-        command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
-        command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
-        launch_env = os.environ.copy()
-        if getattr(instance, 'env_vars', None):
-            for line in instance.env_vars.splitlines():
-                if '=' in line and not line.strip().startswith('#'):
-                    k, _, v = line.partition('=')
-                    launch_env[k.strip()] = v.strip()
-        _launch_start = time.time()
-        mc_process = subprocess.Popen(
-            command,
-            cwd=minecraft_directory,
-            env=launch_env
-        )
-        
-        print(f"\n[Launcher] Game is running. Press Ctrl+C to detach...")
-        try:
-            exit_code = mc_process.wait()
-        except KeyboardInterrupt:
-            print("\n[Launcher] Detaching from game process...")
-            exit_code = 0
-        elapsed = int(time.time() - _launch_start)
-        if elapsed > 5:
-            instance.play_time = (instance.play_time or 0) + elapsed
-            instance.last_played = datetime.now().isoformat()
-        print(f"[Launcher] Minecraft exited with code {exit_code}")
-        return True
+        here = str(Path(__file__).resolve().parent)
+        code = ("import sys; sys.path.insert(0, %r); import launcher; sys.argv = ['launcher.py'] + sys.argv[1:]; launcher.main()" % here)
+        env = dict(os.environ)
+        env["ORANG_IMPORT_MODE"] = "1"
+        os.execve(sys.executable, [sys.executable, "-c", code] + sys.argv[1:], env)
     except Exception as e:
-        print(f"[ERROR] Launch failed: {e}")
-        traceback.print_exc()
-        return False
-def terminal_main():
-    try:
-        print("\n" + "="*50)
-        print("OrangLauncher - Joke Mode, Less ram :>")
-        print("="*50 + "\n")
-        instance_manager = get_instance_manager()
-        if not instance_manager.instances:
-            print("[ERROR] No instances found!")
-            return
-        instances_list = sorted(instance_manager.instances.values(), key=lambda inst: inst.name.lower())
-        print("Available Instances:")
-        for i, inst in enumerate(instances_list, 1):
-            print(f"  {i}. {inst.name} (MC {inst.version}, {inst.mod_loader})")
-        while True:
-            try:
-                choice = input(f"\nSelect instance (1-{len(instances_list)}): ").strip()
-                idx = int(choice) - 1
-                if 0 <= idx < len(instances_list):
-                    selected_instance = instances_list[idx]
-                    break
-                else:
-                    print(f"Invalid choice. Please select 1-{len(instances_list)}")
-            except ValueError:
-                print(f"Invalid input. Please enter a number 1-{len(instances_list)}")
-        profiles = load_profiles()
-        if not profiles:
-            print("\n[ERROR] No game profiles found yk! Please add a profile in GUI mode first you linuxer. Sorry no actual creation of profiles yet.")
-            return
-        print(f"\nAvailable Profiles for your idk what:")
-        for i, profile in enumerate(profiles, 1):
-            profile_type = profile.get("type", "unknown")
-            username = profile.get("username", "Unknown")
-            if profile_type == "offline":
-                print(f"  {i}. {username} (Offline)")
-            elif profile_type == "microsoft":
-                print(f"  {i}. {username} (Microsoft)")
-            else:
-                print(f"  {i}. {username}")
-        while True:
-            try:
-                choice = input(f"\nSelect profile (1-{len(profiles)}): ").strip()
-                idx = int(choice) - 1
-                if 0 <= idx < len(profiles):
-                    selected_profile = profiles[idx]
-                    break
-                else:
-                    print(f"Invalid choice. Please select 1-{len(profiles)}")
-            except ValueError:
-                print(f"Invalid input. Please enter a number 1-{len(profiles)}")
-        # Get RAM for me I want 64gb plz, I only have 16 GB now :>
-        # I have now 32 again, yayyy and yay works halfway..
-        ram_input = input("\nEnter RAM amount (default: 4G): ").strip()
-        ram = ram_input if ram_input else "4G"
-        print(f"\nLaunching {selected_instance.name} as {selected_profile.get('username')}...")
-        terminal_launch_game(selected_instance, selected_profile, ram)
-    except KeyboardInterrupt:
-        print("\n[Launcher] Cancelled by user")
-        sys.exit(0)
-    except Exception as e:
-        print(f"[ERROR] Terminal mode error: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+        print(f"[startup] module re-exec skipped: {e}")
 
-def _register_mrpack_association():
-    try:
-        home = Path.home()
-        if getattr(sys, 'frozen', False):
-            exec_cmd = f'"{sys.executable}" %f'
-        else:
-            exec_cmd = f'"{sys.executable}" "{Path(__file__).resolve()}" %f'
-        apps_dir = home / ".local/share/applications"
-        apps_dir.mkdir(parents=True, exist_ok=True)
-        icon_path = find_resource("oranglauncher/images/orange.png")
-        desktop = (
-            "[Desktop Entry]\n"
-            "Type=Application\n"
-            "Name=OrangLauncher\n"
-            "Comment=Modular Minecraft launcher\n"
-            f"Exec={exec_cmd}\n"
-            f"Icon={icon_path or 'oranglauncher'}\n"
-            "Terminal=false\n"
-            "Categories=Game;\n"
-            "MimeType=application/x-modrinth-modpack+zip;\n"
-        )
-        desktop_file = apps_dir / "oranglauncher.desktop"
-        if not desktop_file.exists() or desktop_file.read_text() != desktop:
-            desktop_file.write_text(desktop)
-        mime_dir = home / ".local/share/mime/packages"
-        mime_dir.mkdir(parents=True, exist_ok=True)
-        mime_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
-            '  <mime-type type="application/x-modrinth-modpack+zip">\n'
-            '    <comment>Modrinth Modpack</comment>\n'
-            '    <glob pattern="*.mrpack"/>\n'
-            '  </mime-type>\n'
-            '</mime-info>\n'
-        )
-        mime_file = mime_dir / "oranglauncher-mrpack.xml"
-        if not mime_file.exists() or mime_file.read_text() != mime_xml:
-            mime_file.write_text(mime_xml)
-            subprocess.run(["update-mime-database", str(home / ".local/share/mime")],
-                           check=False, capture_output=True)
-            subprocess.run(["update-desktop-database", str(apps_dir)],
-                           check=False, capture_output=True)
-        subprocess.run(["xdg-mime", "default", "oranglauncher.desktop",
-                        "application/x-modrinth-modpack+zip"],
-                       check=False, capture_output=True)
-    except Exception as e:
-        print(f"[setup] mrpack association failed: {e}")
-
+# defenitly main.....
 def main():
     try:
         if "--terminal" in sys.argv:
             terminal_main()
             return
+        if not QT_AVAILABLE:
+            print("[ui] PySide6 is not installed (pip install PySide6)")
+            sys.exit(1)
+        _reexec_as_module()
+        print("Welcome to the Orange launcher! You can use --terminal to save ram!")
+        install_crash_handlers()
+        if _debug_mode_saved():
+            _start_debug_capture()
         if "--testing" in sys.argv:
             mark_setup_done(False)
             print("[testing] reset setup.mark → setup_done=false")
         open_file_arg = None
         for arg in sys.argv[1:]:
-            if not arg.startswith('-') and (arg.endswith('.mrpack') or arg.endswith('.zip')):
+            if not arg.startswith('-') and (arg.endswith('.mrpack') or arg.endswith('.zip') or arg.endswith('.orangpack')):
                 open_file_arg = arg
                 break
         if platform.system() == "Linux":
-            if 'GDK_BACKEND' not in os.environ:
-                os.environ['GDK_BACKEND'] = 'x11'
-            if 'SDL_VIDEODRIVER' not in os.environ:
-                os.environ['SDL_VIDEODRIVER'] = 'x11'
-            try:
-                subprocess.run(["fc-cache", "-f"], check=False, capture_output=True)
-            except:
-                pass
             _register_mrpack_association()
-        app = MinecraftLauncher()
-        if open_file_arg:
-            app._pending_open_file = open_file_arg
-        app.mainloop()
+        sys.exit(qt_main(open_file_arg))
     except KeyboardInterrupt:
         print("\\cya :>")
         sys.exit(0)
