@@ -1,6 +1,6 @@
 # Welcome to main version of Orange Launcher! 
 # Here is the code for the launcher, written in Python 3.14 pi version in jokes. Rewrtitten to PySide6.
-# Recently edited by Adasjusk, 2024-06-05
+# Recently edited by Adasjusk, 2026-06-05 (v note: what?)
 
 # imports
 import os
@@ -293,7 +293,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 # Change this to the current version
-CURRENT_VERSION = "8.0.0"
+CURRENT_VERSION = "8.0.1"
 # If you fork, at least leave some credit in the code, thanks.
 # I'm not getting paid for this. Please don't sell this or use it for profit. 
 # I worked hard on this and I want to keep it free for everyone.
@@ -481,53 +481,81 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
     threading.Thread(target=work, daemon=True).start()
 
 
+mc_profile_url = "https://api.minecraftservices.com/minecraft/profile"
+
+
+def _mc_profile(acc):
+    if acc.get("type") != "microsoft":
+        return None
+    r = _mc_request("GET", mc_profile_url, acc)
+    return r.json() if r is not None and r.ok else None
+
+
+def _mc_request(method, url, acc, **kw):
+    for attempt in (0, 1):
+        token = acc.get("minecraft_token")
+        if token and token != "0":
+            r = _http_session.request(method, url, headers={"Authorization": f"Bearer {token}"}, timeout=15, **kw)
+            if r.status_code != 401:
+                return r
+        if attempt or not acc.get("microsoft_refresh_token"):
+            return None
+        acc.update(refresh_mc_token(acc["microsoft_refresh_token"], acc.get("ms_client_id")))
+        _store_profile(acc)
+
+
+def _set_active_cape(acc, cape_id):
+    url = mc_profile_url + "/capes/active"
+    r = _mc_request("PUT", url, acc, json={"capeId": cape_id}) if cape_id else _mc_request("DELETE", url, acc)
+    if r is None:
+        raise Exception("Not signed in")
+    if not r.ok:
+        raise Exception(f"HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
 def _fetch_skin_texture(acc):
-    token = acc.get('minecraft_token')
-    if token and token != "0":
-        try:
-            # still i hate the skin whole thing
-            r = _http_session.get("https://api.minecraftservices.com/minecraft/profile",
-                                  headers={"Authorization": f"Bearer {token}"}, timeout=10)
-            if r.ok:
-                data = r.json()
-                skins = data.get("skins", [])
-                active = next((s for s in skins if s.get("state") == "ACTIVE"), skins[0] if skins else None)
-                capes = data.get("capes", [])
-                active_cape = next((c for c in capes if c.get("state") == "ACTIVE"), None)
-                if active and active.get("url"):
-                    slim = (active.get("variant", "").upper() == "SLIM")
-                    skin_img = _qimage_rgba(_cached_image_get(active["url"]))
-                    cape_img = None
-                    if active_cape and active_cape.get("url"):
-                        cape_img = _qimage_rgba(_cached_image_get(active_cape["url"]))
-                    return skin_img, slim, cape_img
-        except Exception:
-            pass
+    try:
+        data = _mc_profile(acc)
+        if data:
+            skins = data.get("skins", [])
+            active = next((s for s in skins if s.get("state") == "ACTIVE"), skins[0] if skins else None)
+            capes = data.get("capes", [])
+            active_cape = next((c for c in capes if c.get("state") == "ACTIVE"), None)
+            if active and active.get("url"):
+                slim = (active.get("variant", "").upper() == "SLIM")
+                skin_img = _qimage_rgba(_cached_image_get(active["url"]))
+                cape_img = None
+                if active_cape and active_cape.get("url"):
+                    cape_img = _qimage_rgba(_cached_image_get(active_cape["url"]))
+                return skin_img, slim, cape_img, capes
+    except Exception as e:
+        print(f"[skin] profile fetch failed: {e}")
     try:
         uuid = (acc.get('uuid') or "").replace("-", "")
         # offline accounts store an all-zero placeholder uuid; resolve by name instead
         if not uuid or uuid.strip("0") == "":
             name = acc.get('username')
             if not name:
-                return None, False, None
+                return None, False, None, []
             r = _http_session.get(f"https://api.mojang.com/users/profiles/minecraft/{name}", timeout=10)
             if not r.ok:
-                return None, False, None
+                return None, False, None, []
             uuid = r.json().get("id", "")
             if not uuid:
-                return None, False, None
+                return None, False, None, []
         r = _http_session.get(f"https://sessionserver.mojang.com/session/minecraft/profile/{uuid}", timeout=10)
         if not r.ok:
-            return None, False, None
+            return None, False, None, []
         props = r.json().get("properties", [])
         textures_b64 = next((p.get("value") for p in props if p.get("name") == "textures"), None)
         if not textures_b64:
-            return None, False, None
+            return None, False, None, []
         textures = json.loads(base64.b64decode(textures_b64)).get("textures", {})
         skin_info = textures.get("SKIN", {})
         skin_url = skin_info.get("url")
         if not skin_url:
-            return None, False, None
+            return None, False, None, []
         slim = skin_info.get("metadata", {}).get("model") == "slim"
         skin_img = _qimage_rgba(_cached_image_get(skin_url))
         cape_img = None
@@ -537,9 +565,9 @@ def _fetch_skin_texture(acc):
                 cape_img = _qimage_rgba(_cached_image_get(cape_url))
             except Exception:
                 cape_img = None
-        return skin_img, slim, cape_img
+        return skin_img, slim, cape_img, []
     except Exception:
-        return None, False, None
+        return None, False, None, []
 
     # this was a pain in the ass
 def _skin_add_box(faces, center, w, h, d, texU, texV, boxW, boxH, boxD, mirror, inflate):
@@ -613,109 +641,70 @@ def _skin_build_cape():
     return faces
 
 
-def _skin_raster_tri(pix, zbuf, width, height, a, b, c, ta, tb, tc,
-                     fU, fV, fUw, fVh, mirror, tex, W, H, shade):
-    ax, ay, az = a; bx, by, bz = b; cx, cy, cz = c
-    minX = max(0, int(math.floor(min(ax, bx, cx))))
-    maxX = min(width - 1, int(math.ceil(max(ax, bx, cx))))
-    minY = max(0, int(math.floor(min(ay, by, cy))))
-    maxY = min(height - 1, int(math.ceil(max(ay, by, cy))))
-    if minX > maxX or minY > maxY:
-        return
-    denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-    if abs(denom) < 1e-6:
-        return
-    inv = 1.0 / denom
-    taX, taY = ta; tbX, tbY = tb; tcX, tcY = tc
-    e0y = by - cy; e0x = cx - bx
-    e1y = cy - ay; e1x = ax - cx
-    for y in range(minY, maxY + 1):
-        pyc = (y + 0.5) - cy
-        rowbase = y * width
-        for x in range(minX, maxX + 1):
-            pxc = (x + 0.5) - cx
-            w0 = (e0y * pxc + e0x * pyc) * inv
-            if w0 < 0:
-                continue
-            w1 = (e1y * pxc + e1x * pyc) * inv
-            if w1 < 0:
-                continue
-            w2 = 1.0 - w0 - w1
-            if w2 < 0:
-                continue
-            z = w0 * az + w1 * bz + w2 * cz
-            zi = rowbase + x
-            if z <= zbuf[zi]:
-                continue
-            fu = w0 * taX + w1 * tbX + w2 * tcX
-            fv = w0 * taY + w1 * tbY + w2 * tcY
-            if mirror:
-                fu = 1.0 - fu
-            u = fU + min(fUw - 1, int(fu * fUw))
-            v = fV + min(fVh - 1, int(fv * fVh))
-            if u < 0 or u >= W or v < 0 or v >= H:
-                continue
-            ti = (v * W + u) * 4
-            if tex[ti + 3] < 8:
-                continue
-            zbuf[zi] = z
-            pi = zi * 4
-            pix[pi] = int(tex[ti] * shade)
-            pix[pi + 1] = int(tex[ti + 1] * shade)
-            pix[pi + 2] = int(tex[ti + 2] * shade)
-            pix[pi + 3] = 255
-
-
-    # This is the native 3D skin renderer. It is a bit slow, but it works without any external dependencies. this may be 30 fps.
 def _render_skin_3d(skin, width, height, yaw_deg=25.0, pitch_deg=10.0, slim=False, overlay=True, cape=None):
-    
-    W, H = skin.width(), skin.height()
-    tex = bytes(skin.constBits())
-    legacy = H == 32
-    faces = _skin_build_model(slim, overlay, legacy)
+    # painters algo on qpainter
+    legacy = skin.height() == 32
     yaw = math.radians(yaw_deg); pitch = math.radians(pitch_deg)
     cyr, syr = math.cos(yaw), math.sin(yaw)
     cxr, sxr = math.cos(pitch), math.sin(pitch)
 
-    # rotate
     def rot(p):
         x, y, z = p
         x1 = x * cyr + z * syr
         z1 = -x * syr + z * cyr
         return (x1, y * cxr - z1 * sxr, y * sxr + z1 * cxr)
 
-    # increased is funny ngl.
     scale = height / 40.0
     cx = width / 2.0; cy = height / 2.0
-    zbuf = [float("-inf")] * (width * height)
-    pix = bytearray(width * height * 4)
     lx, ly, lz = -0.3, 0.9, 0.6
     ll = math.sqrt(lx * lx + ly * ly + lz * lz); lx /= ll; ly /= ll; lz /= ll
-    # please learn python and math to do this 
 
-
-    # plz work
-    def render_faces(face_list, texture, tw, th):
-        for face in face_list:
-            A, B, C, D, fU, fV, fUw, fVh, mirror, normal = face
+    draw = []  # depth, texture, tile rect, tile corners matching quad corners, projected quad, shade
+    def collect(face_list, texture):
+        for A, B, C, D, fU, fV, fUw, fVh, mirror, normal in face_list:
             nx, ny, nz = rot(normal)
             if nz <= 0.02:
                 continue
             shade = 0.62 + 0.38 * max(0.0, nx * lx + ny * ly + nz * lz)
-            proj = []
+            quad = QtGui.QPolygonF(); depth = 0.0
             for corner in (A, B, C, D):
                 px_, py_, pz_ = rot((corner[0], corner[1] - 2, corner[2]))
                 persp = 140.0 / (140.0 - pz_)
-                proj.append((cx + px_ * scale * persp, cy - py_ * scale * persp, pz_))
-            _skin_raster_tri(pix, zbuf, width, height, proj[0], proj[1], proj[2],
-                             (0.0, 0.0), (1.0, 0.0), (1.0, 1.0), fU, fV, fUw, fVh, mirror, texture, tw, th, shade)
-            _skin_raster_tri(pix, zbuf, width, height, proj[0], proj[2], proj[3],
-                             (0.0, 0.0), (1.0, 1.0), (0.0, 1.0), fU, fV, fUw, fVh, mirror, texture, tw, th, shade)
+                quad.append(QPointF(cx + px_ * scale * persp, cy - py_ * scale * persp))
+                depth += pz_
+            tl, tr, br, bl = QPointF(0, 0), QPointF(fUw, 0), QPointF(fUw, fVh), QPointF(0, fVh)
+            src = QtGui.QPolygonF([tr, tl, bl, br] if mirror else [tl, tr, br, bl])
+            draw.append((depth, texture, QRect(fU, fV, fUw, fVh), src, quad, shade))
 
-    render_faces(faces, tex, W, H)
+    collect(_skin_build_model(slim, overlay, legacy), skin)
     if cape is not None:
-        render_faces(_skin_build_cape(), bytes(cape.constBits()), cape.width(), cape.height())
-    return QtGui.QImage(bytes(pix), width, height, width * 4, QtGui.QImage.Format_RGBA8888).copy()
+        collect(_skin_build_cape(), cape)
+    draw.sort(key=lambda d: d[0])
+
+    out = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32_Premultiplied)
+    out.fill(0)
+    painter = QtGui.QPainter(out)
+    painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, False)
+    for _, texture, rect, src, quad, shade in draw:
+        xf = QtGui.QTransform.quadToQuad(src, quad)
+        if xf is None:
+            continue
+        # shade
+        tile = texture.copy(rect)
+        if shade < 0.999:
+            tp = QtGui.QPainter(tile)
+            tp.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
+            tp.fillRect(tile.rect(), QtGui.QColor(0, 0, 0, int(255 * (1.0 - shade))))
+            tp.end()
+        # quad clipping
+        path = QtGui.QPainterPath(); path.addPolygon(quad); path.closeSubpath()
+        painter.save()
+        painter.setClipPath(path)
+        painter.setTransform(xf)
+        painter.drawImage(QPointF(0, 0), tile)
+        painter.restore()
+    painter.end()
+    return out
 
 
 _SKIN_PREVIEW_W = 180
@@ -3759,8 +3748,11 @@ def build_launch_env(instance, launcher=None):
         backend = _instance_or_global(instance, "display_backend", "x11")
         if backend == "x11" and _is_wayland_session():
             env["XDG_SESSION_TYPE"] = "x11"
+            env["SDL_VIDEO_DRIVER"] = "x11"
+            env["SDL_VIDEODRIVER"] = "x11"
         elif backend == "wayland":
             env.pop("SDL_VIDEODRIVER", None)
+            env.pop("SDL_VIDEO_DRIVER", None)
         theme, size = _detect_cursor_env()
         if theme and not env.get("XCURSOR_THEME"):
             env["XCURSOR_THEME"] = theme
@@ -5468,6 +5460,13 @@ def check_mc_token(minecraft_token):
         "Authorization": f"Bearer {minecraft_token}"
     })
     return r.ok
+def _store_profile(profile):
+    profiles_data = load_profiles()
+    for idx, p in enumerate(profiles_data):
+        if p.get("uuid") == profile.get("uuid") or (p.get("type") == "microsoft" and p.get("username") == profile.get("username")):
+            profiles_data[idx] = profile
+            break
+    save_profiles(profiles_data)
 def ensure_mc_profile_valid(profile):
     if profile.get("type") != "microsoft":
         return profile
@@ -5478,24 +5477,14 @@ def ensure_mc_profile_valid(profile):
     try:
         newdata = refresh_mc_token(refresh_token, profile.get("ms_client_id"))
         profile.update(newdata)
-        profiles_data = load_profiles()
-        for idx, p in enumerate(profiles_data):
-            if p.get("uuid") == profile.get("uuid") or (p.get("type") == "microsoft" and p.get("username") == profile.get("username")):
-                profiles_data[idx] = profile
-                break
-        save_profiles(profiles_data)
+        _store_profile(profile)
         return profile
     except Exception as e:
         print(f"Refresh failed: {e}. Need full login.")
         try:
             newdata = ms_token_flow_interactive()
             profile.update(newdata)
-            profiles_data = load_profiles()
-            for idx, p in enumerate(profiles_data):
-                if p.get("uuid") == profile.get("uuid") or (p.get("type") == "microsoft" and p.get("username") == profile.get("username")):
-                    profiles_data[idx] = profile
-                    break
-            save_profiles(profiles_data)
+            _store_profile(profile)
             return profile
         except Exception as ee:
             raise Exception("Could not refresh or re-authenticate: " + str(ee))
@@ -5791,7 +5780,7 @@ def _register_mrpack_association():
 
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
-    from PySide6.QtCore import Qt, Signal, QObject, QTimer, QSize
+    from PySide6.QtCore import Qt, Signal, QObject, QTimer, QSize, QPointF, QRect
     QT_AVAILABLE = True
 except Exception:
     QT_AVAILABLE = False
@@ -10689,7 +10678,8 @@ class QtSkinPreview(QtWidgets.QLabel):
             self.setPixmap(QtGui.QPixmap())
             self.setText(_qt_t("QT_NO_SKIN_PREVIEW", "No skin preview available"))
             return
-        self.state = {"skin": skin, "slim": slim, "cape": cape, "yaw": 25.0, "pitch": 10.0}
+        prev = self.state or {}
+        self.state = {"skin": skin, "slim": slim, "cape": cape, "yaw": prev.get("yaw", 25.0), "pitch": prev.get("pitch", 10.0)}
         self.render()
 
     def render(self):
@@ -10848,6 +10838,12 @@ class QtSettingsPage(QtWidgets.QWidget):
         self.skin_caption = _qt_label("", "h3", align=Qt.AlignCenter)
         pv.addWidget(self.skin_caption)
         pv.addWidget(_qt_label(_qt_t("QT_DRAG_ROTATE", "Drag to rotate"), "hint", align=Qt.AlignCenter))
+        self.cape_combo = QtWidgets.QComboBox()
+        self.cape_combo.setToolTip(_qt_t("QT_CAPE_TIP", "Choose which cape is shown in-game"))
+        self.cape_combo.setIconSize(QSize(20, 32))
+        self.cape_combo.hide()
+        self.cape_combo.activated.connect(self._on_cape_pick)
+        pv.addWidget(self.cape_combo)
         pv.addStretch(1)
         row.addLayout(pv)
         card.add_layout(row)
@@ -10886,10 +10882,55 @@ class QtSettingsPage(QtWidgets.QWidget):
         acc = self._accounts[row]
         self.skin_caption.setText(acc.get("username", ""))
 
+        self.cape_combo.hide()
+
+        def work():
+            skin, slim, cape, capes = _fetch_skin_texture(acc)
+            for c in capes:
+                try:
+                    c["img"] = _qimage_rgba(_cached_image_get(c["url"]))
+                except Exception:
+                    pass
+            return skin, slim, cape, capes
+
         def done(result):
-            skin, slim, cape = result
+            skin, slim, cape, capes = result
             self.skin.set_skin(skin, slim, cape)
-        _qt_run_bg(lambda: _fetch_skin_texture(acc), done, lambda e: self.skin.set_skin(None, False, None))
+            self._fill_capes(capes)
+        _qt_run_bg(work, done, lambda e: self.skin.set_skin(None, False, None))
+
+    def _fill_capes(self, capes):
+        cb = self.cape_combo
+        cb.clear()
+        cb.addItem(_qt_t("QT_CAPE_NONE", "No cape"), None)
+        for c in capes:
+            img = c.get("img")
+            if img is not None:
+                px = QtGui.QPixmap.fromImage(img.copy(1, 1, 10, 16).scaled(20, 32, Qt.IgnoreAspectRatio, Qt.FastTransformation))
+                cb.addItem(QtGui.QIcon(px), c.get("alias") or c.get("id", "?"), c.get("id"))
+            else:
+                cb.addItem(c.get("alias") or c.get("id", "?"), c.get("id"))
+            if c.get("state") == "ACTIVE":
+                cb.setCurrentIndex(cb.count() - 1)
+        cb.setVisible(bool(capes))
+
+    def _on_cape_pick(self, index):
+        row = self.acc_list.currentRow()
+        if row < 0 or row >= len(self._accounts):
+            return
+        acc = self._accounts[row]
+        cape_id = self.cape_combo.itemData(index)
+        self.cape_combo.setEnabled(False)
+
+        def done(_):
+            self.cape_combo.setEnabled(True)
+            self._on_account_row(row)
+
+        def fail(e):
+            self.cape_combo.setEnabled(True)
+            messagebox.showerror(_qt_t("QT_CAPE_TITLE", "Cape"), _qt_t("QT_CAPE_FAIL", "Could not change cape: {error}").format(error=e))
+            self._on_account_row(row)
+        _qt_run_bg(lambda: _set_active_cape(acc, cape_id), done, fail)
 
     def _remove_account(self):
         row = self.acc_list.currentRow()
@@ -11895,6 +11936,9 @@ class LauncherCore:
             enabled = enabled.get() if enabled else False
             try:
                 if enabled:
+                    if shared_name == "servers.dat" and shared_target.exists() and shared_target.stat().st_size == 0:
+                        # empty
+                        ServersNBT.write_servers_dat(shared_target, [])
                     if not shared_target.exists() and not shared_target.is_symlink():
                         if inst_path.exists() and not inst_path.is_symlink():
                             if is_file:
@@ -11902,7 +11946,9 @@ class LauncherCore:
                             else:
                                 shutil.copytree(str(inst_path), str(shared_target))
                         else:
-                            if is_file:
+                            if shared_name == "servers.dat":
+                                ServersNBT.write_servers_dat(shared_target, [])
+                            elif is_file:
                                 shared_target.touch()
                             else:
                                 shared_target.mkdir(parents=True, exist_ok=True)
