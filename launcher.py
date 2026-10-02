@@ -293,7 +293,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 # Change this to the current version
-CURRENT_VERSION = "8.0.1"
+CURRENT_VERSION = "8.0.2"
 # If you fork, at least leave some credit in the code, thanks.
 # I'm not getting paid for this. Please don't sell this or use it for profit. 
 # I worked hard on this and I want to keep it free for everyone.
@@ -11807,6 +11807,8 @@ class LauncherCore:
                 except Exception:
                     pass
             self._safe_append_log(f"[Launcher] Minecraft exited with code {exit_code}")
+            if current_instance is not None:
+                self._apply_sharing_for_instance(current_instance)
             if exit_code != 0:
                 self.after(0, lambda: self._check_crash_report(minecraft_directory, exit_code))
         except minecraft_launcher_lib.exceptions.VersionNotFound as e:
@@ -11961,6 +11963,9 @@ class LauncherCore:
                         inst_path.unlink()
                     elif inst_path.exists():
                         if is_file:
+                            # minecraft does a tmp file and renames it for some reason
+                            if inst_path.stat().st_mtime > shared_target.stat().st_mtime:
+                                shutil.copy2(inst_path, shared_target)
                             inst_path.unlink()
                         else:
                             # merge this instance's packs into the shared folder so nothing lost
@@ -11989,9 +11994,11 @@ class LauncherCore:
                             inst_path.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 self._safe_append_log(f"[Sharing] {shared_name} / {instance.name}: {e}")
+    _share_lock = threading.Lock()
     def _apply_sharing_all(self):
-        for instance in self.instance_manager.instances.values():
-            self._apply_sharing_for_instance(instance)
+        with self._share_lock:
+            for instance in self.instance_manager.instances.values():
+                self._apply_sharing_for_instance(instance)
     _SHARE_TARGETS = [
         ('share_options',       'options.txt',    'options.txt',         True),
         ('share_resourcepacks', 'resourcepacks',  'resourcepacks',       False),
