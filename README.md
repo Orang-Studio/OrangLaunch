@@ -4,14 +4,9 @@
   <img src="https://github.com/user-attachments/assets/7e9f1973-604e-4178-8c44-bca93e69c5df" alt="orange">
 </p>
 
-<h1 align="center">Orange Launcher Win10</h1>
+<h1 align="center">Orange Launcher Windows</h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
-</p>
-
-<h1 align="center">Orange Launcher Win11</h1>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6eac6ddc-77c4-457b-916b-33adc0b505cd" alt="orange">
 </p>
 
 # Installation 
@@ -31,26 +26,13 @@ yay -Syu oranglauncher
 ```
 <br>
 
-## Fedora x64 
-Install with **dnf**
-```bash
-sudo dnf install oranglauncher-bin
-```
-for the open source build version:
-
-```bash
-sudo dnf install oranglauncher
-```
 
 ## Linux Other x64 
 Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
 
 
-## Windows 10-11 x86-x64
-Download installer: [OrangLauncher_Windows.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
-### arm32-arm64
-Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
-
+## Windows 10-11 x86-x64; arm32-arm64
+Download installer/zip: [OrangLauncher_Windows](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
 # Terminal Mode
 
 The launcher includes a terminal/CLI mode for headless servers or users who prefer command-line interfaces.
