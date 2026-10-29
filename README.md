@@ -9,6 +9,8 @@
   <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
 </p>
 
+Minecraft launcher designed from Mojang old launcher and remade to today's standarts
+
 # Installation 
 
 ## Arch Linux x64
