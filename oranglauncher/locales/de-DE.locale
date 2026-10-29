@@ -428,7 +428,7 @@ SETTINGS_GPU_DRI_PRIME_DESC=Minecraft auf der sekundären GPU starten (setzt DRI
 
 # Settings Shared Files Translations
 SETTINGS_SHARED_FILES=Freigegebene Dateien
-SETTINGS_SHARED_FILES_DESC=Wählen Sie Pfade aus, um sie über alle Instanzen hinweg mit einem gemeinsamen Ordner zu verknüpfen (~/.config/oranglauncher/shared/).
+SETTINGS_SHARED_FILES_DESC=Wählen Sie Pfade aus, um sie über alle Instanzen hinweg mit einem gemeinsamen Ordner zu verknüpfen (~/.local/share/OrangStudio/OrangLauncher/shared/).
 Klicken Sie auf 'Auf alle Instanzen anwenden', nachdem Sie diese Schalter geändert haben.
 SETTINGS_SHARED_APPLY_ALL=Auf alle Instanzen anwenden
 SETTINGS_SHARED_UPDATED=Symlinks wurden für alle Instanzen aktualisiert.
@@ -1062,3 +1062,5 @@ QT_XSTS_NO_XBOX=Dieses Microsoft-Konto hat kein Xbox-Profil. Melde dich einmal a
 QT_XSTS_REGION=Xbox Live ist in deinem Land oder deiner Region nicht verfügbar.
 QT_XSTS_ADULT=Dieses Konto benötigt eine Altersverifizierung auf xbox.com (Südkorea).
 QT_XSTS_CHILD=Dies ist ein Kinderkonto. Füge es zuerst unter https://account.microsoft.com/family einer Microsoft-Familiengruppe hinzu.
+QT_MIGRATION_TITLE=Datenumzug
+QT_MIGRATION_PARTIAL=Einige Launcher-Daten konnten nicht nach {path} verschoben werden. Nichts wurde gelöscht; diese Elemente liegen noch am alten Ort:\n\n{items}

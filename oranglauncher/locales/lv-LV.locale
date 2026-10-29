@@ -435,7 +435,7 @@ SETTINGS_GPU_DRI_PRIME_DESC=Palaist Minecraftu sekundārajā video kartē (iesta
 
 # Settings Shared Files Translations
 SETTINGS_SHARED_FILES=Koplietojamie faili
-SETTINGS_SHARED_FILES_DESC=Saistiet atlasītās failu ceļus visos gadījumos ar vienu koplietojamo mapi (~/.config/oranglauncher/shared/).
+SETTINGS_SHARED_FILES_DESC=Saistiet atlasītās failu ceļus visos gadījumos ar vienu koplietojamo mapi (~/.local/share/OrangStudio/OrangLauncher/shared/).
 Noklikšķiniet uz "Lietot visām instancēm" pēc šo slēdžu maiņas.
 SETTINGS_SHARED_APPLY_ALL=Lietot visām instancēm
 SETTINGS_SHARED_UPDATED=Simboliskās saites atjauninātas visām instancēm.
@@ -1073,3 +1073,5 @@ QT_XSTS_NO_XBOX=Šim Microsoft kontam nav Xbox profila. Vienreiz pierakstieties 
 QT_XSTS_REGION=Xbox Live nav pieejams jūsu valstī vai reģionā.
 QT_XSTS_ADULT=Šim kontam nepieciešama pieaugušā verifikācija xbox.com (Dienvidkoreja).
 QT_XSTS_CHILD=Šis ir bērna konts. Vispirms pievienojiet to Microsoft ģimenes grupai vietnē https://account.microsoft.com/family.
+QT_MIGRATION_TITLE=Datu pārvietošana
+QT_MIGRATION_PARTIAL=Daļu palaidēja datu neizdevās pārvietot uz {path}. Nekas netika dzēsts; šie vienumi joprojām ir vecajā vietā:\n\n{items}

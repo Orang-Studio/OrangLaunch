@@ -1,6 +1,6 @@
 # Welcome to main version of Orange Launcher! 
 # Here is the code for the launcher, written in Python 3.14 pi version in jokes. Rewrtitten to PySide6.
-# Recently edited by Adasjusk, 2026-06-05 (v note: what?)
+# Recently edited by Adasjusk, 2026-10-29
 
 # imports
 import os
@@ -9,6 +9,7 @@ import atexit
 import base64
 import builtins
 import copy
+import errno
 import glob
 import hashlib
 import importlib
@@ -39,11 +40,15 @@ from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Callable, Tuple
+
+
+
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
-
-
-
-
 class _LazyModule:
     def __init__(self, name):
         object.__setattr__(self, "_lazy_name", name)
@@ -60,7 +65,6 @@ class _LazyModule:
         setattr(self._lazy_load(), name, value)
     def __bool__(self):
         return True
-
 
 minecraft_launcher_lib = _LazyModule("minecraft_launcher_lib")
 requests = _LazyModule("requests")
@@ -209,6 +213,159 @@ def find_resource(relative_path):
     if alt_path.exists():
         return alt_path
     return None
+def _app_data_dir():
+    system = platform.system()
+    if system == "Windows":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif system == "Darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "OrangStudio" / "OrangLauncher"
+
+
+DATA_DIR = _app_data_dir()
+CACHE_DIR = DATA_DIR / "cache"
+_LEGACY_DIRS = (Path.home() / ".config" / "oranglauncher", Path.home() / ".local" / "share" / "oranglauncher")
+_LEGACY_CACHE_DIR = Path.home() / ".cache" / "oranglauncher"
+
+
+_MIGRATION_ERRORS = []
+
+
+def _move_path(src, dst):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.rename(src, dst)
+        return
+    except OSError as e:
+        if e.errno != errno.EXDEV:
+            raise
+    staging = dst.with_name(dst.name + ".migrating")
+    if staging.is_dir() and not staging.is_symlink():
+        shutil.rmtree(staging)
+    elif staging.exists() or staging.is_symlink():
+        staging.unlink()
+    if src.is_dir() and not src.is_symlink():
+        shutil.copytree(src, staging, symlinks=True)
+    else:
+        shutil.copy2(src, staging, follow_symlinks=False)
+    os.rename(staging, dst)
+    if src.is_dir() and not src.is_symlink():
+        shutil.rmtree(src)
+    else:
+        src.unlink()
+
+
+def _merge_move(src, dst, quiet=False):
+    if not dst.exists() and not dst.is_symlink():
+        _move_path(src, dst)
+        return
+    if src.is_dir() and not src.is_symlink() and dst.is_dir():
+        for child in list(src.iterdir()):
+            _merge_move(child, dst / child.name, quiet)
+        try:
+            src.rmdir()
+        except OSError:
+            pass
+    elif not quiet:
+        _MIGRATION_ERRORS.append(f"{src} (kept, {dst} already exists)")
+
+
+def _atomic_write_text(path, text):
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _rewrite_legacy_paths():
+    prefixes = [(str(old), str(DATA_DIR)) for old in _LEGACY_DIRS] + [(str(_LEGACY_CACHE_DIR), str(CACHE_DIR))]
+    prefixes += [(json.dumps(old)[1:-1], json.dumps(new)[1:-1]) for old, new in prefixes if json.dumps(old)[1:-1] != old]
+    instances = DATA_DIR / "instances"
+    files = [DATA_DIR / "instances.json", DATA_DIR / "launcher_config.json"]
+    if instances.is_dir():
+        for inst in instances.iterdir():
+            files += [inst / "icon.txt", inst / "instance.json"]
+            mc = inst / ".minecraft"
+            if not mc.is_dir():
+                continue
+            for entry in mc.iterdir():
+                if not entry.is_symlink():
+                    continue
+                target = os.readlink(entry)
+                for old, new in prefixes:
+                    if target.startswith(old):
+                        tmp = entry.with_name(entry.name + ".tmp")
+                        if tmp.is_symlink() or tmp.exists():
+                            tmp.unlink()
+                        tmp.symlink_to(new + target[len(old):])
+                        os.replace(tmp, entry)
+                        break
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        fixed = text
+        for old, new in prefixes:
+            fixed = fixed.replace(old, new)
+        if fixed == text:
+            continue
+        if f.suffix == ".json":
+            try:
+                json.loads(fixed)
+            except ValueError:
+                _MIGRATION_ERRORS.append(f"{f} (paths not updated)")
+                continue
+        _atomic_write_text(f, fixed)
+
+
+def _migrate_legacy_data():
+    moves = [(d, DATA_DIR) for d in _LEGACY_DIRS] + [(_LEGACY_CACHE_DIR, CACHE_DIR)] + [
+        (Path.home() / ".minecraft_launcher_config.json", DATA_DIR / "language.json"),
+        (Path.home() / ".minecraft_versions_cache.json", DATA_DIR / "versions_cache.json"),
+        (Path.home() / ".minecraft_game_profiles.json", DATA_DIR / "game_profiles.json"),
+        (Path.home() / ".minecraft" / "profiles.json", DATA_DIR / "profiles.json"),
+    ]
+    pending = [(src, dst) for src, dst in moves if src.exists() and not src.is_symlink()]
+    marker = DATA_DIR / ".migrated"
+    if not pending and marker.exists():
+        return
+    lock = None
+    try:
+        DATA_DIR.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(DATA_DIR.parent / ".oranglauncher-migrate.lock", "w")
+        if fcntl is not None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        for stale in [DATA_DIR.with_name(DATA_DIR.name + ".migrating")] + (list(DATA_DIR.glob("*.migrating")) if DATA_DIR.is_dir() else []):
+            if stale.is_dir() and not stale.is_symlink():
+                shutil.rmtree(stale, ignore_errors=True)
+            elif stale.exists() or stale.is_symlink():
+                stale.unlink()
+        for src, dst in moves:
+            if src.is_symlink() or not src.exists():
+                continue
+            try:
+                _merge_move(src, dst, quiet=dst in (CACHE_DIR, DATA_DIR / "versions_cache.json"))
+                print(f"[data] moved {src} -> {dst}")
+            except Exception as e:
+                _MIGRATION_ERRORS.append(f"{src}: {e}")
+                print(f"[data] could not move {src}: {e}")
+        _rewrite_legacy_paths()
+        if not _MIGRATION_ERRORS:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(marker, f"migrated by {CURRENT_VERSION}\n")
+    except Exception as e:
+        _MIGRATION_ERRORS.append(str(e))
+        print(f"[data] migration stopped: {e}")
+    finally:
+        if lock is not None:
+            lock.close()
+
+
 class MinecraftInstance:
     def __init__(self, name: str, version: str, mod_loader: str = "vanilla",
                  instance_id: Optional[str] = None, java_args: Optional[str] = None, ram: str = "4G",
@@ -407,7 +564,7 @@ def perform_update(download_url, launcher_root):
         print(f"Downloading update from {download_url}...")
         is_tar_gz = download_url.endswith(".tar.gz")
         filename = "update.tar.gz" if is_tar_gz else "update.zip"
-        update_file = Path.home() / ".cache" / "oranglauncher" / filename
+        update_file = CACHE_DIR / filename
         update_file.parent.mkdir(parents=True, exist_ok=True)
         with _http_session.get(download_url, stream=True) as response:
             response.raise_for_status()
@@ -415,7 +572,7 @@ def perform_update(download_url, launcher_root):
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
                 # temp directory for extraction
-        extract_path = Path.home() / ".cache" / "oranglauncher" / "update_temp"
+        extract_path = CACHE_DIR / "update_temp"
         if extract_path.exists():
             shutil.rmtree(extract_path)
         extract_path.mkdir(parents=True, exist_ok=True)
@@ -434,7 +591,7 @@ def perform_update(download_url, launcher_root):
         else:
             update_source = extract_path
             
-        update_script = Path.home() / ".cache" / "oranglauncher" / "apply_update.sh"
+        update_script = CACHE_DIR / "apply_update.sh"
         python_exe = sys.executable
         main_script = Path(launcher_root) / "launcher.py"
         # this is brittle
@@ -742,7 +899,7 @@ _SKIN_PREVIEW_H = 280
 
 # the pre logic was bad.
 def _add_plugin_file(launcher):
-    plugin_dir = Path.home() / ".local" / "share" / "oranglauncher" / "plugins"
+    plugin_dir = DATA_DIR / "plugins"
     info_text = _qt_t("QT_ADD_PLUGIN_MSG", "Native Plugin Installation:\n\n1. Create the plugins directory (if it doesn't exist):\n   {path}\n\n2. Place your .py plugin files in that directory\n\n3. Restart the launcher to load new plugins\n\nPlugins are automatically discovered and loaded on startup.").format(path=plugin_dir)
     messagebox.showinfo(_qt_t("QT_ADD_PLUGIN", "Add plugin"), info_text)
 
@@ -755,9 +912,8 @@ def _toggle_discord_rpc(launcher):
         launcher._stop_discord_rpc()
         # Vakarux, I removed the section and made it as easteregg
 def _get_settings_path():
-    config_dir = Path.home() / ".config" / "oranglauncher"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "launcher_config.json"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR / "launcher_config.json"
 _ADV_CACHE = {}
 _ADV_LOADED = [False]
 def _adv_all():
@@ -871,7 +1027,7 @@ def _save_settings(launcher):
         # language preference is saved separately
 def _save_language_preference(language_code):
     try:
-        config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
+        config_path = DATA_DIR / "language.json"
         data = {}
         if os.path.exists(config_path):
             try:
@@ -880,6 +1036,7 @@ def _save_language_preference(language_code):
             except Exception:
                 data = {}
         data['language'] = language_code
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
@@ -890,7 +1047,7 @@ def _save_and_apply(launcher, apply_func):
         apply_func()
 def load_saved_language():
     try:
-        config_path = os.path.expanduser("~/.minecraft_launcher_config.json")
+        config_path = DATA_DIR / "language.json"
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -948,7 +1105,7 @@ _DEBUG_CAPTURE = {"active": False, "log_file": None, "stdout": None, "stderr": N
 
 # logging directory for debug logs
 def _launcher_log_dir():
-    log_dir = Path.home() / ".local" / "share" / "oranglauncher" / "logs"
+    log_dir = DATA_DIR / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
     except Exception:
@@ -987,7 +1144,7 @@ def _stop_debug_capture():
 
 def _debug_mode_saved():
     try:
-        config_path = Path.home() / ".config" / "oranglauncher" / "launcher_config.json"
+        config_path = DATA_DIR / "launcher_config.json"
         if config_path.exists():
             return bool(json.loads(config_path.read_text(encoding="utf-8")).get("debug_mode_enabled", False))
     except Exception:
@@ -2337,14 +2494,13 @@ class InstanceManager:
         self.load_instances()
     @staticmethod
     def get_instances_dir() -> Path:
-        instances_dir = Path.home() / ".config" / "oranglauncher" / "instances"
+        instances_dir = DATA_DIR / "instances"
         instances_dir.mkdir(parents=True, exist_ok=True)
         return instances_dir
     @staticmethod
     def get_config_file() -> Path:
-        config_dir = Path.home() / ".config" / "oranglauncher"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir / "instances.json"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        return DATA_DIR / "instances.json"
     def load_instances(self):
         config_file = self.get_config_file()
         if not config_file.exists():
@@ -2510,7 +2666,7 @@ def _is_modded_version_id(version_id: str) -> bool:
 
 class MojangVersionManager:
     def __init__(self):
-        self.cache_path = Path.home() / ".minecraft_versions_cache.json"
+        self.cache_path = DATA_DIR / "versions_cache.json"
         self.versions = []
         self.last_updated = None
         self.cache_duration = timedelta(hours=6)
@@ -2694,7 +2850,7 @@ class GameProfile:
         return mods_dir
 class GameProfileManager:
     def __init__(self):
-        self.config_path = Path.home() / ".minecraft_game_profiles.json"
+        self.config_path = DATA_DIR / "game_profiles.json"
         self.profiles = {}
         self.selected_profile_id = None
         self.version_manager = MojangVersionManager()
@@ -3004,7 +3160,7 @@ def register_mod_change_callback(callback):
     get_game_profile_manager().register_mod_change_callback(callback)
 def unregister_mod_change_callback(callback):
     get_game_profile_manager().unregister_mod_change_callback(callback)
-JAVA_RUNTIMES_DIR = Path.home() / ".config" / "oranglauncher" / "java_runtimes"
+JAVA_RUNTIMES_DIR = DATA_DIR / "java_runtimes"
 def _mc_version_tuple(version_str: str):
     try:
         clean = version_str.strip().lstrip("v").split("-")[0]
@@ -3349,7 +3505,7 @@ def _version_tuple(text):
 
 class LwjglManager:
     def __init__(self):
-        self.store_dir = Path.home() / ".config" / "oranglauncher" / "lwjgl"
+        self.store_dir = DATA_DIR / "lwjgl"
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self._index_cache = None
         self._meta_cache = {}
@@ -4568,7 +4724,7 @@ def get_theme_manager():
     return _theme_manager
 def load_saved_theme():
     try:
-        config_path = Path.home() / ".config" / "oranglauncher" / "launcher_config.json"
+        config_path = DATA_DIR / "launcher_config.json"
         if config_path.exists():
             with open(config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -4579,9 +4735,8 @@ def load_saved_theme():
     return 'Arc'
 def save_theme_preference(theme_name):
     try:
-        config_dir = Path.home() / ".config" / "oranglauncher"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "launcher_config.json"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = DATA_DIR / "launcher_config.json"
         data = {}
         if config_path.exists():
             try:
@@ -5355,7 +5510,8 @@ class SecureProfileWrapper:
         safe_data = {k: v for k, v in self._data.items() if k not in _SENSITIVE_FIELDS}
         return f"SecureProfile({safe_data})"
 def get_data_dir():
-    return Path.home() / ".minecraft"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR
 def profile_path():
     return get_data_dir() / PROFILE_FILENAME
 def load_profiles():
@@ -5499,9 +5655,8 @@ def ensure_mc_profile_valid(profile):
 
 
 def _get_setup_mark_path():
-    config_dir = Path.home() / ".config" / "oranglauncher"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "setup.mark"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR / "setup.mark"
 
 def is_setup_done():
     path = _get_setup_mark_path()
@@ -6614,7 +6769,7 @@ QT_THEME_OLED = "Dark Prism"
 
 def _qt_check_icon_path(color, kind="check"):
     try:
-        cache = Path.home() / ".cache" / "oranglauncher"
+        cache = CACHE_DIR
         cache.mkdir(parents=True, exist_ok=True)
         safe = color.strip("#")
         path = cache / f"{kind}_{safe}.png"
@@ -11234,7 +11389,7 @@ class QtSettingsPage(QtWidgets.QWidget):
         card.add(_ToggleRow(_tr(L, "SHOW_STATUS_BAR", "Show the status bar"), _qt_t("QT_STATUS_BAR_DESC", "Status text with the current instance and account."), L.show_status_bar, lambda: (_save_settings(L), L.update_bottom_visibility())))
         lay.addWidget(card)
         card = _Card(_tr(L, "SETTINGS_CARD_DEBUG", "Debug"))
-        card.add(_ToggleRow(_tr(L, "SETTINGS_DEBUG_ENABLE", "Debug mode"), _tr(L, "SETTINGS_DEBUG_DESC", "Writes launcher output to ~/.local/share/oranglauncher/logs."), L.debug_mode_enabled, lambda: _toggle_debug_mode(L)))
+        card.add(_ToggleRow(_tr(L, "SETTINGS_DEBUG_ENABLE", "Debug mode"), _tr(L, "SETTINGS_DEBUG_DESC", "Writes launcher output to ~/.local/share/OrangStudio/OrangLauncher/logs."), L.debug_mode_enabled, lambda: _toggle_debug_mode(L)))
         card.add(_qt_label(_qt_t("QT_DEBUG_CRASH_HINT", "Crashes are always written to crash_*.log in that folder, even with debug mode off."), "hint", wrap=True))
         hb = QtWidgets.QHBoxLayout()
         hb.addWidget(_qt_button(_qt_t("QT_DEBUG_OPEN_LOGS", "Open log folder"), lambda: open_path_native(_launcher_log_dir()), icon="folder", launcher=L))
@@ -11243,7 +11398,7 @@ class QtSettingsPage(QtWidgets.QWidget):
         card.add_layout(hb)
         lay.addWidget(card)
         card = _Card(_tr(L, "SETTINGS_CARD_PLUGINS", "Plugins"))
-        card.add(_qt_label(_tr(L, "SETTINGS_PLUGINS_DESC", "Python plugins from ~/.local/share/oranglauncher/plugins."), "muted", wrap=True))
+        card.add(_qt_label(_tr(L, "SETTINGS_PLUGINS_DESC", "Python plugins from ~/.local/share/OrangStudio/OrangLauncher/plugins."), "muted", wrap=True))
         self.plugin_list = QtWidgets.QListWidget()
         self.plugin_list.setMaximumHeight(120)
         card.add(self.plugin_list)
@@ -11251,7 +11406,7 @@ class QtSettingsPage(QtWidgets.QWidget):
         hb = QtWidgets.QHBoxLayout()
         hb.addWidget(_qt_button(_tr(L, "SETTINGS_PLUGIN_ADD", "Add plugin"), lambda: _add_plugin_file(L), icon="plus", launcher=L))
         hb.addWidget(_qt_button(_tr(L, "SETTINGS_PLUGIN_REFRESH", "Reload plugins"), lambda: (_refresh_plugins_runtime_qt(L), self._refresh_plugins()), icon="refresh", launcher=L))
-        hb.addWidget(_qt_button(_qt_t("QT_PLUGINS_FOLDER", "Open plugins folder"), lambda: open_path_native(Path.home() / ".local" / "share" / "oranglauncher" / "plugins"), icon="folder", launcher=L))
+        hb.addWidget(_qt_button(_qt_t("QT_PLUGINS_FOLDER", "Open plugins folder"), lambda: open_path_native(DATA_DIR / "plugins"), icon="folder", launcher=L))
         hb.addStretch(1)
         card.add_layout(hb)
         lay.addWidget(card)
@@ -12182,7 +12337,7 @@ class LauncherCore:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
     def _apply_sharing_for_instance(self, instance):
-        shared_dir = Path.home() / ".config" / "oranglauncher" / "shared"
+        shared_dir = DATA_DIR / "shared"
         shared_dir.mkdir(parents=True, exist_ok=True)
         for attr, shared_name, rel_path, is_file in self._SHARE_TARGETS:
             shared_target = shared_dir / shared_name
@@ -12463,7 +12618,7 @@ class LauncherCore:
             # add more if you encounter issues with loading of plugins
             #
             builtin_plugin_dir = Path(__file__).parent / "oranglauncher" / "plugin"
-            launcher_root = Path.home() / ".local" / "share" / "oranglauncher"
+            launcher_root = DATA_DIR
             user_plugin_dir = launcher_root / "plugins"
             self.loaded_plugins = []
             if builtin_plugin_dir.exists():
@@ -12682,6 +12837,8 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         QTimer.singleShot(1500, self._startup_sync_sharing)
         QTimer.singleShot(2000, self._check_connectivity)
         QTimer.singleShot(400, self._maybe_show_welcome)
+        if _MIGRATION_ERRORS:
+            QTimer.singleShot(700, lambda: messagebox.showwarning(_qt_t("QT_MIGRATION_TITLE", "Data move"), _qt_t("QT_MIGRATION_PARTIAL", "Some launcher data could not be moved to {path}. Nothing was deleted; these items are still in their old place:\n\n{items}").format(path=DATA_DIR, items="\n".join(_MIGRATION_ERRORS[:10]))))
         QTimer.singleShot(3000, self._delete_telemetry_if_enabled)
         QTimer.singleShot(5000, self._auto_check_updates)
         QTimer.singleShot(1200, _trim_memory)
@@ -12691,7 +12848,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         if not _adv_get("qt_theme_set", False):
             return default
         try:
-            config_path = Path.home() / ".config" / "oranglauncher" / "launcher_config.json"
+            config_path = DATA_DIR / "launcher_config.json"
             if config_path.exists():
                 data = json.loads(config_path.read_text(encoding="utf-8"))
                 name = data.get("theme")
@@ -13342,6 +13499,7 @@ def _reexec_as_module():
 # defenitly main.....
 def main():
     try:
+        _migrate_legacy_data()
         if "--terminal" in sys.argv:
             terminal_main()
             return

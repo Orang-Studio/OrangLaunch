@@ -424,7 +424,7 @@ SETTINGS_GPU_DRI_PRIME_DESC=Paleisti Minecraftą antrinėje vaizdo kortoje (nust
 
 # Settings Shared Files Translations
 SETTINGS_SHARED_FILES=Bendrintos bylos
-SETTINGS_SHARED_FILES_DESC=Susieti pasirinktus kelius visose profiliuose į vieną bendrą aplankalą (~/.config/oranglauncher/shared/).
+SETTINGS_SHARED_FILES_DESC=Susieti pasirinktus kelius visose profiliuose į vieną bendrą aplankalą (~/.local/share/OrangStudio/OrangLauncher/shared/).
 Spustelėkite „Taikyti visiems profiliams" po to, kai pakeitsite šiuos jungiklius.
 SETTINGS_SHARED_APPLY_ALL=Taikyti visiems profiliams
 SETTINGS_SHARED_UPDATED=Simbolinės nuorodos atnaujintos visiems profiliams
@@ -1074,3 +1074,5 @@ QT_XSTS_NO_XBOX=Ši Microsoft paskyra neturi Xbox profilio. Vieną kartą prisij
 QT_XSTS_REGION=Xbox Live jūsų šalyje ar regione nepasiekiama.
 QT_XSTS_ADULT=Šiai paskyrai reikia suaugusiojo patvirtinimo xbox.com (Pietų Korėja).
 QT_XSTS_CHILD=Tai vaiko paskyra. Pirmiausia pridėkite ją prie Microsoft šeimos grupės https://account.microsoft.com/family.
+QT_MIGRATION_TITLE=Duomenų perkėlimas
+QT_MIGRATION_PARTIAL=Dalies paleidiklio duomenų nepavyko perkelti į {path}. Niekas neištrinta; šie elementai liko senoje vietoje:\n\n{items}

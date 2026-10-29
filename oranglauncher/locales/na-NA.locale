@@ -616,3 +616,5 @@ QT_XSTS_NO_XBOX=This Microsoft account has no Xbox profile. Sign in once at http
 QT_XSTS_REGION=Xbox Live is not available in your country or region.
 QT_XSTS_ADULT=This account needs adult verification on xbox.com (South Korea).
 QT_XSTS_CHILD=This is a child account. Add it to a Microsoft family group at https://account.microsoft.com/family first.
+QT_MIGRATION_TITLE=Data move
+QT_MIGRATION_PARTIAL=Some launcher data could not be moved to {path}. Nothing was deleted; these items are still in their old place:\n\n{items}

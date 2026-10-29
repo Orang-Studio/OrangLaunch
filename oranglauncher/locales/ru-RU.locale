@@ -429,7 +429,7 @@ SETTINGS_GPU_DRI_PRIME_DESC=Запустить Minecraft на вторичной
 
 # Settings Shared Files Translations
 SETTINGS_SHARED_FILES=Общие файлы
-SETTINGS_SHARED_FILES_DESC=Создайте ссылки выбранных путей ко всем экземплярам в один общий папку (~/.config/oranglauncher/shared/).
+SETTINGS_SHARED_FILES_DESC=Создайте ссылки выбранных путей ко всем экземплярам в один общий папку (~/.local/share/OrangStudio/OrangLauncher/shared/).
 Нажмите 'Применить ко всем экземплярам' после изменения этих переключателей.
 SETTINGS_SHARED_APPLY_ALL=Применить ко всем экземплярам
 SETTINGS_SHARED_UPDATED=Ссылки обновлены для всех экземпляров.
@@ -1063,3 +1063,5 @@ QT_XSTS_NO_XBOX=У этого аккаунта Microsoft нет профиля X
 QT_XSTS_REGION=Xbox Live недоступен в вашей стране или регионе.
 QT_XSTS_ADULT=Этому аккаунту нужна проверка возраста на xbox.com (Южная Корея).
 QT_XSTS_CHILD=Это детский аккаунт. Сначала добавьте его в семейную группу Microsoft на https://account.microsoft.com/family.
+QT_MIGRATION_TITLE=Перенос данных
+QT_MIGRATION_PARTIAL=Часть данных лаунчера не удалось перенести в {path}. Ничего не удалено; эти элементы остались на старом месте:\n\n{items}

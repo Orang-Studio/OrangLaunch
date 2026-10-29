@@ -429,7 +429,7 @@ SETTINGS_GPU_DRI_PRIME_DESC=Uruchom Minecrafta na drugorzędnej karcie graficzne
 
 # Settings Shared Files Translations
 SETTINGS_SHARED_FILES=Pliki udostępniane
-SETTINGS_SHARED_FILES_DESC=Dowiąż wybrane ścieżki na wszystkich instancjach do pojedynczego folderu udostępnianego (~/.config/oranglauncher/shared/).
+SETTINGS_SHARED_FILES_DESC=Dowiąż wybrane ścieżki na wszystkich instancjach do pojedynczego folderu udostępnianego (~/.local/share/OrangStudio/OrangLauncher/shared/).
 Kliknij 'Zastosuj do wszystkich instancji' po zmianie tych przełączników.
 SETTINGS_SHARED_APPLY_ALL=Zastosuj do wszystkich instancji
 SETTINGS_SHARED_UPDATED=Dowiązania symboliczne zostały zaktualizowane dla wszystkich instancji.
@@ -1063,3 +1063,5 @@ QT_XSTS_NO_XBOX=To konto Microsoft nie ma profilu Xbox. Zaloguj się raz na http
 QT_XSTS_REGION=Xbox Live nie jest dostępny w twoim kraju lub regionie.
 QT_XSTS_ADULT=To konto wymaga weryfikacji wieku na xbox.com (Korea Południowa).
 QT_XSTS_CHILD=To konto dziecka. Najpierw dodaj je do grupy rodzinnej Microsoft na https://account.microsoft.com/family.
+QT_MIGRATION_TITLE=Przenoszenie danych
+QT_MIGRATION_PARTIAL=Części danych launchera nie udało się przenieść do {path}. Nic nie zostało usunięte; te elementy są nadal w starym miejscu:\n\n{items}
