@@ -154,6 +154,6 @@ The entire application supports changeable languages, including community‑driv
 Go to GitHub Wiki up in the GitHub website of this repo, and open Wiki. You will find all tutorials and examples about this launcher, and even build your own version!
 
 # Info
-- Launcher Version: 8.0.1
+- Launcher Version: 8.5
 - Platforms: Linux/GNU; Winslop; MacOS
 - Made by human with 🧡, fixed by AI ✨

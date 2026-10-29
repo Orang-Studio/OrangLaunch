@@ -126,6 +126,19 @@ def _NeoforgeCompat():
         _NEOFORGE_COMPAT[0] = _NeoforgeCompatImpl
     return _NEOFORGE_COMPAT[0]()
 
+
+def forge_loader_versions(mc_version):
+    versions = minecraft_launcher_lib.mod_loader.get_mod_loader("forge").get_loader_versions(mc_version, True)
+    return sorted(versions, key=lambda v: [int(n) for n in re.findall(r"\d+", v)], reverse=True)
+
+
+def install_forge(mc_version, minecraft_directory, loader_version, java, callback):
+    forge = minecraft_launcher_lib.mod_loader.get_mod_loader("forge")
+    lv = loader_version or ""
+    if lv.startswith(f"{mc_version}-"):
+        lv = lv[len(mc_version) + 1:]
+    return forge.install(mc_version, minecraft_directory, loader_version=lv or forge_loader_versions(mc_version)[0], callback=callback, java=java)
+
 def _qimage_rgba(source):
     img = QtGui.QImage()
     if isinstance(source, (bytes, bytearray)):
@@ -150,7 +163,7 @@ class _LazySession:
         session = object.__getattribute__(self, "_session")
         if session is None:
             session = requests.Session()
-            session.headers.update({"User-Agent": "Orang-Studio/OrangLaunch/7.0 (github.com/Orang-Studio/OrangLaunch)"})
+            session.headers.update({"User-Agent": f"Orang-Studio/OrangLaunch/{CURRENT_VERSION} (github.com/Orang-Studio/OrangLaunch)"})
             object.__setattr__(self, "_session", session)
         return session
     def __getattr__(self, name):
@@ -260,6 +273,8 @@ class MinecraftInstance:
             installed_version_id=data.get("installed_version_id"),
             loader_version=data.get("loader_version")
         )
+        if instance.mod_loader == "forge" and instance.loader_version.startswith(f"{instance.version}-"):
+            instance.loader_version = instance.loader_version[len(instance.version) + 1:]
         instance.created_date = data.get("created_date", instance.created_date)
         instance.last_played = data.get("last_played")
         instance.play_time = data.get("play_time", 0)
@@ -293,7 +308,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 # Change this to the current version
-CURRENT_VERSION = "8.0.2"
+CURRENT_VERSION = "8.5"
 # If you fork, at least leave some credit in the code, thanks.
 # I'm not getting paid for this. Please don't sell this or use it for profit. 
 # I worked hard on this and I want to keep it free for everyone.
@@ -385,7 +400,7 @@ def perform_update(download_url, launcher_root):
                     print(f"Failed to launch terminal {t}: {e}")
         
         if not opened:
-             messagebox.showinfo("Update", "Please run 'yay -S oranglauncher-bin' in your terminal to update.")
+             messagebox.showinfo(_qt_t("QT_UPDATE_TITLE", "Update"), _qt_t("QT_UPDATE_MANUAL", "Please run 'yay -S oranglauncher-bin' in your terminal to update."))
         return
 
     try:
@@ -439,7 +454,7 @@ def perform_update(download_url, launcher_root):
         subprocess.Popen(["/bin/bash", str(update_script)])
         sys.exit(0)
     except Exception as e:
-        messagebox.showerror("Update Failed", f"Failed to perform update:\\n{e}")
+        messagebox.showerror(_qt_t("QT_UPDATE_FAILED", "Update failed"), _qt_t("QT_UPDATE_FAILED_MSG", "Failed to perform update:\n{error}").format(error=e))
         try:
             if 'update_file' in locals() and update_file.exists():
                 update_file.unlink()
@@ -456,28 +471,28 @@ def _install_java_pm_or_download(major: int, status_fn, done_fn):
         # check pacman
         if shutil.which("pacman"):
             pkg = f"jre{major}-openjdk" if major >= 11 else f"jre8-openjdk"
-            status_fn(f"Trying pacman -S {pkg}…")
+            status_fn(_qt_t("QT_JAVA_TRY_PM", "Trying {command}…").format(command=f"pacman -S {pkg}"))
             r = subprocess.run(["pkexec", "pacman", "-S", "--noconfirm", "--needed", pkg],
                                capture_output=True, text=True)
             if r.returncode == 0:
-                done_fn(True, f"Installed via pacman ({pkg})")
+                done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="pacman", pkg=pkg))
                 return
         # check apt, ubuntu ui is not good but i may release the linux version for ubuntu.
         if shutil.which("apt-get"):
             pkg = "default-jre" if major == 8 else f"openjdk-{major}-jre"
-            status_fn(f"Trying apt-get install {pkg}…")
+            status_fn(_qt_t("QT_JAVA_TRY_PM", "Trying {command}…").format(command=f"apt-get install {pkg}"))
             r = subprocess.run(["pkexec", "apt-get", "install", "-y", pkg],
                                capture_output=True, text=True)
             if r.returncode == 0:
-                done_fn(True, f"Installed via apt ({pkg})")
+                done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="apt", pkg=pkg))
                 return
         # Adoptium download, i didn't find better provider
-        status_fn(f"Downloading Java {major} from Adoptium…")
+        status_fn(_qt_t("QT_JAVA_DOWNLOADING_FROM", "Downloading Java {major} from Adoptium…").format(major=major))
         path = download_java_runtime(major, progress_callback=lambda p, m: status_fn(m))
         if path:
-            done_fn(True, f"Downloaded to {path}")
+            done_fn(True, _qt_t("QT_JAVA_DOWNLOADED_TO", "Downloaded to {path}").format(path=path))
         else:
-            done_fn(False, f"Failed - check your internet connection")
+            done_fn(False, _qt_t("QT_JAVA_DL_FAILED", "Failed - check your internet connection"))
     threading.Thread(target=work, daemon=True).start()
 
 
@@ -507,6 +522,21 @@ def _mc_request(method, url, acc, **kw):
 def _set_active_cape(acc, cape_id):
     url = mc_profile_url + "/capes/active"
     r = _mc_request("PUT", url, acc, json={"capeId": cape_id}) if cape_id else _mc_request("DELETE", url, acc)
+    if r is None:
+        raise Exception("Not signed in")
+    if not r.ok:
+        raise Exception(f"HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+def _upload_skin(acc, path, slim):
+    data = Path(path).read_bytes()
+    img = QtGui.QImage.fromData(data, "PNG")
+    if img.isNull() or img.width() != 64 or img.height() not in (32, 64):
+        raise ValueError(_qt_t("QT_SKIN_BAD_FILE", "A skin must be a 64x64 or 64x32 PNG image."))
+    r = _mc_request("POST", mc_profile_url + "/skins", acc,
+                    data={"variant": "slim" if slim else "classic"},
+                    files={"file": (Path(path).name, data, "image/png")})
     if r is None:
         raise Exception("Not signed in")
     if not r.ok:
@@ -713,15 +743,8 @@ _SKIN_PREVIEW_H = 280
 # the pre logic was bad.
 def _add_plugin_file(launcher):
     plugin_dir = Path.home() / ".local" / "share" / "oranglauncher" / "plugins"
-    info_text = (
-        "Native Plugin Installation:\n\n"
-        "1. Create the plugins directory (if it doesn't exist):\n"
-        f"   {plugin_dir}\n\n"
-        "2. Place your .py plugin files in that directory\n\n"
-        "3. Restart the launcher to load new plugins\n\n"
-        "Plugins are automatically discovered and loaded on startup."
-    )
-    messagebox.showinfo("Add Plugin", info_text)
+    info_text = _qt_t("QT_ADD_PLUGIN_MSG", "Native Plugin Installation:\n\n1. Create the plugins directory (if it doesn't exist):\n   {path}\n\n2. Place your .py plugin files in that directory\n\n3. Restart the launcher to load new plugins\n\nPlugins are automatically discovered and loaded on startup.").format(path=plugin_dir)
+    messagebox.showinfo(_qt_t("QT_ADD_PLUGIN", "Add plugin"), info_text)
 
 
 # the toggle
@@ -1081,15 +1104,15 @@ class ModrinthPackImporter:
             print(f"[MRPACK] Starting import of {mrpack_path}")
             mrpack_file = Path(mrpack_path)
             if not mrpack_file.exists():
-                return False, f"File not found: {mrpack_path}", None
+                return False, _qt_t("QT_ERR_FILE_NOT_FOUND", "File not found: {path}").format(path=mrpack_path), None
             if not mrpack_file.is_file():
-                return False, f"Path is not a file: {mrpack_path}", None
+                return False, _qt_t("QT_ERR_NOT_A_FILE", "Path is not a file: {path}").format(path=mrpack_path), None
             file_size = mrpack_file.stat().st_size
             print(f"[MRPACK] File size: {file_size} bytes")
             if file_size == 0:
-                return False, "The mrpack file is empty (0 bytes)", None
+                return False, _qt_t("QT_ERR_MRPACK_EMPTY", "The mrpack file is empty (0 bytes)"), None
             if not zipfile.is_zipfile(mrpack_path):
-                return False, f"The selected file is not a valid .mrpack (zip) file.\\n\\nFile: {mrpack_file.name}\\nSize: {file_size} bytes\\n\\nMake sure the file downloaded completely.", None
+                return False, _qt_t("QT_ERR_MRPACK_INVALID", "The selected file is not a valid .mrpack (zip) file.\n\nFile: {name}\nSize: {size} bytes\n\nMake sure the file downloaded completely.").format(name=mrpack_file.name, size=file_size), None
             print(f"[MRPACK] Verified as valid zip file")
             temp_dir = Path(tempfile.mkdtemp())
             print(f"[MRPACK] Created temp directory: {temp_dir}")
@@ -1125,7 +1148,7 @@ class ModrinthPackImporter:
                     loader_version=loader_version
                 )
                 if not instance:
-                    return False, "Failed to create instance", None
+                    return False, _qt_t("QT_ERR_CREATE_INSTANCE", "Failed to create instance"), None
                 print(f"[MRPACK] Instance created: {instance.instance_id}")
                 self.instance_mgr.set_selected_instance(instance.instance_id)
                 print(f"[MRPACK] Instance selected")
@@ -1146,7 +1169,7 @@ class ModrinthPackImporter:
                         loader_version=loader_version
                     )
                     if not instance:
-                        return False, "Failed to create instance", None
+                        return False, _qt_t("QT_ERR_CREATE_INSTANCE", "Failed to create instance"), None
                     print(f"[MRPACK] Instance created with suffix: {instance.instance_id}")
                     self.instance_mgr.set_selected_instance(instance.instance_id)
                     self._download_mods_to_instance(pack_data, instance)
@@ -1155,7 +1178,7 @@ class ModrinthPackImporter:
                     self._save_pack_metadata(temp_dir, pack_data, instance, mrpack_file)
                     self._apply_orangpack_settings(temp_dir, pack_data, instance)
                 except Exception as inner_e:
-                    return False, f"Failed to create instance: {str(inner_e)}", None
+                    return False, _qt_t("QT_ERR_CREATE_INSTANCE", "Failed to create instance") + f": {inner_e}", None
             shutil.rmtree(temp_dir)
             if self.launcher is not None and hasattr(self.launcher, '_apply_sharing_for_instance'):
                 try:
@@ -1166,13 +1189,13 @@ class ModrinthPackImporter:
             failed = getattr(self, '_failed_files', []) or []
             note = ""
             if failed:
-                note = f"\n\n{len(failed)} file(s) could not be downloaded:\n" + "\n".join(failed[:8])
+                note = "\n\n" + _qt_t("QT_FILES_NOT_DOWNLOADED", "{n} file(s) could not be downloaded").format(n=len(failed)) + ":\n" + "\n".join(failed[:8])
                 if len(failed) > 8:
-                    note += f"\n... and {len(failed) - 8} more"
-            return True, f"Successfully imported {pack_name} (Minecraft {game_version}, {mod_loader}){note}", instance.name
+                    note += "\n" + _qt_t("QT_AND_N_MORE", "... and {n} more").format(n=len(failed) - 8)
+            return True, _qt_t("QT_IMPORT_SUCCESS", "Successfully imported {name} (Minecraft {version}, {loader})").format(name=pack_name, version=game_version, loader=mod_loader) + note, instance.name
         except Exception as e:
             traceback.print_exc()
-            return False, f"Error importing modpack: {str(e)}", None
+            return False, _qt_t("QT_ERR_IMPORT_MODPACK", "Error importing modpack: {error}").format(error=e), None
     def _apply_orangpack_settings(self, temp_dir, pack_data, instance):
         extra = pack_data.get("orangpack") if isinstance(pack_data, dict) else None
         if not isinstance(extra, dict):
@@ -1208,7 +1231,7 @@ class ModrinthPackImporter:
     def apply_pack_to_instance(self, pack_path, instance):
         pack_path = Path(pack_path)
         if not pack_path.exists() or not zipfile.is_zipfile(pack_path):
-            return False, "Pack file is missing or not a zip."
+            return False, _qt_t("QT_ERR_PACK_NOT_ZIP", "Pack file is missing or not a zip.")
         temp_dir = Path(tempfile.mkdtemp())
         try:
             with zipfile.ZipFile(pack_path, 'r') as zip_ref:
@@ -1236,11 +1259,11 @@ class ModrinthPackImporter:
             self.instance_mgr.save_instances()
             self.instance_mgr._notify_callbacks()
             failed = getattr(self, '_failed_files', []) or []
-            note = f"\n\n{len(failed)} file(s) could not be downloaded." if failed else ""
-            return True, f"Applied {pack_data.get('name', pack_path.name)} {pack_data.get('version_id', '')} to '{instance.name}'.{note}"
+            note = ("\n\n" + _qt_t("QT_FILES_NOT_DOWNLOADED", "{n} file(s) could not be downloaded").format(n=len(failed)) + ".") if failed else ""
+            return True, _qt_t("QT_PACK_APPLIED", "Applied {name} {version} to '{instance}'.").format(name=pack_data.get('name', pack_path.name), version=pack_data.get('version_id', ''), instance=instance.name) + note
         except Exception as e:
             traceback.print_exc()
-            return False, f"Error applying modpack: {e}"
+            return False, _qt_t("QT_ERR_APPLY_MODPACK", "Error applying modpack: {error}").format(error=e)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -1552,9 +1575,9 @@ class CurseForgePackImporter:
     def import_zip(self, zip_path):
         zip_path = Path(zip_path)
         if not zip_path.exists():
-            return False, f"File not found: {zip_path}", None
+            return False, _qt_t("QT_ERR_FILE_NOT_FOUND", "File not found: {path}").format(path=zip_path), None
         if not zipfile.is_zipfile(zip_path):
-            return False, "Not a valid zip file.", None
+            return False, _qt_t("QT_ERR_NOT_ZIP", "Not a valid zip file."), None
 
         temp_dir = Path(tempfile.mkdtemp())
         try:
@@ -1645,25 +1668,23 @@ class CurseForgePackImporter:
             self.instance_mgr.save_instances()
 
             summary_parts = [
-                f"Created instance: {pack_name}",
+                _qt_t("QT_CF_CREATED", "Created instance: {name}").format(name=pack_name),
                 f"Minecraft {mc_version} + {loader_name}" + (f" {loader_version}" if loader_version else ""),
-                f"Override files copied: {copied}",
-                f"Mods downloaded: {downloaded}/{len(required_mods)}",
+                _qt_t("QT_CF_OVERRIDES", "Override files copied: {n}").format(n=copied),
+                _qt_t("QT_CF_MODS", "Mods downloaded: {done}/{total}").format(done=downloaded, total=len(required_mods)),
             ]
             if failed_ids:
                 summary_parts.append(
-                    f"\n{len(failed_ids)} mod(s) need manual download (no API key or download failed).\n"
-                    f"Set CURSEFORGE_API_KEY env var, or download mods manually from CurseForge\n"
-                    f"and place them in: {instance.mods_dir}"
+                    "\n" + _qt_t("QT_CF_MANUAL", "{n} mod(s) need manual download (no API key or download failed).\nSet CURSEFORGE_API_KEY env var, or download mods manually from CurseForge\nand place them in: {path}").format(n=len(failed_ids), path=instance.mods_dir)
                 )
             if optional_mods:
-                summary_parts.append(f"Optional mods not included: {len(optional_mods)}")
+                summary_parts.append(_qt_t("QT_CF_OPTIONAL", "Optional mods not included: {n}").format(n=len(optional_mods)))
 
             return True, "\n".join(summary_parts), pack_name
 
         except Exception as e:
             self._log(f"[CurseForge] Import error: {e}\n{traceback.format_exc()}")
-            return False, f"Import failed: {e}", None
+            return False, _qt_t("QT_IMPORT_FAILED", "Import failed") + f": {e}", None
         finally:
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1959,7 +1980,7 @@ class ModrinthUpdater:
                 if hits:
                     break
             if not hits:
-                return False, "No project found"
+                return False, _qt_t("QT_UPD_NO_PROJECT", "No project found")
 
         slug = None
         versions = None
@@ -2008,19 +2029,19 @@ class ModrinthUpdater:
                 if best:
                     break
         if not best:
-            return False, "No compatible version found"
+            return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
         try:
             if not self._version_is_compatible(best, game_version):
                 self._log(f"[Modrinth] Selected version {best.get('version_number')} is not compatible with requested game version {game_version}; skipping")
-                return False, "No compatible version found"
+                return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
         except Exception:
             pass
         if not best:
             self._log(f"[Modrinth] No compatible version found for {name} (requested {game_version})")
-            return False, "No compatible version found"
+            return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
         files = best.get('files', [])
         if not files:
-            return False, "No downloadable files"
+            return False, _qt_t("QT_UPD_NO_FILES", "No downloadable files")
         chosen = None
         for f in files:
             fname = f.get('filename', '').lower()
@@ -2036,7 +2057,7 @@ class ModrinthUpdater:
             pass
         download_url = chosen.get('url')
         if not download_url:
-            return False, "No file url"
+            return False, _qt_t("QT_UPD_NO_URL", "No file url")
         rq_nums = self._parse_numeric_ver(game_version) if game_version else None
         chosen_version_text = str(best.get('version_number') or chosen.get('filename') or '')
         chosen_nv = self._parse_numeric_ver(chosen_version_text)
@@ -2053,7 +2074,7 @@ class ModrinthUpdater:
             if local_nv and chosen_nv and chosen_nv < local_nv:
                 if not force:
                     self._log(f"[Modrinth] Remote version {chosen.get('filename') or best.get('version_number')} appears older than local {local_jar.name}; skipping to avoid downgrade")
-                    return False, "Remote version older than local (skipped)"
+                    return False, _qt_t("QT_UPD_OLDER", "Remote version older than local (skipped)")
                 else:
                     self._log(f"[Modrinth] Force update requested; overriding downgrade protection for {local_jar.name}")
         except Exception:
@@ -2063,7 +2084,7 @@ class ModrinthUpdater:
         ok = self._download_url_to_path(download_url, tmpfile)
         if not ok or not tmpfile.exists():
             shutil.rmtree(tmpdir, ignore_errors=True)
-            return False, "Download failed"
+            return False, _qt_t("QT_UPD_DL_FAILED", "Download failed")
         try:
             local_hash = self.file_hash_sha1(local_jar)
             new_hash = self.file_hash_sha1(tmpfile)
@@ -2071,7 +2092,7 @@ class ModrinthUpdater:
             if local_hash == new_hash:
                 shutil.rmtree(tmpdir, ignore_errors=True)
                 self._log(f"[Modrinth] Skipping update for {local_jar.name}: already identical to remote file")
-                return False, "Already up to date"
+                return False, _qt_t("QT_UPD_UP_TO_DATE", "Already up to date")
             bak = local_jar.with_suffix(local_jar.suffix + '.bak')
             try:
                 shutil.move(str(local_jar), str(bak))
@@ -2085,7 +2106,7 @@ class ModrinthUpdater:
                         shutil.move(str(bak), str(local_jar))
                 except Exception:
                     pass
-                return False, f"Failed to replace file: {e}"
+                return False, _qt_t("QT_UPD_REPLACE_FAILED", "Failed to replace file: {error}").format(error=e)
             try:
                 if bak.exists():
                     bak.unlink()
@@ -2096,7 +2117,7 @@ class ModrinthUpdater:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-        return False, 'update aborted'
+        return False, _qt_t("QT_UPD_ABORTED", "Update aborted")
 
     def check_mod(self, local_jar: Path, loader: str, game_version: str, aggressive: bool = False) -> Optional[Dict]:
         name = local_jar.name
@@ -2177,7 +2198,7 @@ class ModrinthUpdater:
         known = _modrinth_lookup_hashes(hashes)
         loaders = [loader.lower()] if loader and loader.lower() not in ('vanilla', 'none') else []
         if progress:
-            progress(total, total, "Checking for updates on Modrinth...")
+            progress(total, total, _qt_t("QT_CHECKING_MODRINTH", "Checking for updates on Modrinth..."))
         updates = _modrinth_update_hashes(list(known.keys()), loaders, [game_version]) if known else {}
         project_ids = sorted({v.get('project_id') for v in updates.values() if v.get('project_id')})
         projects = {}
@@ -2194,14 +2215,14 @@ class ModrinthUpdater:
         for sha1, f in by_hash.items():
             current = known.get(sha1)
             if not current:
-                results[f.name] = 'No project found'
+                results[f.name] = _qt_t("QT_UPD_NO_PROJECT", "No project found")
                 continue
             latest = updates.get(sha1)
             if not latest:
-                results[f.name] = 'No compatible version found'
+                results[f.name] = _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
                 continue
             if latest.get('id') == current.get('id') or (latest.get('version_number') and latest.get('version_number') == current.get('version_number')):
-                results[f.name] = 'Already up to date'
+                results[f.name] = _qt_t("QT_UPD_UP_TO_DATE", "Already up to date")
                 continue
             chosen = None
             for vf in latest.get('files', []):
@@ -2211,7 +2232,7 @@ class ModrinthUpdater:
             if not chosen and latest.get('files'):
                 chosen = latest['files'][0]
             if not chosen:
-                results[f.name] = 'No downloadable files'
+                results[f.name] = _qt_t("QT_UPD_NO_FILES", "No downloadable files")
                 continue
             proj = projects.get(latest.get('project_id'), {})
             info = {
@@ -2232,7 +2253,7 @@ class ModrinthUpdater:
                 new_date = latest.get('date_published') or ''
                 if cur_date and new_date and new_date < cur_date:
                     downgrades[f.name] = info
-                    results[f.name] = 'Remote version older than local (skipped)'
+                    results[f.name] = _qt_t("QT_UPD_OLDER", "Remote version older than local (skipped)")
                     continue
             except Exception:
                 pass
@@ -2245,19 +2266,19 @@ class ModrinthUpdater:
         local = Path(info['jar'])
         url = info.get('chosen_url')
         if not url:
-            return False, "No file url"
+            return False, _qt_t("QT_UPD_NO_URL", "No file url")
         filename = info.get('chosen_filename') or local.name
         target = local.parent / filename
         tmpdir = Path(tempfile.mkdtemp(prefix='mr_updater_'))
         tmpfile = tmpdir / filename
         try:
             if not self._download_url_to_path(url, tmpfile) or not tmpfile.exists():
-                return False, "Download failed"
+                return False, _qt_t("QT_UPD_DL_FAILED", "Download failed")
             want = info.get('chosen_sha1')
             if want and self.file_hash_sha1(tmpfile) != want:
-                return False, "Downloaded file hash mismatch"
+                return False, _qt_t("QT_UPD_HASH", "Downloaded file hash mismatch")
             if local.exists() and self.file_hash_sha1(local) == self.file_hash_sha1(tmpfile):
-                return False, "Already up to date"
+                return False, _qt_t("QT_UPD_UP_TO_DATE", "Already up to date")
             disabled = local.suffix.lower() == '.disabled'
             if disabled:
                 target = target.with_name(target.name + '.disabled')
@@ -2271,7 +2292,7 @@ class ModrinthUpdater:
             except Exception as e:
                 if bak.exists():
                     shutil.move(str(bak), str(local))
-                return False, f"Failed to replace file: {e}"
+                return False, _qt_t("QT_UPD_REPLACE_FAILED", "Failed to replace file: {error}").format(error=e)
             try:
                 if bak.exists():
                     bak.unlink()
@@ -2546,15 +2567,16 @@ class MojangVersionManager:
             return
         if callback:
             self.fetch_callbacks.append(callback)
+        self.is_fetching = True
         def fetch_worker():
             success, error = self._fetch_versions_sync()
-            for cb in self.fetch_callbacks:
+            callbacks, self.fetch_callbacks = self.fetch_callbacks, []
+            self.is_fetching = False
+            for cb in callbacks:
                 try:
                     cb(success, error)
                 except Exception as e:
                     print(f"Error in fetch callback: {e}")
-            self.fetch_callbacks.clear()
-            self.is_fetching = False
         thread = threading.Thread(target=fetch_worker, daemon=True)
         thread.start()
     def _fetch_versions_sync(self):
@@ -2563,17 +2585,9 @@ class MojangVersionManager:
             response = _http_session.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', timeout=10)
             response.raise_for_status()
             data = response.json()
-            versions_data = data.get('versions', [])
-            self.versions = []
-            for v_data in versions_data:
-                if _is_modded_version_id(v_data.get('id', '')):
-                    continue
-                self.versions.append(MinecraftVersion(
-                    version_id=v_data['id'],
-                    version_type=v_data['type'],
-                    release_time=v_data['releaseTime'],
-                    url=v_data.get('url')
-                ))
+            self.versions = [MinecraftVersion(version_id=v_data['id'], version_type=v_data['type'],
+                                              release_time=v_data['releaseTime'], url=v_data.get('url'))
+                             for v_data in data.get('versions', []) if not _is_modded_version_id(v_data.get('id', ''))]
             self.last_updated = datetime.now()
             self.save_cache()
             return True, None
@@ -3056,7 +3070,7 @@ def download_java_runtime(java_major: int, progress_callback=None) -> Optional[s
     )
     try:
         if progress_callback:
-            progress_callback(0, f"Fetching Java {java_major} download info...")
+            progress_callback(0, _qt_t("QT_JAVA_FETCH_INFO", "Fetching Java {major} download info...").format(major=java_major))
         resp = _http_session.get(api_url, timeout=15)
         resp.raise_for_status()
         releases = resp.json()
@@ -3071,7 +3085,7 @@ def download_java_runtime(java_major: int, progress_callback=None) -> Optional[s
         JAVA_RUNTIMES_DIR.mkdir(parents=True, exist_ok=True)
         dest_archive = JAVA_RUNTIMES_DIR / filename
         if progress_callback:
-            progress_callback(5, f"Downloading Java {java_major} JRE...")
+            progress_callback(5, _qt_t("QT_JAVA_DOWNLOADING", "Downloading Java {major} JRE...").format(major=java_major))
         with _http_session.get(download_url, stream=True, timeout=120) as r:
             r.raise_for_status()
             total = int(r.headers.get("content-length", 0))
@@ -3083,9 +3097,9 @@ def download_java_runtime(java_major: int, progress_callback=None) -> Optional[s
                         downloaded += len(chunk)
                         if total and progress_callback:
                             pct = 5 + int((downloaded / total) * 80)
-                            progress_callback(pct, f"Downloading Java {java_major}... {pct}%")
+                            progress_callback(pct, _qt_t("QT_JAVA_DOWNLOADING_PCT", "Downloading Java {major}... {percent}%").format(major=java_major, percent=pct))
         if progress_callback:
-            progress_callback(85, f"Extracting Java {java_major}...")
+            progress_callback(85, _qt_t("QT_JAVA_EXTRACTING", "Extracting Java {major}...").format(major=java_major))
         extract_dir = JAVA_RUNTIMES_DIR / f"java-{java_major}_extract"
         if extract_dir.exists():
             shutil.rmtree(extract_dir)
@@ -3110,7 +3124,7 @@ def download_java_runtime(java_major: int, progress_callback=None) -> Optional[s
         if java_bin.exists():
             java_bin.chmod(java_bin.stat().st_mode | 0o111)
             if progress_callback:
-                progress_callback(100, f"Java {java_major} installed.")
+                progress_callback(100, _qt_t("QT_JAVA_INSTALLED", "Java {major} installed.").format(major=java_major))
             return str(java_bin)
     except Exception as e:
         print(f"[Java] Failed to download Java {java_major}: {e}")
@@ -3218,10 +3232,10 @@ def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
         filename = files[0]
     log(f"[OptiFine] Selected {filename}")
     if progress_fn:
-        progress_fn(0, f"Installing Minecraft {mc_version}...")
+        progress_fn(0, _qt_t("QT_INSTALLING_MC", "Installing Minecraft {version}...").format(version=mc_version))
     minecraft_launcher_lib.install.install_minecraft_version(mc_version, minecraft_directory)
     if progress_fn:
-        progress_fn(50, "Downloading OptiFine...")
+        progress_fn(50, _qt_t("QT_OPTIFINE_DOWNLOADING", "Downloading OptiFine..."))
     tmp_jar = Path(tempfile.gettempdir()) / filename
     download_optifine(filename, str(tmp_jar), log_fn=log)
     base_home = str(Path(minecraft_directory).parent)
@@ -3230,7 +3244,7 @@ def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
         lp.parent.mkdir(parents=True, exist_ok=True)
         lp.write_text(json.dumps({"profiles": {}, "settings": {}, "version": 3}), encoding="utf-8")
     if progress_fn:
-        progress_fn(80, "Installing OptiFine...")
+        progress_fn(80, _qt_t("QT_OPTIFINE_INSTALLING", "Installing OptiFine..."))
     log(f"[OptiFine] Running installer (home={base_home})")
     proc = subprocess.run(
         [java_exe, f"-Duser.home={base_home}", "-cp", str(tmp_jar), "optifine.Installer"],
@@ -3248,7 +3262,7 @@ def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
     if not vjson.exists():
         raise RuntimeError(f"OptiFine version {version_id} was not created")
     if progress_fn:
-        progress_fn(100, "OptiFine installed")
+        progress_fn(100, _qt_t("QT_OPTIFINE_INSTALLED", "OptiFine installed"))
     log(f"[OptiFine] Installed {version_id}")
     return version_id
 
@@ -5414,16 +5428,10 @@ def _ms_token_flow_browser():
         open_with_browser(oauth_url)
     except Exception as e:
         raise Exception(f"Could not open browser for login: {e}")
-    prompt = (
-        "The embedded browser is unavailable, so your web browser was opened instead.\n"
-        "1. Sign in with your Microsoft account in the browser.\n"
-        "2. When you land on a blank page, copy its full address IMMEDIATELY -\n"
-        "    the code is removed from the address a moment after the page loads.\n"
-        "3. Paste that address (or just the code=... value) below."
-    )
-    pasted = _qt_askstring("Sign in with your browser", prompt)
+    prompt = _qt_t("QT_MS_BROWSER_PROMPT", "The embedded browser is unavailable, so your web browser was opened instead.\n1. Sign in with your Microsoft account in the browser.\n2. When you land on a blank page, copy its full address IMMEDIATELY -\n    the code is removed from the address a moment after the page loads.\n3. Paste that address (or just the code=... value) below.")
+    pasted = _qt_askstring(_qt_t("QT_MS_BROWSER_TITLE", "Sign in with your browser"), prompt)
     if not pasted:
-        raise Exception("Login cancelled or failed")
+        raise Exception(_qt_t("QT_MS_LOGIN_FAILED", "Login cancelled or failed"))
     auth_code = _extract_code_from_redirect(pasted)
     if not auth_code:
         raise Exception("Could not extract the authorization code from the pasted text")
@@ -5524,26 +5532,6 @@ def _wizard_detect_javas():
         if p:
             found.append((major, p))
     return found
-
-def _wizard_loader_versions(loader, mc_version):
-    loader = (loader or "").lower()
-    if loader in ("", "vanilla") or not mc_version:
-        return []
-    try:
-        if loader == "forge" and hasattr(minecraft_launcher_lib, "forge"):
-            fv = minecraft_launcher_lib.forge.list_forge_versions()
-            return [v for v in reversed(fv) if v.startswith(f"{mc_version}-")]
-        if loader == "neoforge":
-            nf = _NeoforgeCompat()
-            return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
-        if loader == "fabric" and hasattr(minecraft_launcher_lib, "fabric"):
-            return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
-        if loader == "quilt" and hasattr(minecraft_launcher_lib, "quilt"):
-            return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
-    except Exception as e:
-        print(f"[setup] loader versions fetch failed: {e}")
-    return []
-
 
 # main app
 
@@ -6002,7 +5990,7 @@ def _qt_filter_string(filetypes):
         if isinstance(patterns, (list, tuple)):
             patterns = " ".join(patterns)
         parts.append(f"{label} ({patterns})")
-    return ";;".join(parts) if parts else "All files (*)"
+    return ";;".join(parts) if parts else _qt_t("QT_FT_ALL", "All files") + " (*)"
 
 
 class _QtFileDialog:
@@ -6192,11 +6180,11 @@ def _ms_device_code_poll(device_code):
 
 
 _XSTS_ERRORS = {
-    "2148916233": "This Microsoft account has no Xbox profile. Sign in once at https://www.xbox.com to create one, then try again.",
-    "2148916235": "Xbox Live is not available in your country or region.",
-    "2148916236": "This account needs adult verification on xbox.com (South Korea).",
-    "2148916237": "This account needs adult verification on xbox.com (South Korea).",
-    "2148916238": "This is a child account. Add it to a Microsoft family group at https://account.microsoft.com/family first.",
+    "2148916233": ("QT_XSTS_NO_XBOX", "This Microsoft account has no Xbox profile. Sign in once at https://www.xbox.com to create one, then try again."),
+    "2148916235": ("QT_XSTS_REGION", "Xbox Live is not available in your country or region."),
+    "2148916236": ("QT_XSTS_ADULT", "This account needs adult verification on xbox.com (South Korea)."),
+    "2148916237": ("QT_XSTS_ADULT", "This account needs adult verification on xbox.com (South Korea)."),
+    "2148916238": ("QT_XSTS_CHILD", "This is a child account. Add it to a Microsoft family group at https://account.microsoft.com/family first."),
 }
 
 
@@ -6225,7 +6213,7 @@ def _ms_complete_with_tokens(tokens):
             xerr = str(r.json().get("XErr", ""))
         except Exception:
             xerr = ""
-        raise Exception(_XSTS_ERRORS.get(xerr) or ("Failed to get XSTS token: " + r.text))
+        raise Exception(_qt_t(*_XSTS_ERRORS[xerr]) if xerr in _XSTS_ERRORS else ("Failed to get XSTS token: " + r.text))
     xsts_userhash = r.json()["DisplayClaims"]["xui"][0]["uhs"]
     xsts_token = r.json()["Token"]
     _ms_log("got XSTS token, logging into Minecraft services")
@@ -6834,8 +6822,9 @@ class QtTheme:
         QCheckBox::indicator:checked, QTreeView::indicator:checked, QListView::indicator:checked {{ background: {c('accent_primary')}; border-color: {c('accent_primary')}; image: url({check}); }}
         QCheckBox::indicator:indeterminate, QTreeView::indicator:indeterminate {{ background: {c('bg_hover')}; border-color: {c('accent_primary')}; }}
         QRadioButton::indicator:checked {{ background: {c('accent_primary')}; border-color: {c('accent_primary')}; image: url({dot}); }}
-        QSlider::groove:horizontal {{ height: 6px; background: {c('progress_track')}; border-radius: 3px; }}
-        QSlider::handle:horizontal {{ background: {c('accent_primary')}; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }}
+        QSlider:horizontal {{ min-height: 22px; }}
+        QSlider::groove:horizontal {{ height: 6px; margin: 0 1px; background: {c('progress_track')}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {c('accent_primary')}; width: 18px; height: 18px; margin: -6px -1px; border-radius: 9px; }}
         QSlider::sub-page:horizontal {{ background: {c('accent_primary')}; border-radius: 3px; }}
         QSplitter::handle {{ background: {c('border')}; }}
         QMenu {{ background: {c('bg_secondary')}; color: {c('fg_primary')}; border: 1px solid {c('border')}; }}
@@ -6876,8 +6865,9 @@ class QtTheme:
         QRadioButton::indicator:checked {{ background: {focus}; border-color: {focus}; image: url({dot}); }}
         QProgressBar {{ background: {c('progress_track')}; border: none; border-radius: 3px; text-align: center; color: transparent; }}
         QProgressBar::chunk {{ background: {focus}; border-radius: 3px; }}
-        QSlider::groove:horizontal {{ height: 6px; background: {c('progress_track')}; border-radius: 3px; }}
-        QSlider::handle:horizontal {{ background: {c('button_bg')}; border: 1px solid {focus}; width: 16px; height: 16px; margin: -6px 0; border-radius: 9px; }}
+        QSlider:horizontal {{ min-height: 22px; }}
+        QSlider::groove:horizontal {{ height: 6px; margin: 0 1px; background: {c('progress_track')}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {c('button_bg')}; border: 2px solid {focus}; width: 14px; height: 14px; margin: -6px -1px; border-radius: 9px; }}
         QSlider::sub-page:horizontal {{ background: {focus}; border-radius: 3px; }}
         QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; border: none; }}
         QScrollBar::handle:vertical {{ background: {c('scrollbar_thumb')}; min-height: 24px; border-radius: 4px; margin: 1px; }}
@@ -7314,7 +7304,7 @@ class QtNewsPage(QtWidgets.QWidget):
         def fail(err):
             self.status.setVisible(True)
             self.status.setText(_tr(self.launcher, "FAILED_LOAD_NEWS", "Could not load news.") + f" ({err})")
-            self.browser.setHtml(f"<h2>Minecraft News</h2><p>Could not load {NEWS_URL}</p><p>{err}</p>")
+            self.browser.setHtml(f"<h2>{_tr(self.launcher, 'UPDATE_NOTES', 'News')}</h2><p>{_tr(self.launcher, 'FAILED_LOAD_NEWS', 'Could not load news.')}</p><p>{NEWS_URL}</p><p>{err}</p>")
         _qt_run_bg(work, done, fail)
 
 
@@ -7475,6 +7465,186 @@ class QtLogPage(QtWidgets.QWidget):
         _qt_run_bg(work, done, fail)
 
 
+class QtMcVersionCombo(QtWidgets.QComboBox):
+    TYPE_FILTERS = (("snapshot", "QT_SHOW_SNAPSHOTS", "Snapshots"), ("old_beta", "QT_SHOW_BETAS", "Betas"), ("old_alpha", "QT_SHOW_ALPHAS", "Alphas"))
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.types = {"release"}
+        self.setMaxVisibleItems(14)
+        self.setMinimumContentsLength(12)
+        self.fill()
+
+    def filter_row(self):
+        box = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(box)
+        row.setContentsMargins(0, 0, 0, 0)
+        for vtype, key, default in self.TYPE_FILTERS:
+            cb = QtWidgets.QCheckBox(_qt_t(key, default))
+            cb.toggled.connect(lambda on, t=vtype: self._toggle_type(t, on))
+            row.addWidget(cb)
+        row.addStretch(1)
+        return box
+
+    def _toggle_type(self, vtype, on):
+        if on:
+            self.types.add(vtype)
+        else:
+            self.types.discard(vtype)
+        self.fill()
+
+    def fill(self, keep=None):
+        before = self.currentText()
+        keep = keep or before
+        try:
+            ids = [v.id for v in get_available_versions_detailed() if v.type in self.types]
+        except Exception:
+            ids = []
+        if keep and keep not in ids:
+            ids.insert(0, keep)
+        self.blockSignals(True)
+        if ids != [self.itemText(i) for i in range(self.count())]:
+            self.clear()
+            self.addItems(ids)
+        idx = self.findText(keep) if keep else -1
+        self.setCurrentIndex(idx if idx >= 0 else 0)
+        self.blockSignals(False)
+        if self.currentText() != before:
+            self.currentTextChanged.emit(self.currentText())
+
+    def select(self, version):
+        self.fill(version)
+
+    def showPopup(self):
+        super().showPopup()
+        refresh_versions(lambda ok, err: ok and _qt_later(self.fill))
+
+
+_ITEM_TEXTURES = []
+
+
+def _item_texture_sources():
+    if _ITEM_TEXTURES:
+        return _ITEM_TEXTURES
+    roots = [Path.home() / ".minecraft"] + [i.minecraft_dir for i in get_instance_manager().instances.values()]
+    jars = [j for root in roots for j in glob.glob(str(root / "versions" / "*" / "*.jar"))]
+    jars.sort(key=os.path.getmtime, reverse=True)
+    for jar in jars:
+        try:
+            with zipfile.ZipFile(jar) as zf:
+                names = [n for n in zf.namelist() if n.startswith("assets/minecraft/textures/item/") and n.endswith(".png")
+                         and not any(bad in n for bad in ("empty_", "_overlay", "barrier", "structure_void", "debug"))]
+        except Exception:
+            continue
+        if names:
+            _ITEM_TEXTURES.extend((jar, n) for n in names)
+            break
+    return _ITEM_TEXTURES
+
+
+def _random_item_sprite(rng):
+    sources = _item_texture_sources()
+    for _ in range(12 if sources else 0):
+        jar, name = rng.choice(sources)
+        try:
+            with zipfile.ZipFile(jar) as zf:
+                img = _qimage_rgba(zf.read(name))
+        except Exception:
+            continue
+        if img.width() == img.height():
+            return img
+    return None
+
+
+def _identicon_sprite(rng, color):
+    img = QtGui.QImage(8, 8, QtGui.QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    for y in range(8):
+        for x in range(4):
+            if rng.random() < 0.5:
+                img.setPixelColor(x, y, color)
+                img.setPixelColor(7 - x, y, color)
+    return img
+
+
+def _generate_instance_icon(rng=None):
+    rng = rng or random.Random()
+    size = 128
+    hue = rng.random()
+    img = QtGui.QImage(size, size, QtGui.QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    sprite = _random_item_sprite(rng) or _identicon_sprite(rng, QtGui.QColor.fromHsvF(hue, 0.15, 1.0))
+    shadow = sprite.convertToFormat(QtGui.QImage.Format_ARGB32)
+    
+    sp = QtGui.QPainter(shadow)
+    sp.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+    sp.fillRect(shadow.rect(), QtGui.QColor(0, 0, 0, 90))
+    sp.end()
+    p = QtGui.QPainter(img)
+    p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+    grad = QtGui.QLinearGradient(0, 0, size, size)
+    grad.setColorAt(0, QtGui.QColor.fromHsvF(hue, rng.uniform(0.35, 0.6), 0.95))
+    grad.setColorAt(1, QtGui.QColor.fromHsvF((hue + rng.uniform(0.06, 0.22)) % 1.0, rng.uniform(0.6, 0.85), 0.5))
+    bg = QtGui.QPainterPath()
+    bg.addRoundedRect(0, 0, size, size, 26, 26)
+    p.fillPath(bg, grad)
+    p.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, False)
+    p.drawImage(QRect(20, 22, 92, 92), shadow)
+    p.drawImage(QRect(16, 16, 96, 96), sprite)
+    p.end()
+    return img
+
+
+def _generated_icon_file():
+    path = Path(tempfile.gettempdir()) / f"oranglauncher-icon-{uuid_module.uuid4().hex}.png"
+    _generate_instance_icon().save(str(path), "PNG")
+    return str(path)
+
+
+def _set_instance_icon(inst, path):
+    dest = inst.base_path / "icon.png"
+    if Path(path).resolve() != dest.resolve():
+        _qimage_thumbnail(path, 128).save(str(dest), "PNG")
+    (inst.base_path / "icon.txt").write_text(str(dest), encoding="utf-8")
+
+
+def _qt_fill_java_combo(combo, current=""):
+    combo.blockSignals(True)
+    combo.clear()
+    combo.addItem(_qt_t("QT_JAVA_AUTO", "Automatic (recommended)"), QtInstanceEditor.JAVA_AUTO)
+    seen = set()
+    for major in (8, 11, 17, 21, 25):
+        jp = find_java_executable(major)
+        if jp and jp not in seen:
+            seen.add(jp)
+            combo.addItem(f"Java {major}  -  {jp}", jp)
+    combo.addItem(_qt_t("QT_JAVA_BROWSE", "Choose a java executable..."), QtInstanceEditor.JAVA_BROWSE)
+    if current:
+        _qt_select_java(combo, current)
+    else:
+        combo.setCurrentIndex(0)
+    combo.blockSignals(False)
+
+
+def _qt_select_java(combo, path):
+    idx = combo.findData(path)
+    if idx < 0:
+        combo.insertItem(combo.count() - 1, f"{_qt_t('QT_JAVA_CUSTOM', 'Custom')}  -  {path}", path)
+        idx = combo.findData(path)
+    combo.setCurrentIndex(idx)
+
+
+def _qt_java_combo_activated(combo):
+    if combo.currentData() != QtInstanceEditor.JAVA_BROWSE:
+        return
+    path = _pick_open_file(title=_qt_t("QT_SELECT_JAVA", "Select the java executable"))
+    if path:
+        _qt_select_java(combo, path)
+    else:
+        combo.setCurrentIndex(0)
+
+
 def _instance_icon_pixmap(launcher, instance, size=64):
     icon_file = instance.base_path / "icon.txt"
     path = None
@@ -7567,33 +7737,46 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.launcher = launcher
         self.setWindowTitle(_tr(launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"))
-        self.resize(460, 360)
+        self.resize(620, 560)
         self.result_instance = None
         lay = QtWidgets.QVBoxLayout(self)
         lay.setSpacing(10)
-        form = QtWidgets.QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        top = QtWidgets.QHBoxLayout()
+        top.setSpacing(14)
+        self.icon = QtWidgets.QLabel()
+        self.icon.setFixedSize(80, 80)
+        self.icon.setScaledContents(True)
+        top.addWidget(self.icon)
+        icol = QtWidgets.QVBoxLayout()
         self.name = QtWidgets.QLineEdit()
-        base = "My Instance"
+        base = _qt_t("QT_DEFAULT_INSTANCE_NAME", "My Instance")
         candidate = base
         i = 1
         while launcher.instance_manager.get_instance_by_name(candidate):
             i += 1
             candidate = f"{base} {i}"
         self.name.setText(candidate)
-        form.addRow(_tr(launcher, "GAME_PROFILES_NAME", _qt_t("QT_NAME", "Name")), self.name)
+        icol.addWidget(_qt_label(_tr(launcher, "GAME_PROFILES_NAME", _qt_t("QT_NAME", "Name"))))
+        icol.addWidget(self.name)
+        ibtns = QtWidgets.QHBoxLayout()
+        ibtns.addWidget(_qt_button(_qt_t("QT_GENERATE_ICON", "Generate"), self._generate_icon, icon="refresh", launcher=launcher))
+        ibtns.addWidget(_qt_button(_qt_t("QT_BROWSE_IMAGE", "Browse image"), self._browse_icon, icon="folder", launcher=launcher))
+        ibtns.addWidget(_qt_button(_qt_t("QT_ICON_LOADER_DEFAULT", "Loader default"), self._clear_icon))
+        ibtns.addStretch(1)
+        icol.addLayout(ibtns)
+        top.addLayout(icol, 1)
+        lay.addLayout(top)
+        card = _Card(_qt_t("QT_GAME", "Game"))
+        form = QtWidgets.QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        self.version = QtMcVersionCombo()
+        form.addRow(_tr(launcher, "GAME_PROFILES_VERSION", "Minecraft version"), self.version)
+        form.addRow("", self.version.filter_row())
         self.loader = QtWidgets.QComboBox()
         self.loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"])
         form.addRow(_tr(launcher, "GAME_PROFILES_LOADER", _qt_t("QT_MOD_LOADER", "Mod loader")), self.loader)
-        self.version = QtWidgets.QComboBox()
-        self.version.setMaxVisibleItems(14)
-        self.version.setMinimumContentsLength(12)
-        vrow = QtWidgets.QHBoxLayout()
-        vrow.addWidget(self.version, 1)
-        self.snapshots = QtWidgets.QCheckBox(_qt_t("QT_SHOW_SNAPSHOTS", "Snapshots"))
-        vrow.addWidget(self.snapshots)
-        form.addRow(_tr(launcher, "GAME_PROFILES_VERSION", "Minecraft version"), vrow)
         self.loader_version = QtWidgets.QComboBox()
+        self.loader_version.setMaxVisibleItems(14)
         self.loader_version.setEnabled(False)
         form.addRow(_tr(launcher, "GAME_PROFILES_LOADER_VERSION", _qt_t("QT_LOADER_VERSION", "Loader version")), self.loader_version)
         self.ram = QtWidgets.QSpinBox()
@@ -7601,7 +7784,35 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         self.ram.setValue(min(4, self.ram.maximum()))
         self.ram.setSuffix(" GB")
         form.addRow(_tr(launcher, "GAME_PROFILES_RAM", _qt_t("QT_MEMORY", "Memory")), self.ram)
-        lay.addLayout(form)
+        card.add_layout(form)
+        lay.addWidget(card)
+        self.adv_toggle = QtWidgets.QCheckBox(_qt_t("QT_SHOW_ADVANCED", "Show advanced options"))
+        lay.addWidget(self.adv_toggle)
+        self.adv = _Card(_qt_t("QT_ADVANCED", "Advanced"))
+        aform = QtWidgets.QFormLayout()
+        aform.setLabelAlignment(Qt.AlignRight)
+        self.java = QtWidgets.QComboBox()
+        _qt_fill_java_combo(self.java)
+        self.java.activated.connect(lambda *_: _qt_java_combo_activated(self.java))
+        aform.addRow(_qt_t("QT_JAVA_RUNTIME", "Java runtime"), self.java)
+        self.jvm_args = QtWidgets.QLineEdit()
+        self.jvm_args.setPlaceholderText("-XX:+UseG1GC")
+        aform.addRow(_qt_t("QT_JVM_ARGS", "Extra JVM arguments"), self.jvm_args)
+        res = QtWidgets.QHBoxLayout()
+        self.res_w = QtWidgets.QSpinBox()
+        self.res_h = QtWidgets.QSpinBox()
+        for spin in (self.res_w, self.res_h):
+            spin.setRange(0, 7680)
+            spin.setSpecialValueText(_qt_t("QT_DEFAULT", "Default"))
+        res.addWidget(self.res_w)
+        res.addWidget(_qt_label("×"))
+        res.addWidget(self.res_h)
+        res.addStretch(1)
+        aform.addRow(_qt_t("QT_WINDOW_SIZE", "Window size"), res)
+        self.adv.add_layout(aform)
+        self.adv.setVisible(False)
+        self.adv_toggle.toggled.connect(self.adv.setVisible)
+        lay.addWidget(self.adv)
         self.status = _qt_label("", "hint", wrap=True)
         lay.addWidget(self.status)
         lay.addStretch(1)
@@ -7611,30 +7822,32 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         btns.addWidget(_qt_button(_tr(launcher, "GAME_PROFILES_CREATE_BTN", "Create"), self.submit, kind="accent"))
         lay.addLayout(btns)
         self._token = 0
-        self._fill_versions()
-        self.loader.currentTextChanged.connect(lambda *_: self.refresh_loader_versions())
+        self.icon_path = ""
+        self.loader.currentTextChanged.connect(lambda *_: (self.refresh_loader_versions(), self._preview_icon()))
         self.version.currentTextChanged.connect(lambda *_: self.refresh_loader_versions())
-        self.snapshots.toggled.connect(lambda *_: self._fill_versions())
+        self._generate_icon()
 
-    def _fill_versions(self):
-        current = self.version.currentText()
-        try:
-            detailed = list(get_available_versions_detailed())
-        except Exception:
-            detailed = []
-        if detailed:
-            allowed = None if self.snapshots.isChecked() else ("release",)
-            ids = [v.id for v in detailed if allowed is None or v.type in allowed]
-        else:
-            ids = self.launcher.version_values()
-        self.version.blockSignals(True)
-        self.version.clear()
-        self.version.addItems(ids)
-        idx = self.version.findText(current) if current else -1
-        self.version.setCurrentIndex(idx if idx >= 0 else 0)
-        self.version.blockSignals(False)
-        if self.version.currentText() != current:
-            self.refresh_loader_versions()
+    def _generate_icon(self):
+        self.icon_path = _generated_icon_file()
+        self._preview_icon()
+
+    def _browse_icon(self):
+        path = _pick_open_file(title=_qt_t("QT_SELECT_ICON", "Select icon image"), filetypes=[(_qt_t("QT_FT_IMAGES", "Images"), "*.png *.jpg *.jpeg *.webp *.gif"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if path:
+            self.icon_path = path
+            self._preview_icon()
+
+    def _clear_icon(self):
+        self.icon_path = ""
+        self._preview_icon()
+
+    def _preview_icon(self):
+        path = self.icon_path
+        if not path:
+            loader = self.loader.currentText().lower()
+            res = find_resource("oranglauncher/images/minecraft-green.png" if loader == "vanilla" else f"oranglauncher/images/loaders/{loader}.png")
+            path = str(res) if res else ""
+        self.icon.setPixmap((_qt_pixmap_from_path(path, (80, 80)) if path else None) or QtGui.QPixmap())
 
     def refresh_loader_versions(self):
         loader = self.loader.currentText().lower()
@@ -7662,7 +7875,11 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
             else:
                 self.loader_version.addItem(_tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version"))
                 self.status.setText(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=mc))
-        _qt_run_bg(work, done, lambda e: None)
+        def fail(e):
+            if token == self._token:
+                self.loader_version.clear()
+                self.status.setText(_qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e))
+        _qt_run_bg(work, done, fail)
 
     def submit(self):
         name = self.name.text().strip()
@@ -7682,13 +7899,22 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
             lv = None
         try:
             inst = self.launcher.instance_manager.create_instance(name, version, loader, ram=f"{self.ram.value()}G", loader_version=lv)
-        except ValueError as e:
-            messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"), str(e), parent=self)
-            return
         except Exception as e:
             messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"), str(e), parent=self)
             return
         if inst is not None:
+            java = self.java.currentData()
+            inst.java_path = "" if java in (None, "", QtInstanceEditor.JAVA_AUTO, QtInstanceEditor.JAVA_BROWSE) else str(java)
+            inst.set_opt("jvm_args", self.jvm_args.text().strip())
+            if self.res_w.value() and self.res_h.value():
+                inst.set_opt("res_width", self.res_w.value())
+                inst.set_opt("res_height", self.res_h.value())
+            if self.icon_path and Path(self.icon_path).exists():
+                try:
+                    _set_instance_icon(inst, self.icon_path)
+                except Exception as e:
+                    print(f"[Icon] {e}")
+            self.launcher.instance_manager.save_instances()
             try:
                 self.launcher._apply_sharing_for_instance(inst)
             except Exception as e:
@@ -7738,7 +7964,7 @@ class QtInstancesPage(QtWidgets.QWidget):
         bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_DUPLICATE", "Duplicate"), self.duplicate_selected, icon="dublicate", launcher=L))
         bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_DELETE", _qt_t("QT_DELETE", "Delete")), self.delete_selected, icon="trash", launcher=L))
         bar.addWidget(_qt_button(_qt_t("QT_IMPORT", "Import"), self.import_instance, icon="file", launcher=L))
-        bar.addWidget(_qt_button(_tr(L, "MODS_IMPORT_MRPACK_BTN", "Import .mrpack"), self.import_mrpack, icon="mrpack", launcher=L))
+        bar.addWidget(_qt_button(_qt_t("QT_IMPORT_PACK", "Import pack"), self.import_mrpack, icon="mrpack", launcher=L))
         bar.addWidget(_qt_button(_tr(L, "GAME_PROFILES_EDIT", _qt_t("QT_EDIT", "Edit")), self.edit_selected, icon="settings", launcher=L))
         bar.addWidget(_qt_button(_tr(L, "RES_SH_OPEN_FOLDER", "Open folder"), self.open_selected_folder, icon="folder", launcher=L))
         bar.addStretch(1)
@@ -7931,6 +8157,9 @@ class QtInstancesPage(QtWidgets.QWidget):
                 return
         except Exception:
             pass
+        self._import_instance_zip(path)
+
+    def _import_instance_zip(self, path):
         self.launcher.set_status(_qt_t("QT_IMPORTING_INSTANCE", "Importing instance..."))
         def work():
             new_id = str(uuid_module.uuid4())
@@ -7965,9 +8194,37 @@ class QtInstancesPage(QtWidgets.QWidget):
             messagebox.showinfo(_qt_t("QT_IMPORT", "Import"), _qt_t("QT_IMPORTED_AS", "Imported: {name}").format(name=instance.name))
         _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), str(e))))
     def import_mrpack(self):
-        path = _pick_open_file(title=_tr(self.launcher, "MODS_IMPORT_TITLE", "Import modpack"), filetypes=[(_qt_t("QT_FT_MODPACKS", "Modpacks"), "*.mrpack *.orangpack"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        L = self.launcher
+        kinds = (
+            ("mrpack", "mrpack", _qt_t("QT_IMPORT_KIND_MRPACK", "Modrinth modpack"), _qt_t("QT_IMPORT_KIND_MRPACK_DESC", "A .mrpack file downloaded from Modrinth or exported by another launcher."), "*.mrpack", L._do_import_mrpack_path),
+            ("orangpack", "mrpack", _qt_t("QT_IMPORT_KIND_ORANGPACK", "OrangLauncher pack"), _qt_t("QT_IMPORT_KIND_ORANGPACK_DESC", "A .orangpack exported from OrangLauncher, with its settings."), "*.orangpack", L._do_import_mrpack_path),
+            ("curseforge", "modding", _qt_t("QT_IMPORT_KIND_CURSEFORGE", "CurseForge modpack"), _qt_t("QT_IMPORT_KIND_CURSEFORGE_DESC", "A CurseForge .zip with a manifest.json inside."), "*.zip", L._do_import_curseforge_path),
+            ("instance", "instances", _qt_t("QT_IMPORT_KIND_INSTANCE", "OrangLauncher instance"), _qt_t("QT_IMPORT_KIND_INSTANCE_DESC", "A full instance .zip exported from OrangLauncher."), "*.zip", self._import_instance_zip),
+        )
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(_tr(L, "MODS_IMPORT_TITLE", "Import modpack"))
+        dlg.setMinimumWidth(460)
+        lay = QtWidgets.QVBoxLayout(dlg)
+        lay.setSpacing(10)
+        lay.addWidget(_qt_label(_qt_t("QT_IMPORT_KIND_QUESTION", "What do you want to import?"), "h3"))
+        chosen = {}
+        for key, icon, title, desc, pattern, handler in kinds:
+            row = QtWidgets.QHBoxLayout()
+            btn = _qt_button(title, lambda k=key: (chosen.update(kind=k), dlg.accept()), icon=icon, launcher=L)
+            btn.setMinimumWidth(210)
+            row.addWidget(btn)
+            row.addWidget(_qt_label(desc, "muted", wrap=True), 1)
+            lay.addLayout(row)
+        cancel = QtWidgets.QHBoxLayout()
+        cancel.addStretch(1)
+        cancel.addWidget(_qt_button(_tr(L, "CANCEL", "Cancel"), dlg.reject))
+        lay.addLayout(cancel)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        key, icon, title, desc, pattern, handler = next(k for k in kinds if k[0] == chosen.get("kind"))
+        path = _pick_open_file(title=title, filetypes=[(title, pattern), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
         if path:
-            self.launcher._do_import_mrpack_path(path)
+            handler(path)
 _MOD_META_CACHE = {}
 
 def _toml_loads_lenient(text):
@@ -9031,6 +9288,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.cust_icon_choice.activated.connect(lambda *_: self._on_icon_choice())
         line.addWidget(self.cust_icon_choice)
         line.addWidget(_qt_button(_qt_t("QT_BROWSE_IMAGE", "Browse image"), self._browse_icon, icon="folder", launcher=self.launcher))
+        line.addWidget(_qt_button(_qt_t("QT_GENERATE_ICON", "Generate"), self._generate_icon, icon="refresh", launcher=self.launcher))
         line.addStretch(1)
         col.addWidget(_qt_label(_qt_t("QT_ICON", "Icon")))
         col.addLayout(line)
@@ -9076,6 +9334,11 @@ class QtInstanceEditor(QtWidgets.QWidget):
             self.cust_icon_choice.setCurrentText(self.ICON_CUSTOM)
             self._preview_icon()
 
+    def _generate_icon(self):
+        self.cust_icon_path = _generated_icon_file()
+        self.cust_icon_choice.setCurrentText(self.ICON_CUSTOM)
+        self._preview_icon()
+
     def _preview_icon(self):
         path = self.cust_icon_path
         pix = _qt_pixmap_from_path(path, (64, 64)) if path and Path(path).exists() else None
@@ -9113,11 +9376,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         path = self.cust_icon_path.strip()
         if path and Path(path).exists():
             try:
-                img = _qimage_thumbnail(path, 128)
-                dest = inst.base_path / "icon.png"
-                if Path(path).resolve() != dest.resolve():
-                    img.save(str(dest), "PNG")
-                icon_file.write_text(str(dest), encoding="utf-8")
+                _set_instance_icon(inst, path)
             except Exception as e:
                 messagebox.showerror(_qt_t("QT_ICON", "Icon"), _qt_t("QT_ICON_FAIL", "Could not use that image: {error}").format(error=e))
         elif icon_file.exists():
@@ -9834,13 +10093,13 @@ class QtInstanceEditor(QtWidgets.QWidget):
         card = _Card(_qt_t("QT_COMPONENTS", "Components"))
         form = QtWidgets.QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
-        self.vr_mc = QtWidgets.QComboBox()
-        self.vr_mc.setEditable(True)
-        self.vr_mc.setMaxVisibleItems(14)
+        self.vr_mc = QtMcVersionCombo()
         self.vr_mc.setMaximumWidth(360)
-        self.vr_mc.addItems(self.launcher.version_values())
         self.vr_mc.currentTextChanged.connect(lambda *_: self._vr_loader_versions())
-        form.addRow(_qt_t("QT_MINECRAFT", "Minecraft"), self.vr_mc)
+        mc_col = QtWidgets.QVBoxLayout()
+        mc_col.addWidget(self.vr_mc)
+        mc_col.addWidget(self.vr_mc.filter_row())
+        form.addRow(_qt_t("QT_MINECRAFT", "Minecraft"), mc_col)
         self.vr_loader = QtWidgets.QComboBox()
         self.vr_loader.setMaximumWidth(360)
         self.vr_loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"])
@@ -9909,37 +10168,10 @@ class QtInstanceEditor(QtWidgets.QWidget):
         return _qt_scroll(page)
 
     def _vr_java_activated(self):
-        if self.vr_java.currentData() != self.JAVA_BROWSE:
-            return
-        path = _pick_open_file(title=_qt_t("QT_SELECT_JAVA", "Select the java executable"))
-        if path:
-            self._vr_set_java(path)
-        else:
-            self.vr_java.setCurrentIndex(0)
-
-    def _vr_set_java(self, path):
-        idx = self.vr_java.findData(path)
-        if idx < 0:
-            self.vr_java.insertItem(self.vr_java.count() - 1, f"{_qt_t('QT_JAVA_CUSTOM', 'Custom')}  -  {path}", path)
-            idx = self.vr_java.findData(path)
-        self.vr_java.setCurrentIndex(idx)
+        _qt_java_combo_activated(self.vr_java)
 
     def _vr_fill_java(self, current):
-        self.vr_java.blockSignals(True)
-        self.vr_java.clear()
-        self.vr_java.addItem(_qt_t("QT_JAVA_AUTO", "Automatic (recommended)"), self.JAVA_AUTO)
-        seen = set()
-        for major in (8, 11, 17, 21, 25):
-            jp = find_java_executable(major)
-            if jp and jp not in seen:
-                seen.add(jp)
-                self.vr_java.addItem(f"Java {major}  -  {jp}", jp)
-        self.vr_java.addItem(_qt_t("QT_JAVA_BROWSE", "Choose a java executable..."), self.JAVA_BROWSE)
-        if current:
-            self._vr_set_java(current)
-        else:
-            self.vr_java.setCurrentIndex(0)
-        self.vr_java.blockSignals(False)
+        _qt_fill_java_combo(self.vr_java, current)
 
     def _vr_lwjgl_mode_changed(self):
         pick = self.vr_lwjgl_mode.currentData() == "pick"
@@ -9970,7 +10202,11 @@ class QtInstanceEditor(QtWidgets.QWidget):
                 self.vr_loader_ver.setCurrentText(current if current in versions else versions[0])
             else:
                 self.vr_loader_ver.addItem(_tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version"))
-        _qt_run_bg(lambda: self.launcher.fetch_loader_versions(loader, mc), done, lambda e: None)
+        def fail(e):
+            if token == self._vr_token:
+                self.vr_loader_ver.clear()
+                messagebox.showerror(_qt_t("QT_LOADER_VERSION", "Loader version"), _qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e))
+        _qt_run_bg(lambda: self.launcher.fetch_loader_versions(loader, mc), done, fail)
 
     def _vr_fill_lwjgl(self, mode):
         mode = mode or LWJGL_MODE_AUTO
@@ -10008,7 +10244,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         inst = self.instance
         self._vr_loading = True
         try:
-            self.vr_mc.setCurrentText(inst.version)
+            self.vr_mc.select(inst.version)
             self.vr_loader.setCurrentText((inst.mod_loader or "vanilla").lower())
             self._vr_fill_java(inst.java_path or "")
             self._vr_fill_lwjgl(inst.opt("lwjgl_mode", "") or LWJGL_MODE_AUTO)
@@ -10844,6 +11080,9 @@ class QtSettingsPage(QtWidgets.QWidget):
         self.cape_combo.hide()
         self.cape_combo.activated.connect(self._on_cape_pick)
         pv.addWidget(self.cape_combo)
+        self.skin_upload_btn = _qt_button(_qt_t("QT_UPLOAD_SKIN", "Upload skin..."), self._upload_skin, icon="user", launcher=L, tooltip=_qt_t("QT_UPLOAD_SKIN_TIP", "Change this account's skin with a 64x64 PNG"))
+        self.skin_upload_btn.hide()
+        pv.addWidget(self.skin_upload_btn)
         pv.addStretch(1)
         row.addLayout(pv)
         card.add_layout(row)
@@ -10883,6 +11122,8 @@ class QtSettingsPage(QtWidgets.QWidget):
         self.skin_caption.setText(acc.get("username", ""))
 
         self.cape_combo.hide()
+        self.skin_upload_btn.setVisible(acc.get("type") == "microsoft")
+        self._skin_slim = False
 
         def work():
             skin, slim, cape, capes = _fetch_skin_texture(acc)
@@ -10895,9 +11136,40 @@ class QtSettingsPage(QtWidgets.QWidget):
 
         def done(result):
             skin, slim, cape, capes = result
+            self._skin_slim = slim
             self.skin.set_skin(skin, slim, cape)
             self._fill_capes(capes)
         _qt_run_bg(work, done, lambda e: self.skin.set_skin(None, False, None))
+
+    def _upload_skin(self):
+        row = self.acc_list.currentRow()
+        if row < 0 or row >= len(self._accounts):
+            return
+        acc = self._accounts[row]
+        path = _pick_open_file(title=_qt_t("QT_SELECT_SKIN", "Select skin PNG"), filetypes=[(_qt_t("QT_FT_SKIN", "Skin images"), "*.png"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        if not path:
+            return
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle(_qt_t("QT_UPLOAD_SKIN", "Upload skin..."))
+        box.setText(_qt_t("QT_SKIN_MODEL_Q", "Which arm model does this skin use?"))
+        classic = box.addButton(_qt_t("QT_SKIN_CLASSIC", "Classic (wide arms)"), QtWidgets.QMessageBox.AcceptRole)
+        slim = box.addButton(_qt_t("QT_SKIN_SLIM", "Slim (thin arms)"), QtWidgets.QMessageBox.AcceptRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(slim if self._skin_slim else classic)
+        box.exec()
+        if box.clickedButton() not in (classic, slim):
+            return
+        is_slim = box.clickedButton() is slim
+        self.skin_upload_btn.setEnabled(False)
+
+        def done(_):
+            self.skin_upload_btn.setEnabled(True)
+            self._on_account_row(row)
+
+        def fail(e):
+            self.skin_upload_btn.setEnabled(True)
+            messagebox.showerror(_qt_t("QT_UPLOAD_SKIN", "Upload skin..."), _qt_t("QT_SKIN_FAIL", "Could not change skin: {error}").format(error=e))
+        _qt_run_bg(lambda: _upload_skin(acc, path, is_slim), done, fail)
 
     def _fill_capes(self, capes):
         cb = self.cape_combo
@@ -11313,7 +11585,7 @@ class QtWelcomeWizard(QtWidgets.QDialog):
         self._heading(self._t("WIZARD_PROFILE_TITLE", "First instance"), self._t("WIZARD_PROFILE_DESC", "Pick a Minecraft version and, optionally, a mod loader."))
         form = QtWidgets.QFormLayout()
         self.p_name = QtWidgets.QLineEdit()
-        base = "My Profile"
+        base = _qt_t("QT_DEFAULT_INSTANCE_NAME", "My Instance")
         name = base
         i = 1
         while self.launcher.instance_manager.get_instance_by_name(name):
@@ -11324,11 +11596,9 @@ class QtWelcomeWizard(QtWidgets.QDialog):
         self.p_loader = QtWidgets.QComboBox()
         self.p_loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt"])
         form.addRow(_qt_t("QT_LOADER", "Loader"), self.p_loader)
-        self.p_version = QtWidgets.QComboBox()
-        self.p_version.setEditable(True)
-        self.p_version.setMaxVisibleItems(14)
-        self.p_version.addItems(self.launcher.version_values())
+        self.p_version = QtMcVersionCombo()
         form.addRow(_qt_t("QT_VERSION", "Version"), self.p_version)
+        form.addRow("", self.p_version.filter_row())
         self.p_loader_version = QtWidgets.QComboBox()
         self.p_loader_version.setEnabled(False)
         form.addRow(_qt_t("QT_LOADER_VERSION", "Loader version"), self.p_loader_version)
@@ -11368,7 +11638,13 @@ class QtWelcomeWizard(QtWidgets.QDialog):
                 self.p_loader_version.addItems(versions or ["Latest"])
             except RuntimeError:
                 pass
-        _qt_run_bg(lambda: _wizard_loader_versions(loader, mc), done, lambda e: None)
+        def fail(e):
+            try:
+                self.p_loader_version.clear()
+                messagebox.showerror(_qt_t("QT_LOADER_VERSION", "Loader version"), _qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e), parent=self)
+            except RuntimeError:
+                pass
+        _qt_run_bg(lambda: self.launcher.fetch_loader_versions(loader, mc), done, fail)
 
     def _skip_profile(self):
         self.profile_created = True
@@ -11597,33 +11873,22 @@ class LauncherCore:
                 if needs_loader_install:
                     if mod_loader.lower() == "forge":
                         stored_lv = getattr(current_instance, 'loader_version', '') or ''
-                        forge_version = f"{version}-{stored_lv}" if stored_lv else minecraft_launcher_lib.forge.find_forge_version(version)
-                        if forge_version:
-                            self._safe_append_log(f"[Launcher] Installing Forge {forge_version}...")
-                            _forg_max = [1]
-                            def _forg_set_max(m): _forg_max[0] = max(m, 1)
-                            def _forg_progress(c): self._submit_progress_update(min(int((c/_forg_max[0])*100),100), f"Installing Forge... {min(int((c/_forg_max[0])*100),100)}%")
-                            minecraft_launcher_lib.forge.install_forge_version(
-                                forge_version,
-                                minecraft_directory,
-                                callback={"setStatus": lambda x: self._safe_append_log(f"[Forge] {x}"), "setProgress": _forg_progress, "setMax": _forg_set_max}
-                            )
-                            parts = forge_version.split('-', 1)
-                            if len(parts) == 2:
-                                mc_ver, loader_ver = parts
-                                version = f"{mc_ver}-forge-{loader_ver}"
-                            else:
-                                version = forge_version
-                            current_instance.installed_version_id = version
-                            self.instance_manager.save_instances()
-                            loader_installed = True
+                        self._safe_append_log(f"[Launcher] Installing Forge {stored_lv or 'latest'} for {version}...")
+                        _forg_max = [1]
+                        def _forg_set_max(m): _forg_max[0] = max(m, 1)
+                        def _forg_progress(c): self._submit_progress_update(min(int((c/_forg_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Forge", percent=min(int((c/_forg_max[0])*100),100)))
+                        version = install_forge(version, minecraft_directory, stored_lv, java_exe,
+                                                {"setStatus": lambda x: self._safe_append_log(f"[Forge] {x}"), "setProgress": _forg_progress, "setMax": _forg_set_max})
+                        current_instance.installed_version_id = version
+                        self.instance_manager.save_instances()
+                        loader_installed = True
                     elif mod_loader.lower() == "fabric":
                         fabric_version = getattr(current_instance, 'loader_version', '') or minecraft_launcher_lib.fabric.get_latest_loader_version()
                         if fabric_version:
                             self._safe_append_log(f"[Launcher] Installing Fabric {fabric_version}...")
                             _fab_max = [1]
                             def _fab_set_max(m): _fab_max[0] = max(m, 1)
-                            def _fab_progress(c): self._submit_progress_update(min(int((c/_fab_max[0])*100),100), f"Installing Fabric... {min(int((c/_fab_max[0])*100),100)}%")
+                            def _fab_progress(c): self._submit_progress_update(min(int((c/_fab_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Fabric", percent=min(int((c/_fab_max[0])*100),100)))
                             minecraft_launcher_lib.fabric.install_fabric(
                                 version,
                                 minecraft_directory,
@@ -11639,7 +11904,7 @@ class LauncherCore:
                         try:
                             _qlt_max = [1]
                             def _qlt_set_max(m): _qlt_max[0] = max(m, 1)
-                            def _qlt_progress(c): self._submit_progress_update(min(int((c/_qlt_max[0])*100),100), f"Installing Quilt... {min(int((c/_qlt_max[0])*100),100)}%")
+                            def _qlt_progress(c): self._submit_progress_update(min(int((c/_qlt_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Quilt", percent=min(int((c/_qlt_max[0])*100),100)))
                             quilt_loader = getattr(current_instance, 'loader_version', '') or minecraft_launcher_lib.quilt.get_latest_loader_version()
                             minecraft_launcher_lib.quilt.install_quilt(
                                 version,
@@ -11663,7 +11928,7 @@ class LauncherCore:
                                 nf_loader_ver = nf_versions[0]
                                 _nf_max = [1]
                                 def _nf_set_max(m): _nf_max[0] = max(m, 1)
-                                def _nf_progress(c): self._submit_progress_update(min(int((c/_nf_max[0])*100),100), f"Installing NeoForge... {min(int((c/_nf_max[0])*100),100)}%")
+                                def _nf_progress(c): self._submit_progress_update(min(int((c/_nf_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="NeoForge", percent=min(int((c/_nf_max[0])*100),100)))
                                 java_path = java_exe
                                 nf.install(
                                     version,
@@ -11700,7 +11965,7 @@ class LauncherCore:
                 def install_progress(current):
                     try:
                         percent = min(int((current / _install_max[0]) * 100), 100)
-                        self._submit_progress_update(percent, f"Installing {version}... {percent}%")
+                        self._submit_progress_update(percent, _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name=version, percent=percent))
                     except:
                         pass
                 minecraft_launcher_lib.install.install_minecraft_version(
@@ -11708,7 +11973,7 @@ class LauncherCore:
                     minecraft_directory,
                     callback={"setProgress": install_progress, "setMax": install_set_max, "setStatus": lambda x: self._safe_append_log(f"[Install] {x}")}
                 )
-            self._submit_progress_update(100, "Installation complete!")
+            self._submit_progress_update(100, _qt_t("QT_INSTALL_COMPLETE", "Installation complete!"))
             try:
                 apply_video_options(current_instance)
             except Exception as e:
@@ -11725,7 +11990,7 @@ class LauncherCore:
             command = strip_server_blocklist(command, current_instance, current_instance.version if current_instance else version, log_fn=self._safe_append_log)
             try:
                 def _lwjgl_progress(cur, total, name):
-                    self._submit_progress_update(min(int(cur / max(total, 1) * 100), 100), f"Preparing LWJGL... {name}")
+                    self._submit_progress_update(min(int(cur / max(total, 1) * 100), 100), _qt_t("QT_PREPARING_LWJGL", "Preparing LWJGL... {name}").format(name=name))
                 lwjgl_override = resolve_lwjgl_override(current_instance, minecraft_directory, version,
                                                         log_fn=self._safe_append_log, progress_fn=_lwjgl_progress)
                 if lwjgl_override:
@@ -11820,8 +12085,8 @@ class LauncherCore:
             except Exception:
                 hint = ""
             self._safe_append_log(f"[ERROR] Version '{bad_ver}' does not exist.{hint}")
-            self.after(0, lambda: messagebox.showerror("Version Not Found", f"Minecraft version '{bad_ver}' does not exist.{hint}\n\nPlease check the version name and try again."
-            ))
+            ui_hint = ("\n\n" + _qt_t("QT_DID_YOU_MEAN", "Did you mean: {options}?").format(options=', '.join(suggestions))) if hint else ""
+            self.after(0, lambda: messagebox.showerror(_qt_t("QT_VERSION_NOT_FOUND", "Version not found"), _qt_t("QT_VERSION_NOT_FOUND_MSG", "Minecraft version '{version}' does not exist.").format(version=bad_ver) + ui_hint))
         except Exception as e:
             self._safe_append_log(f"[ERROR] Launch failed: {e}")
             self._safe_append_log(traceback.format_exc())
@@ -11835,30 +12100,18 @@ class LauncherCore:
                 self._safe_append_log(f"[Installer] Installing {loader} ({loader_version}) for instance {instance.name}...")
                 installed_id = None
                 if loader.lower() == "forge":
-                    forge_version = loader_version
-                    if not forge_version:
-                        forge_version = minecraft_launcher_lib.forge.find_forge_version(instance.version)
-                    if forge_version:
-                        _forg2_max = [1]
-                        def _forg2_set_max(m): _forg2_max[0] = max(m, 1)
-                        def _forg2_progress(c): self._submit_progress_update(min(int((c/_forg2_max[0])*100),100), f"Installing Forge... {min(int((c/_forg2_max[0])*100),100)}%")
-                        minecraft_launcher_lib.forge.install_forge_version(
-                            forge_version,
-                            minecraft_directory,
-                            callback={"setStatus": lambda x: self._safe_append_log(f"[Forge] {x}"), "setProgress": _forg2_progress, "setMax": _forg2_set_max}
-                        )
-                        parts = forge_version.split('-', 1)
-                        if len(parts) == 2:
-                            mc_ver, loader_ver = parts
-                            installed_id = f"{mc_ver}-forge-{loader_ver}"
-                        else:
-                            installed_id = forge_version
+                    _forg2_max = [1]
+                    def _forg2_set_max(m): _forg2_max[0] = max(m, 1)
+                    def _forg2_progress(c): self._submit_progress_update(min(int((c/_forg2_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Forge", percent=min(int((c/_forg2_max[0])*100),100)))
+                    java_path = resolve_java_for_instance(instance, instance.version, log_fn=self._safe_append_log)
+                    installed_id = install_forge(instance.version, minecraft_directory, loader_version, java_path,
+                                                 {"setStatus": lambda x: self._safe_append_log(f"[Forge] {x}"), "setProgress": _forg2_progress, "setMax": _forg2_set_max})
                 elif loader.lower() == "fabric":
                     fabric_ver = loader_version or minecraft_launcher_lib.fabric.get_latest_loader_version()
                     if fabric_ver:
                         _fab2_max = [1]
                         def _fab2_set_max(m): _fab2_max[0] = max(m, 1)
-                        def _fab2_progress(c): self._submit_progress_update(min(int((c/_fab2_max[0])*100),100), f"Installing Fabric... {min(int((c/_fab2_max[0])*100),100)}%")
+                        def _fab2_progress(c): self._submit_progress_update(min(int((c/_fab2_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Fabric", percent=min(int((c/_fab2_max[0])*100),100)))
                         minecraft_launcher_lib.fabric.install_fabric(
                             instance.version,
                             minecraft_directory,
@@ -11869,7 +12122,7 @@ class LauncherCore:
                 elif loader.lower() == "quilt":
                     _qlt2_max = [1]
                     def _qlt2_set_max(m): _qlt2_max[0] = max(m, 1)
-                    def _qlt2_progress(c): self._submit_progress_update(min(int((c/_qlt2_max[0])*100),100), f"Installing Quilt... {min(int((c/_qlt2_max[0])*100),100)}%")
+                    def _qlt2_progress(c): self._submit_progress_update(min(int((c/_qlt2_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="Quilt", percent=min(int((c/_qlt2_max[0])*100),100)))
                     minecraft_launcher_lib.quilt.install_quilt(
                         instance.version,
                         minecraft_directory,
@@ -11889,7 +12142,7 @@ class LauncherCore:
                     if nf_loader_ver:
                         _nf2_max = [1]
                         def _nf2_set_max(m): _nf2_max[0] = max(m, 1)
-                        def _nf2_progress(c): self._submit_progress_update(min(int((c/_nf2_max[0])*100),100), f"Installing NeoForge... {min(int((c/_nf2_max[0])*100),100)}%")
+                        def _nf2_progress(c): self._submit_progress_update(min(int((c/_nf2_max[0])*100),100), _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name="NeoForge", percent=min(int((c/_nf2_max[0])*100),100)))
                         java_path = resolve_java_for_instance(instance, instance.version, log_fn=self._safe_append_log)
                         nf.install(
                             instance.version,
@@ -11910,15 +12163,15 @@ class LauncherCore:
                     instance.installed_version_id = installed_id
                     self.instance_manager.save_instances()
                     self._safe_append_log(f"[Installer] Installed {loader}: {installed_id}")
-                    self.after(0, lambda: messagebox.showinfo(self._t("SUCCESS"), f"Installed {loader.title()}: {installed_id}"))
+                    self.after(0, lambda: messagebox.showinfo(self._t("SUCCESS"), _qt_t("QT_LOADER_INSTALLED", "Installed {loader}: {id}").format(loader=loader.title(), id=installed_id)))
                 else:
                     self._safe_append_log(f"[Installer] Failed to determine installed id for {loader} {loader_version}")
-                    self.after(0, lambda: messagebox.showerror(self._t("ERROR"), f"Failed to install {loader.title()} {loader_version or ''}"))
+                    self.after(0, lambda: messagebox.showerror(self._t("ERROR"), _qt_t("QT_LOADER_INSTALL_FAIL", "Failed to install {loader} {version}").format(loader=loader.title(), version=loader_version or '')))
             except Exception as e:
                 self._safe_append_log(f"[Installer] Error installing {loader}: {e}")
-                self.after(0, lambda m=str(e): messagebox.showerror(self._t("ERROR"), f"Failed to install {loader.title()} {loader_version or ''}: {m}"))
+                self.after(0, lambda m=str(e): messagebox.showerror(self._t("ERROR"), _qt_t("QT_LOADER_INSTALL_FAIL", "Failed to install {loader} {version}").format(loader=loader.title(), version=loader_version or '') + f": {m}"))
             finally:
-                self._submit_progress_update(100, "Installation complete!")
+                self._submit_progress_update(100, _qt_t("QT_INSTALL_COMPLETE", "Installation complete!"))
                 if hasattr(self, '_progress_queue') and self._progress_queue is not None:
                     try:
                         while True:
@@ -12040,8 +12293,8 @@ class LauncherCore:
             files_done_str = str(files_done)
             if len(files_done_str) > 8:
                 files_done_str = f"{files_done_str[:5]}..."
-            message_parts.append(f"{files_done_str}/{files_total_str} files ({files_left} left)")
-        status_body = " - ".join(message_parts) if message_parts else "Preparing..."
+            message_parts.append(_qt_t("QT_FILES_PROGRESS", "{done}/{total} files ({left} left)").format(done=files_done_str, total=files_total_str, left=files_left))
+        status_body = " - ".join(message_parts) if message_parts else _qt_t("QT_PREPARING", "Preparing...")
         status_text = f"{status_body} ({percent:.1f}%)"
         self._submit_progress_update(percent, status_text)
     def _submit_progress_update(self, percent, status_text):
@@ -12164,13 +12417,13 @@ class LauncherCore:
                 base_dir = get_resource_path()
                 music_dir = base_dir / "oranglauncher" / "music"
             if not music_dir or not music_dir.exists():
-                messagebox.showwarning(self._t("MUSIC_ERROR"),"Music folder not found at oranglauncher/music/")
+                messagebox.showwarning(self._t("MUSIC_ERROR"), _qt_t("QT_MUSIC_NOT_FOUND", "Music folder not found at oranglauncher/music/"))
                 return
             music_files = []
             for ext in ['*.mp3', '*.ogg', '*.wav', '*.flac']:
                 music_files.extend(list(music_dir.glob(ext)))
             if not music_files:
-                messagebox.showwarning(self._t("MUSIC_ERROR"),"No music files found in oranglauncher/music/\nSupported formats: .mp3, .ogg, .wav, .flac")
+                messagebox.showwarning(self._t("MUSIC_ERROR"), _qt_t("QT_MUSIC_NO_FILES", "No music files found in oranglauncher/music/\nSupported formats: .mp3, .ogg, .wav, .flac"))
                 return
             random.shuffle(music_files)
             self.music_playlist = music_files
@@ -12272,7 +12525,7 @@ class LauncherCore:
             self._do_import_curseforge_path(path)
     def _do_import_mrpack_path(self, mrpack_path: str):
         if hasattr(self, 'status_label'):
-            self.status_label.config(text="Importing modpack...")
+            self.status_label.config(text=_qt_t("QT_IMPORTING_MODPACK", "Importing modpack..."))
         if hasattr(self, 'status_bar_progress'):
             self.status_bar_progress.config(mode='indeterminate')
             self.status_bar_progress.start(15)
@@ -12283,14 +12536,14 @@ class LauncherCore:
                 if hasattr(self, 'progress'):
                     self.progress.set(0)
             if hasattr(self, 'status_label'):
-                self.status_label.config(text="Ready")
+                self.status_label.config(text=_qt_t("QT_READY", "Ready"))
         def _do():
             try:
                 success, message, profile_name = import_modpack(mrpack_path, self)
                 def done():
                     _restore()
                     if success:
-                        messagebox.showinfo("Modpack Imported", f"Imported as '{profile_name}'\n{message}")
+                        messagebox.showinfo(_qt_t("QT_PACK_IMPORTED", "Pack imported"), _qt_t("QT_IMPORTED_AS", "Imported: {name}").format(name=profile_name) + f"\n{message}")
                         if hasattr(self, '_refresh_game_profiles'):
                             self._refresh_game_profiles()
                         if hasattr(self, 'game_profiles_tab'):
@@ -12300,14 +12553,14 @@ class LauncherCore:
                             except Exception:
                                 pass
                     else:
-                        messagebox.showerror("Import Failed", message)
+                        messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), message)
                 self.after(0, done)
             except Exception as e:
-                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror("Import Error", m)))
+                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), m)))
         threading.Thread(target=_do, daemon=True).start()
     def _do_import_curseforge_path(self, zip_path: str):
         if hasattr(self, 'status_label'):
-            self.status_label.config(text="Importing CurseForge pack...")
+            self.status_label.config(text=_qt_t("QT_IMPORTING_CURSEFORGE", "Importing CurseForge pack..."))
         if hasattr(self, 'status_bar_progress'):
             self.status_bar_progress.config(mode='indeterminate')
             self.status_bar_progress.start(15)
@@ -12318,21 +12571,21 @@ class LauncherCore:
                 if hasattr(self, 'progress'):
                     self.progress.set(0)
             if hasattr(self, 'status_label'):
-                self.status_label.config(text="Ready")
+                self.status_label.config(text=_qt_t("QT_READY", "Ready"))
         def _do():
             try:
                 success, message, profile_name = import_curseforge_pack(zip_path, self)
                 def done():
                     _restore()
                     if success:
-                        messagebox.showinfo("Pack Imported", f"Imported as '{profile_name}'\n{message}")
+                        messagebox.showinfo(_qt_t("QT_PACK_IMPORTED", "Pack imported"), _qt_t("QT_IMPORTED_AS", "Imported: {name}").format(name=profile_name) + f"\n{message}")
                         if hasattr(self, '_refresh_game_profiles'):
                             self._refresh_game_profiles()
                     else:
-                        messagebox.showerror("Import Failed", message)
+                        messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), message)
                 self.after(0, done)
             except Exception as e:
-                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror("Import Error", m)))
+                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), m)))
         threading.Thread(target=_do, daemon=True).start()
     def _startup_sync_sharing(self):
         # re-link shared folders for every instance so sharing is live from launch
@@ -12414,7 +12667,6 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         icon_path = find_resource("oranglauncher/images/orange.png")
         if icon_path:
             self.setWindowIcon(QtGui.QIcon(str(icon_path)))
-        self._version_cache = None
         self._build_ui()
         self.refresh_accounts()
         self.refresh_instance_display()
@@ -12477,12 +12729,10 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         return self.theme.c(key)
 
     def version_values(self):
-        if self._version_cache is None:
-            try:
-                self._version_cache = list(get_available_versions())
-            except Exception:
-                self._version_cache = []
-        return self._version_cache
+        try:
+            return list(get_available_versions())
+        except Exception:
+            return []
 
     def validate_version(self, version):
         values = self.version_values()
@@ -12496,21 +12746,17 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
     def fetch_loader_versions(self, loader, mc_version):
         if not mc_version:
             return []
-        try:
-            if loader == "forge":
-                forge_versions = minecraft_launcher_lib.forge.list_forge_versions()
-                return [v for v in reversed(forge_versions) if v.startswith(f"{mc_version}-")]
-            if loader == "neoforge":
-                nf = _NeoforgeCompat()
-                return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
-            if loader == "fabric":
-                return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
-            if loader == "quilt":
-                return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
-            if loader == "optifine":
-                return get_optifine_files_for(mc_version)
-        except Exception as e:
-            print(f"[DEBUG] Error fetching loader versions: {e}")
+        if loader == "forge":
+            return forge_loader_versions(mc_version)
+        if loader == "neoforge":
+            nf = _NeoforgeCompat()
+            return nf.get_loader_versions(mc_version, True) or nf.get_loader_versions(mc_version, False)
+        if loader == "fabric":
+            return [v["version"] for v in minecraft_launcher_lib.fabric.get_all_loader_versions()]
+        if loader == "quilt":
+            return [v["version"] for v in minecraft_launcher_lib.quilt.get_all_loader_versions()]
+        if loader == "optifine":
+            return get_optifine_files_for(mc_version)
         return []
 
     def _build_ui(self):
@@ -12692,7 +12938,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         except Exception:
             data = []
         self.profiles_list = [f"{p['username']} ({p['type']})" for p in data]
-        current = self.selected_profile.get()
+        current = self.selected_profile.get() or _adv_get("last_account", "")
         self.account_combo.blockSignals(True)
         self.account_combo.clear()
         if self.profiles_list:
@@ -12714,6 +12960,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         idx = self.account_combo.currentIndex()
         if 0 <= idx < len(self.profiles_list):
             self.selected_profile.set(self.profiles_list[idx])
+            _adv_set("last_account", self.profiles_list[idx])
             self.set_status(_tr(self, "WELCOME_USER", "Welcome, {username}").format(username=self.profiles_list[idx].split(" (")[0]))
     # I miss mojang accounts
     def add_account(self, kind=None, mode="embedded"):
@@ -12759,6 +13006,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
             messagebox.showerror(_tr(self, "ERROR", "Error"), str(e))
             return
         self.selected_profile.set(f"{profile.get('username', '')} ({profile.get('type', '')})")
+        _adv_set("last_account", self.selected_profile.get())
         self.refresh_accounts()
         self.set_status(_qt_t("QT_ACCOUNT_ADDED", "Added account {name}").format(name=profile.get('username', '')))
 
@@ -12859,6 +13107,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         if not version or not version.strip():
             messagebox.showerror(_qt_t("QT_VERSION_ERROR", "Version error"), _qt_t("QT_VERSION_ERROR_MSG", "Selected instance has no Minecraft version set. Edit the instance to set a valid version."))
             return
+        _adv_set("last_account", selected_name)
         username = selected_profile.get("username", "")
         uuid = selected_profile.get("uuid", "")
         if not uuid or uuid == "0-0-0-0":
@@ -13098,6 +13347,9 @@ def main():
             return
         if not QT_AVAILABLE:
             print("[ui] PySide6 is not installed (pip install PySide6)")
+            sys.exit(1)
+        if importlib.util.find_spec("minecraft_launcher_lib") is None:
+            print("[startup] minecraft_launcher_lib is not installed (pip install -r requirements.txt)")
             sys.exit(1)
         _reexec_as_module()
         print("Welcome to the Orange launcher! You can use --terminal to save ram!")
