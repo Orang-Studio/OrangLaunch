@@ -1,10 +1,29 @@
-# Windows version
-Minecraft launcher designed from Mojang old launcher and remade to today's standarts
+<h1 align="center">Orange Launcher Project</h1>
+<h2 align="center">OrangLauncher Linux</h2>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+</p>
 
-# Installation 
+<h2 align="center">OrangLauncher Windows</h2>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7fbfd975-3fb2-4857-815f-6fb2c86dc3ca" width="903" height="616" alt="orange">
+</p>
+
+
+## Installation 
+
+## Arch/Linux x64
+Installation via AUR: 
+```shell
+yay -Syu oranglauncher-bin
+```
+there is also without -bin version where it compiles itself<br>
+Portable installation zip: [launcher_x64_linux_8.5.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
 
 ## Windows 10-11 x86-x64; arm32-arm64
-Download installer/zip: [OrangLauncher_Windows](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download installer: [OrangLauncher_Windows_x.x.x.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
 
 
 # About This Minecraft Launcher
