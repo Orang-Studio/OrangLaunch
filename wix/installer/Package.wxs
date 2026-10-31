@@ -71,6 +71,7 @@
       <ComponentRef      Id="CmpDesktopShortcut"        />
       <ComponentRef      Id="CmpStartMenuShortcut"      />
       <ComponentRef      Id="CmpWebView2DirPermissions" />
+      <ComponentRef      Id="CmpInstalledMarker"        />
     </Feature>
   </Package>
   <Fragment>
@@ -122,6 +123,13 @@
           Type="integer"
           Value="1"
           KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="CmpInstalledMarker" Guid="c40b4841-e8f9-47f6-871e-68da71c5d49a">
+        <File Id="OrangLauncherInstalledMarker" Source="assets\installed.txt" KeyPath="yes" />
       </Component>
     </DirectoryRef>
   </Fragment>

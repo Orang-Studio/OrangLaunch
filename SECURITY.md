@@ -21,7 +21,7 @@ The Operating systems support, also we do not support python version of windows 
 | Linux Global        | :white_check_mark:  |
 | Fedora DNF          | :white_check_mark:  |
 | Arch Linux Aur      | :white_check_mark:  |
-| Windows 10 WPF WinUI| :white_check_mark:  |
+| Windows 10/11 WPF   | :white_check_mark:  |
 
 ## Reporting a Vulnerability
 

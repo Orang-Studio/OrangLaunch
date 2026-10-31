@@ -1,0 +1,9 @@
+OrangLauncher - installed build
+
+This marker file is installed by the MSI package. If it is present next to
+OrangLauncher.exe, the built-in updater knows the launcher was installed via
+the MSI and may download and run newer MSI packages on its own.
+
+If you run OrangLauncher from a plain folder (extracted zip), this file is
+missing and self-updates are disabled; download the installer from the
+releases page instead.

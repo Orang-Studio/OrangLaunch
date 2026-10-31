@@ -8,6 +8,7 @@ on:
       - 'assets/**'
       - 'wix/**'
       - 'version.txt'
+      - 'OrangLauncher.slnx'
       - '.github/workflows/build.yml'
       - '!**/*.md'
       - '!**/LICENSE'
@@ -65,8 +66,12 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          Compress-Archive -Path publish/x86/*   -DestinationPath "launcher_x86_win_$v.zip"
-          Compress-Archive -Path publish/arm64/* -DestinationPath "launcher_arm64_win_$v.zip"
+          foreach ($arch in 'x86', 'arm64') {
+            New-Item -ItemType Directory -Force stage/OrangLauncher | Out-Null
+            Copy-Item publish/$arch/* stage/OrangLauncher/ -Recurse
+            Compress-Archive -Path stage/OrangLauncher -DestinationPath "launcher_${arch}_win_$v.zip" -Force
+            Remove-Item stage -Recurse -Force
+          }
 
       - name: Build MSI (x86)
         shell: pwsh
@@ -75,7 +80,9 @@ jobs:
           New-Item -ItemType Directory -Force wix/build | Out-Null
           Copy-Item publish/x86/* wix/build/ -Recurse
           dotnet build wix/installer/OrangLauncher.wixproj -c Release -p:ProductVersion=$v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $msi = Get-ChildItem wix/installer/bin -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { throw "MSI not found" }
           Copy-Item $msi.FullName "OrangLauncher-Windows.msi"
 
       - name: Create GitHub release
