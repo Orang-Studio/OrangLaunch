@@ -1,81 +1,11 @@
-
-<h1 align="center">Orange Launcher Linux</h1>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/7e9f1973-604e-4178-8c44-bca93e69c5df" alt="orange">
-</p>
-
-<h1 align="center">Orange Launcher Windows</h1>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
-</p>
-
+# Windows version
 Minecraft launcher designed from Mojang old launcher and remade to today's standarts
 
 # Installation 
 
-## Arch Linux x64
-[![Source](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/buildsrc.yml/badge.svg)](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/buildsrc.yml) [![Binary](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/build.yml/badge.svg)](https://github.com/Orang-Studio/OrangLaunch/actions/workflows/build.yml)
-
-Install with [**yay**](https://github.com/Jguer/yay). There is two options for btw users:<br>
-Prebuild binary (Fast)<br>
-```shell
-yay -Sy oranglauncher-bin
-```
-
-Build from source py (Slower, can fail)<br>
-```shell
-yay -Syu oranglauncher
-```
-<br>
-
-
-## Linux Other x64 
-Download zip: [launcher_x64_linux_x.x.x.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)
-
-
 ## Windows 10-11 x86-x64; arm32-arm64
 Download installer/zip: [OrangLauncher_Windows](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
-# Terminal Mode
 
-The launcher includes a terminal/CLI mode for headless servers or users who prefer command-line interfaces.
-
-## Usage
-
-Run the launcher with the `--terminal` flag:
-
-```bash
-python launcher.py --terminal
-```
-
-This will:
-1. Display a list of your configured Minecraft instances
-2. Let you select an instance by number
-3. Show available game profiles (accounts)
-4. Let you select a profile/account
-5. Prompt for RAM allocation (default: 4G)
-6. Launch the game directly
-
-### Example:
-```
-==================================================
-OrangLauncher - Terminal Mode
-==================================================
-
-Available Instances:
-  1. Fabulously Optimized (MC 26.1.2, fabric)
-  2. gh (MC 1.20.1, forge)
-  3. New Profile (MC 1.21.1, vanilla)
-
-Select instance (1-3): 1
-Available Profiles:
-  1. MyAccount (Microsoft)
-  2. OfflinePlayer (Offline)
-
-Select profile (1-2): 1
-Enter RAM amount (default: 4G): 6G
-
-[Launcher] Launching Minecraft 26.1.2 (fabric) as MyAccount...
-```
 
 # About This Minecraft Launcher
 This launcher is designed to be a modular, modern, and highly customizable Minecraft launcher experience. It uses Python for backend that keeps everything lightweight, fast, and fully scriptable.
