@@ -1,31 +1,17 @@
+# Windows version
+Minecraft launcher designed from Mojang old launcher and remade to today's standarts
 
-<h1 align="center">Orange Launcher Linux</h1>
+<h2 align="center">OrangLauncher Windows</h2>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
-</p>
-
-<h1 align="center">Orange Launcher Win10</h1>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/bb8af391-de1a-41fa-8498-345e056ba023" alt="orange">
-</p>
-
-<h1 align="center">Orange Launcher Win11</h1>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6eac6ddc-77c4-457b-916b-33adc0b505cd" alt="orange">
+  <img src="https://github.com/user-attachments/assets/7fbfd975-3fb2-4857-815f-6fb2c86dc3ca" width="903" height="616" alt="orange">
 </p>
 
 # Installation 
 
-## Windows 10/11 x86-64
-Download installer: [OrangLauncher_Windows10.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
-Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
-
-### arm32-arm64
+## Windows 10-11 x86-x64; arm32-arm64
+Download installer: [OrangLauncher_Windows_x.x.x.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Download zip: [launcher_x86_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
 Download zip: [launcher_arms_win_x.x.x.zip](https://github.com/Orang-Studio/OrangLaunch/releases)
-
-> [!CAUTION]
-> I'v never tried running arm64 version, because I don't have that processor <br>
-> so if you find the bugs on that architecture, please say in issues. arm32 version works even on x64, please don't use it like that.
 
 
 # About This Minecraft Launcher
@@ -87,3 +73,8 @@ The entire application supports changeable languages, including community‑driv
 ## For the developers section:
 
 Go to GitHub Wiki up in the GitHub website of this repo, and open Wiki. You will find all tutorials and examples about this launcher, and even build your own version!
+
+# Info
+- Launcher Version: 8.5
+- Platforms: Linux/GNU; Winslop; MacOS
+- Made by human with 🧡, fixed by AI ✨
