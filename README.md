@@ -1,14 +1,13 @@
 <h1 align="center">Orange Launcher Project</h1>
 <h2 align="center">OrangLauncher Linux</h2>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e4d63dcb-6537-4453-9375-3c8c0b3b5a50" alt="orange">
+  <img src="https://github.com/user-attachments/assets/67760d82-8a22-466b-aef4-38a66aa62865" alt="orange">
 </p>
 
 <h2 align="center">OrangLauncher Windows</h2>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/7fbfd975-3fb2-4857-815f-6fb2c86dc3ca" width="903" height="616" alt="orange">
 </p>
-
 
 ## Installation 
 
