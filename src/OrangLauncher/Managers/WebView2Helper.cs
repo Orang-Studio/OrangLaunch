@@ -10,15 +10,10 @@ namespace OrangLauncher.Managers
         {
             get
             {
-                var dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "OrangStudio", "OrangLauncher", "webview2");
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"OrangStudio", "OrangLauncher", "webview2");
                 Directory.CreateDirectory(dir);
                 return dir;
-            }
-        }
-
-        // call before the control initializes. 
+        }   }
         public static void Prepare(WebView2 webView)
         {
             try

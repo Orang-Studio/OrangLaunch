@@ -26,6 +26,13 @@ namespace OrangLauncher.Managers
         }
         public static ModMetadata Read(string path)
         {
+            if (Directory.Exists(path))
+            {
+                var hdir = HorizonClient.ReadHmodMetadata(path);
+                if (hdir != null)
+                    return new ModMetadata { Name = hdir.Name, Version = hdir.Version, Id = hdir.Id, Loader = "horizon", Description = hdir.Description };
+                return new ModMetadata { Name = Path.GetFileName(path) };
+            }
             var fi = new FileInfo(path);
             if (!fi.Exists) return new ModMetadata();
             var key = (path, fi.Length, fi.LastWriteTimeUtc.Ticks);
@@ -33,6 +40,16 @@ namespace OrangLauncher.Managers
             var meta = new ModMetadata();
             try
             {
+                if (path.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".hmod.disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hm = HorizonClient.ReadHmodMetadata(path);
+                    if (hm != null)
+                    {
+                        meta = new ModMetadata { Name = hm.Name, Version = hm.Version, Id = hm.Id, Loader = "horizon", Description = hm.Description };
+                        Cache[key] = meta;
+                        return meta;
+                    }
+                }
                 using var zip = ZipFile.OpenRead(path);
                 string? ReadEntry(string name)
                 {

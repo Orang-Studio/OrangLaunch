@@ -18,6 +18,7 @@ namespace OrangLauncher
         public string Meta { get; set; } = "";
         public string Slug { get; set; } = "";
         public string ProjectType { get; set; } = "";
+        public string Source { get; set; } = "modrinth";
         public string? IconUrl { get; set; }
         public string DetailsLabel { get; set; } = "Details";
         public Visibility DetailsVisibility => Visibility.Visible;
@@ -32,6 +33,7 @@ namespace OrangLauncher
     {
         private const int ContentPageSize = 20;
         private string _contentType = "mod";
+        private string _contentSource = "modrinth";
         private int _contentOffset;
         private long _contentTotal;
         private bool _contentInitialized;
@@ -65,6 +67,9 @@ namespace OrangLauncher
                 ContentTabDataPacks.Content = LocalizationManager.GetString("CONTENT_DATA_PACKS", "Data Packs");
                 ContentTabShaders.Content = LocalizationManager.GetString("CONTENT_SHADERS", "Shaders");
                 ContentTabModpacks.Content = LocalizationManager.GetString("CONTENT_MODPACKS", "Modpacks");
+                ContentSourceLabel.Text = LocalizationManager.GetString("CONTENT_MARKETPLACE", "Marketplace:");
+                if (ContentSourceComboBox.Items.Count > 1)
+                { ((ComboBoxItem)ContentSourceComboBox.Items[0]).Content = LocalizationManager.GetString("CONTENT_SOURCE_MODRINTH", "Modrinth"); ((ComboBoxItem)ContentSourceComboBox.Items[1]).Content = LocalizationManager.GetString("CONTENT_SOURCE_HORIZON", "Horizon Marketplace"); }
                 ContentSearchButton.Content = LocalizationManager.GetString("CONTENT_SEARCH", "Search");
                 if (ContentSortComboBox.Items.Count > 3)
                 {
@@ -104,16 +109,21 @@ namespace OrangLauncher
 
         private void RefreshContentInstances()
         {
-            var selected = ContentInstanceComboBox.SelectedIndex;
+            var prevTargetId = GetContentTargetInstance()?.InstanceId ?? SelectedInstance()?.InstanceId;
             _contentDefaultSetup = null;
-            _contentInstances = InstanceManager.Instance.GetInstances();
+            _contentInstances = InstanceManager.Instance.GetInstances()
+                .Where(i => LauncherSettings.RustMinecraftEnabled || !i.IsHorizon)
+                .ToList();
             var (defaultVersion, defaultLoader) = GetContentTargetSetup(null);
             var defaultName = LocalizationManager.GetString("CONTENT_DEFAULT_TARGET", "Default (.minecraft)");
             if (defaultVersion != null) defaultName += $" ({defaultLoader ?? "vanilla"} {defaultVersion})";
             var names = new List<string> { defaultName };
             names.AddRange(_contentInstances.Select(i => $"{i.Name} ({i.ModLoader} {i.Version})"));
             ContentInstanceComboBox.ItemsSource = names;
-            ContentInstanceComboBox.SelectedIndex = selected >= 0 && selected < names.Count ? selected : 0;
+            var matchIdx = prevTargetId == null ? -1 : _contentInstances.FindIndex(i => i.InstanceId == prevTargetId);
+            ContentInstanceComboBox.SelectedIndex = matchIdx >= 0 ? matchIdx + 1 : 0;
+            if (ContentSourceComboBox.Items.Count > 1 && ContentSourceComboBox.Items[1] is ComboBoxItem horizonMarketItem)
+                horizonMarketItem.Visibility = LauncherSettings.RustMinecraftEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private MinecraftInstance? GetContentTargetInstance()
@@ -153,8 +163,44 @@ namespace OrangLauncher
         {
             if (!_contentInitialized) return;
             if (_suppressContentSearch) return;
+            if (ReferenceEquals(sender, ContentInstanceComboBox))
+            {
+                var inst = GetContentTargetInstance();
+                if (inst is { IsHorizon: true } && _contentSource != "horizon")
+                    SetContentSource("horizon", false);
+            }
             _contentOffset = 0;
             _ = RunContentSearchAsync();
+        }
+
+        private void ContentSource_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (ContentSourceComboBox.SelectedItem is ComboBoxItem item && item.Tag is string src)
+                _contentSource = src;
+            if (!_contentInitialized || _suppressContentSearch) return;
+            _contentOffset = 0;
+            _ = RunContentSearchAsync();
+        }
+        public void SetContentSource(string source, bool triggerSearch = true)
+        {
+            _contentSource = string.Equals(source, "horizon", StringComparison.OrdinalIgnoreCase) ? "horizon" : "modrinth";
+            var prev = _suppressContentSearch;
+            _suppressContentSearch = true;
+            try
+            {
+                for (int i = 0; i < ContentSourceComboBox.Items.Count; i++)
+                {
+                    if (ContentSourceComboBox.Items[i] is ComboBoxItem item &&
+                        string.Equals(item.Tag as string, _contentSource, StringComparison.OrdinalIgnoreCase))
+                    { ContentSourceComboBox.SelectedIndex = i; break; }
+                }
+            }
+            finally { _suppressContentSearch = prev; }
+            if (triggerSearch && _contentInitialized && !_suppressContentSearch)
+            {
+                _contentOffset = 0;
+                _ = RunContentSearchAsync();
+            }
         }
 
         private void ContentPrevButton_Click(object sender, RoutedEventArgs e)
@@ -173,6 +219,45 @@ namespace OrangLauncher
         {
             _contentItems.Clear();
             var instance = GetContentTargetInstance();
+            var sort = (ContentSortComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "relevance";
+            if (_contentSource == "horizon")
+            {
+                try
+                {
+                    ContentInfoText.Text = LocalizationManager.GetString("CONTENT_SEARCHING_HORIZON", "Searching Horizon Marketplace...");
+                    var (hits, total) = await HorizonClient.SearchAsync(ContentSearchBox.Text, _contentType, sort, _contentOffset, ContentPageSize);
+                    var ratings = await HorizonClient.GetRatingsAsync();
+                    _contentTotal = total;
+                    foreach (var hit in hits)
+                    {
+                        var authorStr = hit.Authors.Count > 0 ? string.Join(", ", hit.Authors.Take(2)) : (hit.Owners.FirstOrDefault() ?? "");
+                        var ratingPart = ratings.TryGetValue(hit.Id, out var r) && r.Count > 0 ? $"  |  {r.Average:F1}/5 ({r.Count})" : "";
+                        var catPart = hit.Categories.Count > 0 ? $"  |  {string.Join(", ", hit.Categories.Take(4))}" : (hit.Tags.Count > 0 ? $"  |  {string.Join(", ", hit.Tags.Take(4))}" : "");
+                        var vm = new ContentItemVm
+                        {
+                            Title = hit.Name,
+                            Author = string.IsNullOrEmpty(authorStr) ? "" : LocalizationManager.T("CONTENT_BY", "by {author}", ("author", authorStr)),
+                            Description = string.IsNullOrWhiteSpace(hit.Summary) ? hit.Description : hit.Summary,
+                            Meta = $"{LocalizationManager.T("CONTENT_DOWNLOADS", "{count} downloads", ("count", hit.Downloads.ToString("N0")))}{ratingPart}{catPart}",
+                            Slug = hit.Id,
+                            ProjectType = _contentType,
+                            Source = "horizon",
+                            IconUrl = hit.Icon,
+                            DetailsLabel = LocalizationManager.GetString("CONTENT_DETAILS", "Details"),
+                            InstallLabel = LocalizationManager.GetString("CONTENT_INSTALL", "Install")
+                        };
+                        _contentItems.Add(vm);
+                        _ = LoadContentIconAsync(vm, hit.Icon);
+                    }
+                    ContentInfoText.Text = total == 0
+                        ? LocalizationManager.GetString("CONTENT_NO_RESULTS", "No results.")
+                        : LocalizationManager.T("CONTENT_RESULTS", "{count} results", ("count", total.ToString("N0"))) + $" (Horizon {HorizonClient.DefaultGameVersion})";
+                }
+                catch (Exception ex)
+                {ContentInfoText.Text = $"{LocalizationManager.GetString("CONTENT_SEARCH_FAILED", "Search failed:")} {ex.Message}";}
+                UpdateContentPaging();
+                return;
+            }
             if (_contentType == "mod" && instance != null && IsVanillaInstance(instance))
             {
                 ContentInfoText.Text = LocalizationManager.GetString("CONTENT_VANILLA_BLOCKED", "This profile is vanilla - mods need Fabric/Forge/Quilt/NeoForge or the OptiFine loader.");
@@ -182,7 +267,6 @@ namespace OrangLauncher
             try
             {
                 ContentInfoText.Text = LocalizationManager.GetString("CONTENT_SEARCHING", "Searching Modrinth...");
-                var sort = (ContentSortComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "relevance";
                 var (targetVersion, targetLoader) = GetContentTargetSetup(instance);
                 var mcVersion = _contentType == "modpack" ? null : targetVersion;
                 var loader = _contentType == "mod" ? targetLoader : null;
@@ -199,6 +283,7 @@ namespace OrangLauncher
                         Meta = $"{LocalizationManager.T("CONTENT_DOWNLOADS", "{count} downloads", ("count", hit.Downloads.ToString("N0")))}  |  {string.Join(", ", hit.Categories.Take(4))}",
                         Slug = string.IsNullOrEmpty(hit.Slug) ? hit.ProjectId : hit.Slug,
                         ProjectType = _contentType,
+                        Source = "modrinth",
                         IconUrl = hit.IconUrl,
                         DetailsLabel = LocalizationManager.GetString("CONTENT_DETAILS", "Details"),
                         InstallLabel = LocalizationManager.GetString("CONTENT_INSTALL", "Install")
@@ -261,26 +346,49 @@ namespace OrangLauncher
             if ((sender as FrameworkElement)?.Tag is not ContentItemVm vm) return;
             try
             {
-                var instance = GetContentTargetInstance();
+                var instance = GetContentTargetInstance() ?? SelectedInstance();
                 var (targetVersion, targetLoader) = GetContentTargetSetup(instance);
                 string baseDir = instance?.MinecraftDir ?? PlatformPaths.GetMinecraftDir();
+                bool isHorizon = vm.Source == "horizon" || instance is { IsHorizon: true };
                 string installPath = vm.ProjectType switch
                 {
-                    "mod" => instance?.ModsDir ?? Path.Combine(baseDir, "mods"),
+                    "mod" => instance?.ModsDir ?? Path.Combine(baseDir, isHorizon ? "horizon-mods" : "mods"),
                     "resourcepack" => instance?.ResourcePacksDir ?? Path.Combine(baseDir, "resourcepacks"),
                     "shader" => instance?.ShaderPacksDir ?? Path.Combine(baseDir, "shaderpacks"),
                     "modpack" => "",
                     _ => Path.Combine(baseDir, "datapacks")
                 };
                 var win = new ModDetailsWindow(vm.Slug, vm.Title, vm.Description, vm.IconUrl, vm.ProjectType,
-                    installPath, targetVersion ?? "", vm.ProjectType == "mod" ? targetLoader ?? "" : "")
+                    installPath, targetVersion ?? "", vm.ProjectType == "mod" ? targetLoader ?? "" : "", vm.Source)
                 { Owner = this };
                 win.ShowDialog();
+                LoadMods();
+                LoadResourcePacks();
+                LoadShaderPacks();
             }
             catch (Exception ex)
+            { ContentInfoText.Text = $"{LocalizationManager.GetString("CONTENT_DETAILS_FAILED", "Could not open details:")} {ex.Message}"; }
+        }
+        private async Task InstallHorizonModpackAsync(ContentItemVm vm)
+        {
+            ContentInfoText.Text = LocalizationManager.T("CONTENT_DOWNLOADING_PACK", "Downloading modpack {title}...", ("title", vm.Title));
+            var tempDir = Path.Combine(Path.GetTempPath(), "OrangLauncher", "modpacks");
+            var hpack = await HorizonClient.InstallProjectAsync(vm.Slug, tempDir);
+            if (string.IsNullOrEmpty(hpack) || !File.Exists(hpack))
             {
-                ContentInfoText.Text = $"{LocalizationManager.GetString("CONTENT_DETAILS_FAILED", "Could not open details:")} {ex.Message}";
+                vm.InstallLabel = LocalizationManager.GetString("CONTENT_NO_FILE", "No file");
+                ContentInfoText.Text = LocalizationManager.T("CONTENT_NO_MRPACK", "No .hpack file found for {title}.", ("title", vm.Title));
+                return;
             }
+            ContentInfoText.Text = LocalizationManager.T("CONTENT_INSTALLING_PACK", "Installing modpack {title}...", ("title", vm.Title));
+            var importer = new ModpackImporter();
+            importer.Log += AppendLog;
+            var (success, message, _) = await Task.Run(() => importer.ImportHPackAsync(hpack));
+            vm.InstallLabel = success
+                ? LocalizationManager.GetString("CONTENT_INSTALLED", "Installed")
+                : LocalizationManager.GetString("CONTENT_FAILED", "Failed");
+            if (success) RefreshInstancesAfterModpackInstall();
+            ContentInfoText.Text = message;
         }
 
         private async Task InstallModrinthModpackAsync(ContentItemVm vm)
@@ -308,10 +416,34 @@ namespace OrangLauncher
         private async void ContentInstallButton_Click(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.Tag is not ContentItemVm vm) return;
-            var instance = GetContentTargetInstance();
+            var instance = GetContentTargetInstance() ?? SelectedInstance();
             vm.InstallLabel = "...";
             try
             {
+                if (vm.Source == "horizon")
+                {
+                    if (vm.ProjectType == "modpack") { await InstallHorizonModpackAsync(vm); return; }
+                    string hBaseDir = instance?.MinecraftDir ?? PlatformPaths.GetMinecraftDir();
+                    string hDestDir = vm.ProjectType switch
+                    {
+                        "mod" => instance?.ModsDir ?? Path.Combine(hBaseDir, "horizon-mods"),
+                        "resourcepack" => instance?.ResourcePacksDir ?? Path.Combine(hBaseDir, "resourcepacks"),
+                        "shader" => instance?.ShaderPacksDir ?? Path.Combine(hBaseDir, "shaderpacks"),
+                        _ => Path.Combine(hBaseDir, "datapacks")
+                    };
+                    var hInstalled = await HorizonClient.InstallProjectAsync(vm.Slug, hDestDir, hBaseDir);
+                    vm.InstallLabel = !string.IsNullOrEmpty(hInstalled) ? LocalizationManager.GetString("CONTENT_INSTALLED", "Installed") : LocalizationManager.GetString("CONTENT_NO_FILE", "No file");
+                    ContentInfoText.Text = !string.IsNullOrEmpty(hInstalled)
+                        ? LocalizationManager.T("CONTENT_INSTALLED_TO", "Installed {file} to {dir}", ("file", Path.GetFileName(hInstalled)), ("dir", hDestDir))
+                        : LocalizationManager.T("CONTENT_NO_COMPATIBLE", "No compatible file of {title} for {version}", ("title", vm.Title), ("version", HorizonClient.DefaultGameVersion));
+                    if (!string.IsNullOrEmpty(hInstalled))
+                    {
+                        LoadMods();
+                        LoadResourcePacks();
+                        LoadShaderPacks();
+                    }
+                    return;
+                }
                 if (vm.ProjectType == "modpack") { await InstallModrinthModpackAsync(vm); return; }
                 if (vm.ProjectType == "mod" && instance != null && IsVanillaInstance(instance))
                 {
@@ -334,6 +466,8 @@ namespace OrangLauncher
                 ContentInfoText.Text = installed != null
                     ? LocalizationManager.T("CONTENT_INSTALLED_TO", "Installed {file} to {dir}", ("file", Path.GetFileName(installed)), ("dir", destDir))
                     : LocalizationManager.T("CONTENT_NO_COMPATIBLE", "No compatible file of {title} for {version}", ("title", vm.Title), ("version", (targetVersion ?? "") + (loader != null ? $" ({loader})" : "")));
+                if (installed != null)
+                { LoadMods(); LoadResourcePacks(); LoadShaderPacks(); }
             }
             catch (Exception ex)
             {

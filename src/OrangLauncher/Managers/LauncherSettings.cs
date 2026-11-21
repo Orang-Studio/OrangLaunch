@@ -41,9 +41,7 @@ namespace OrangLauncher.Managers
             }
         }
         public static void Reload()
-        {
-            lock (Lock) _data = null;
-        }
+        { lock (Lock) _data = null; }
         public static string GetString(string key, string def = "")
         {
             try
@@ -111,5 +109,6 @@ namespace OrangLauncher.Managers
             return types;
         }
         public static string NewsBrowser { get => GetString("newsBrowser", "webview2"); set => Set("newsBrowser", value); }
+        public static bool RustMinecraftEnabled { get => GetBool("rustMinecraftEnabled", false); set => Set("rustMinecraftEnabled", value); }
     }
 }

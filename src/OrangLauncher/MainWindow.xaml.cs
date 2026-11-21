@@ -23,9 +23,7 @@ namespace OrangLauncher
     public class InstanceIconConverter : IValueConverter
     {
         public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return value is MinecraftInstance instance ? InstanceIcons.For(instance, 64) : null;
-        }
+        { return value is MinecraftInstance instance ? InstanceIcons.For(instance, 64) : null; }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
     public class FileNameConverter : IValueConverter
@@ -122,7 +120,10 @@ namespace OrangLauncher
         public string LocalizedShaderPacksTab => L("RES_SH_SP_TITLE", "Shader Packs");
         public string LocalizedModdingTab => L("MODS_TAB_TITLE", "Modding");
         public string LocalizedUpdate => L("UPDATE", "Update");
-        public string LocalizedServerManager => L("SERVER_MANAGER", "Server Manager");
+        public string LocalizedServerManager => L("QT_TAB_SERVERS_WORLDS", "Servers and Worlds");
+        public string LocalizedEnableDisableMod => L("QT_ENABLE_DISABLE", "Enable / disable");
+        public string LocalizedRestoreModBackups => L("MODS_RESTORE_BACKUPS", "Restore backups");
+        public string LocalizedGetMods => L("QT_GET_MODS", "Get mods (Modrinth)");
         public string LocalizedGeneralSettings => L("SETTINGS_GENERAL_TITLE", "General Settings");
         public string LocalizedAccountManagement => L("SETTINGS_ACCOUNTS_TITLE", "Account Management");
         public string LocalizedAdvancedSettings => L("SETTINGS_ADVANCED_TITLE", "Advanced Settings");
@@ -200,6 +201,9 @@ namespace OrangLauncher
         public string LocalizedGameBarTitle => L("SETTINGS_GAMEBAR_TITLE", "Game Bar popup");
         public string LocalizedGameBarEnable => L("SETTINGS_GAMEBAR_ENABLE", "Hide the \"ms-gamingoverlay\" popup");
         public string LocalizedGameBarDesc => L("SETTINGS_GAMEBAR_DESC", "Stops Windows from asking for an app to open 'ms-gamingoverlay' links when a game starts. Turns off Game Bar game capture for your user. Turn it off to restore the Windows defaults.");
+        public string LocalizedRustMinecraftTitle => L("SETTINGS_HORIZON_TITLE", "Rust Minecraft (Horizon)");
+        public string LocalizedEnableRustMinecraft => L("SETTINGS_HORIZON_ENABLE", "Enable Rust Minecraft (Expermental)");
+        public string LocalizedRustMinecraftDesc => L("SETTINGS_HORIZON_DESC", "Enable experimental support for Horizon (Rust rewrite of Minecraft 26.3), including Horizon instance creation and the Horizon marketplace.");
         public string LocalizedAboutVersion => UpdateManager.GetAboutVersionText(L("SETTINGS_ABOUT_VERSION", "Version:"));
         public string LocalizedAboutDesc => L("SETTINGS_ABOUT_DESC", "A modern Legacy Minecraft launcher with advanced features.");
         public string LocalizedDevelopedBy => L("SETTINGS_ABOUT_DEVS", "Developed by: adasjusk and previously vakarux");
@@ -210,6 +214,7 @@ namespace OrangLauncher
         public string LocalizedRemoveSelected => L("REMOVE_SELECTED", "Remove Selected");
         public string LocalizedImportMrpack => L("IMPORT_MRPACK", "Import .mrpack");
         public string LocalizedImportOrangpack => L("IMPORT_ORANGPACK", "Import .orangpack");
+        public string LocalizedImportHpack => L("IMPORT_HPACK", "Import .hpack");
         public string LocalizedCancel => L("CANCEL", "Cancel");
         public string LocalizedAddServer => L("ADD_SERVER", "Add Server");
         public string LocalizedQuickPlay => L("QUICK_PLAY", "Quick Play");
@@ -230,6 +235,7 @@ namespace OrangLauncher
         private string _playMode = "play";
         private LaunchService? _launch;
         private InstanceEditor? _editor;
+        private ServersWorldsPanel? _mainServersWorlds;
         private SkinData? _skinData;
         private readonly object _debugLock = new();
         private readonly string _debugLog = System.IO.Path.Combine(LaunchService.LogsDir, $"launcher_{DateTime.Now:yyyyMMdd_HHmmss}.log");
@@ -415,8 +421,10 @@ namespace OrangLauncher
                 _allMods = [.. mods];
                 ApplyModFilter();
                 ModCountTextBlock.Text = L("QT_MODS_LOADED", "{count} mods loaded", ("count", mods.Count));
-                var name = SelectedInstance()?.Name ?? L("NONE", "None");
+                var sel = SelectedInstance();
+                var name = sel?.Name ?? L("NONE", "None");
                 ModsProfileInfoTextBlock.Text = $" | {L("QT_INSTANCE", "Instance")}: {name}";
+                RestoreModBackupsButton.Visibility = sel is { IsHorizon: true } ? Visibility.Collapsed : Visibility.Visible;
             }
             catch (Exception ex) { LogMessage($"Error loading mods: {ex.Message}"); }
         }
@@ -424,6 +432,7 @@ namespace OrangLauncher
         {
             try
             {
+                UpdateResourcePacksButton.Visibility = SelectedInstance() is { IsHorizon: true } ? Visibility.Collapsed : Visibility.Visible;
                 var packs = ResourceManager.Instance.GetPacks(GetCurrentResourcePacksPath(false), false);
                 _allResourcePacks = [.. packs];
                 ApplyResourcePackFilter();
@@ -434,6 +443,7 @@ namespace OrangLauncher
         {
             try
             {
+                UpdateShaderPacksButton.Visibility = SelectedInstance() is { IsHorizon: true } ? Visibility.Collapsed : Visibility.Visible;
                 var packs = ResourceManager.Instance.GetPacks(GetCurrentResourcePacksPath(true), true);
                 _allShaderPacks = [.. packs];
                 ApplyShaderPackFilter();
@@ -462,11 +472,79 @@ namespace OrangLauncher
             => UiKit.PickFiles(title, UiKit.Filter((typeName, pattern)) + "|" + UiKit.AllFiles);
         private void AddModButton_Click(object sender, RoutedEventArgs e)
         {
-            var files = PickContentFiles(L("MODS_FILE_SELECT_TITLE", "Select mods"), L("QT_FT_MODS", "Mod files"), "*.jar");
+            var files = PickContentFiles(L("MODS_FILE_SELECT_TITLE", "Select mods"), L("QT_FT_MODS", "Mod files"), "*.jar;*.hmod;*.zip");
             if (files == null) return;
-            try { ModManager.Instance.AddMods(GetCurrentModsPath(), files); }
+            try
+            {
+                var dir = GetCurrentModsPath();
+                ModManager.Instance.AddMods(dir, files);
+                var inst = SelectedInstance();
+                if (inst is { IsHorizon: true })
+                {
+                    foreach (var f in files)
+                    {
+                        var dest = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(f));
+                        if (dest.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var hm = HorizonClient.ReadHmodMetadata(dest);
+                            HorizonClient.SetModEnabled(inst.MinecraftDir, hm?.Id ?? System.IO.Path.GetFileNameWithoutExtension(dest), true);
+                        }
+                    }
+                }
+            }
             catch (Exception ex) { OlMessageBox.Show(this, ex.Message, LocalizedAddMod, MessageBoxButton.OK, MessageBoxImage.Error); }
             LoadMods();
+        }
+        private void ToggleModButton_Click(object sender, RoutedEventArgs e) => ToggleSelectedModsInTab();
+        private void ModsListBox_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) => ToggleSelectedModsInTab();
+        private void ToggleSelectedModsInTab()
+        {
+            var selectedMods = ModsListBox.SelectedItems.Cast<ModInfo>().ToList();
+            if (selectedMods.Count == 0) return;
+            var inst = SelectedInstance();
+            foreach (var mod in selectedMods)
+            {
+                try
+                {
+                    var p = mod.Path;
+                    if (inst is { IsHorizon: true } && p.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var hm = HorizonClient.ReadHmodMetadata(p);
+                        var modId = hm?.Id ?? System.IO.Path.GetFileNameWithoutExtension(p);
+                        var cur = HorizonClient.IsModEnabled(inst.MinecraftDir, modId, true);
+                        HorizonClient.SetModEnabled(inst.MinecraftDir, modId, !cur);
+                    }
+                    else if (p.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
+                        File.Move(p, p[..^".disabled".Length]);
+                    else
+                        File.Move(p, p + ".disabled");
+                }
+                catch { }
+            }
+            LoadMods();
+        }
+        private void RestoreModBackupsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dir = GetCurrentModsPath();
+            var baks = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.jar.bak") : Array.Empty<string>();
+            if (baks.Length == 0)
+            {
+                UiKit.Info(L("MODS_BACKUP_NONE", "No backups"), L("MODS_BACKUP_NONE_MSG", "No .bak backup files found."));
+                return;
+            }
+            if (!UiKit.Ask(L("MODS_BACKUP_RESTORE_TITLE", "Restore backups"), L("MODS_BACKUP_RESTORE_CONFIRM", "Restore {count} backup(s)?", ("count", baks.Length))))
+                return;
+            int n = 0;
+            foreach (var bak in baks)
+            {
+                try { File.Move(bak, bak[..^4], true); n++; } catch { }
+            }
+            UiKit.Info(L("MODS_BACKUP_RESTORE_DONE", "Restore complete"), L("QT_RESTORED_BACKUPS", "Restored {n} backup(s).", ("n", n)));
+            LoadMods();
+        }
+        private void GetModsContentButton_Click(object sender, RoutedEventArgs e)
+        {
+            var inst = SelectedInstance(); ShowContent("mod", inst is { IsHorizon: true } ? "horizon" : null);
         }
         private void RemoveModButton_Click(object sender, RoutedEventArgs e)
         {
@@ -492,7 +570,7 @@ namespace OrangLauncher
         private void OpenResourcePacksButton_Click(object sender, RoutedEventArgs e) => ResourceManager.Instance.OpenFolder(GetCurrentResourcePacksPath(false));
         private void AddShaderPackButton_Click(object sender, RoutedEventArgs e)
         {
-            var files = PickContentFiles(L("QT_SELECT_PACKS", "Select packs"), L("QT_FT_PACKS", "Packs"), "*.zip");
+            var files = PickContentFiles(L("QT_SELECT_PACKS", "Select packs"), L("QT_FT_PACKS", "Packs"), "*.zip;*.hshader");
             if (files == null) return;
             try { ResourceManager.Instance.AddPacks(GetCurrentResourcePacksPath(true), files); }
             catch (Exception ex) { OlMessageBox.Show(this, ex.Message, LocalizedAddShader, MessageBoxButton.OK, MessageBoxImage.Error); }
@@ -505,73 +583,28 @@ namespace OrangLauncher
             if (selectedPacks.Count > 0) { ResourceManager.Instance.RemovePacks(selectedPacks); LoadShaderPacks(); }
         }
         private void OpenShaderPacksButton_Click(object sender, RoutedEventArgs e) => ResourceManager.Instance.OpenFolder(GetCurrentResourcePacksPath(true));
-        private void RefreshServerButton_Click(object sender, RoutedEventArgs e) => LoadServerList();
         private void LoadServerList()
         {
             try
             {
-                ServersListBox.ItemsSource = null;
-                var instance = SelectedInstance();
-                if (instance == null) return;
-                var path = instance.MinecraftDir;
-                if (!Directory.Exists(path)) return;
-                var servers = ServerListManager.Instance.LoadServers(path);
-                var viewModels = new ObservableCollection<ServerViewModel>();
-                foreach (var server in servers) viewModels.Add(new ServerViewModel(server) { SupportsQuickPlay = true });
-                ServersListBox.ItemsSource = viewModels;
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error loading servers: {ex.Message}");
-            }
-        }
-        private void QuickPlayServer_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button btn && btn.Tag is ServerViewModel viewModel)
-            {
-                PendingQuickPlay = viewModel.Server.Ip;
-                LogMessage($"Quick Play: {viewModel.Server.Name} ({viewModel.Server.Ip})");
-                LaunchGame();
-            }
-        }
-        private void AddServerButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var instance = SelectedInstance();
-                if (instance == null)
+                if (_mainServersWorlds == null)
                 {
-                    OlMessageBox.Show(L("QT_SELECT_INSTANCE_FIRST", "Select an instance first."), LocalizedServerManager, MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
+                    _mainServersWorlds = new ServersWorldsPanel(this);
+                    MainServersWorldsHost.Children.Clear();
+                    MainServersWorldsHost.Children.Add(_mainServersWorlds);
                 }
-                var nameDlg = new AddTextDialog(L("QT_SERVER_NAME", "Server name:"), LocalizedAddServer, "Minecraft Server") { Owner = this };
-                if (nameDlg.ShowDialog() != true || string.IsNullOrWhiteSpace(nameDlg.ResultText)) return;
-                var ipDlg = new AddTextDialog(L("QT_SERVER_ADDRESS", "Server address:"), LocalizedAddServer, "") { Owner = this };
-                if (ipDlg.ShowDialog() != true || string.IsNullOrWhiteSpace(ipDlg.ResultText)) return;
-                var path = instance.MinecraftDir;
-                Directory.CreateDirectory(path);
-                var servers = ServerListManager.Instance.LoadServers(path);
-                servers.Add(new ServerInfo { Name = nameDlg.ResultText.Trim(), Ip = ipDlg.ResultText.Trim() });
-                ServerListManager.Instance.SaveServers(path, servers);
-                LogMessage($"Added server '{nameDlg.ResultText}' ({ipDlg.ResultText}) to {path}");
-                LoadServerList();
+                var instance = SelectedInstance();
+                if (instance != null)
+                {
+                    _mainServersWorlds.Load(instance);
+                }
+                else
+                {
+                    var fallback = new MinecraftInstance { Name = L("CONTENT_DEFAULT_TARGET", "Default (.minecraft)"), InstanceId = "default" }; _mainServersWorlds.Load(fallback);
+                }
             }
             catch (Exception ex)
-            {
-                OlMessageBox.Show(ex.Message, LocalizedServerManager, MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        private void RemoveServerButton_Click(object sender, RoutedEventArgs e)
-        {
-            var instance = SelectedInstance();
-            if (ServersListBox.SelectedItem is not ServerViewModel viewModel || instance == null) return;
-            var server = viewModel.Server;
-            var servers = ServerListManager.Instance.LoadServers(instance.MinecraftDir);
-            var toRemove = servers.FirstOrDefault(s => s.Name == server.Name && s.Ip == server.Ip);
-            if (toRemove == null) return;
-            servers.Remove(toRemove);
-            ServerListManager.Instance.SaveServers(instance.MinecraftDir, servers);
-            LoadServerList();
+            { LogMessage($"Error loading servers and worlds: {ex.Message}"); }
         }
         private void ManageAccountsButton_Click(object? sender, RoutedEventArgs? e)
         {
@@ -589,7 +622,7 @@ namespace OrangLauncher
                 default: MainTabControl.SelectedIndex = 0; break;
             }
         }
-        public void ShowContent(string type)
+        public void ShowContent(string type, string? source = null)
         {
             MainTabControl.SelectedItem = ContentTabItem;
             InitContentPage();
@@ -604,6 +637,8 @@ namespace OrangLauncher
                     _suppressContentSearch = false;
                 }
             }
+            if (source != null) SetContentSource(source, false);
+            else if (inst is { IsHorizon: true }) SetContentSource("horizon", false);
             _contentType = type;
             _contentOffset = 0;
             _ = RunContentSearchAsync();
@@ -747,7 +782,9 @@ namespace OrangLauncher
             try
             {
                 GameProfileComboBox.Items.Clear();
-                var instances = InstanceManager.Instance.GetInstances();
+                var instances = InstanceManager.Instance.GetInstances()
+                    .Where(i => LauncherSettings.RustMinecraftEnabled || !i.IsHorizon)
+                    .ToList();
                 foreach (var instance in instances) GameProfileComboBox.Items.Add(new ComboBoxItem { Content = instance.Name, Tag = instance });
                 var selected = InstanceManager.Instance.GetSelectedInstance();
                 for (int i = 0; i < GameProfileComboBox.Items.Count; i++)
@@ -758,7 +795,12 @@ namespace OrangLauncher
                         break;
                     }
                 }
-                if (GameProfileComboBox.SelectedIndex < 0 && GameProfileComboBox.Items.Count > 0) GameProfileComboBox.SelectedIndex = 0;
+                if (GameProfileComboBox.SelectedIndex < 0 && GameProfileComboBox.Items.Count > 0)
+                {
+                    GameProfileComboBox.SelectedIndex = 0;
+                    if (GameProfileComboBox.Items[0] is ComboBoxItem firstItem && firstItem.Tag is MinecraftInstance firstInst)
+                        InstanceManager.Instance.SetSelectedInstance(firstInst.InstanceId);
+                }
             }
             catch (Exception ex) { LogMessage($"Error: {ex.Message}"); }
             finally { _filling = false; }
@@ -938,8 +980,10 @@ namespace OrangLauncher
             try
             {
                 FlushLog();
-                Clipboard.SetText(LogTextBox.Text ?? "");
-                StatusText = L("LOG_COPIED", "Log copied to clipboard.");
+                if (UiKit.SetClipboardText(LogTextBox.Text ?? ""))
+                    StatusText = L("LOG_COPIED", "Log copied to clipboard.");
+                else
+                    LogMessage("Copy log failed: Clipboard is busy");
             }
             catch (Exception ex) { LogMessage($"Copy log failed: {ex.Message}"); }
         }
@@ -953,7 +997,7 @@ namespace OrangLauncher
                 var (success, urlOrError) = await MclogsClient.UploadAsync(LogTextBox.Text ?? "");
                 if (success)
                 {
-                    try { Clipboard.SetText(urlOrError); } catch { }
+                    UiKit.SetClipboardText(urlOrError);
                     StatusText = $"{L("LOG_UPLOADED", "Log uploaded (link copied):")} {urlOrError}";
                     UiKit.OpenUrl(urlOrError);
                 }
@@ -985,7 +1029,21 @@ namespace OrangLauncher
             if (ProfileModLoaderComboBox.SelectedItem is not ComboBoxItem selected) return;
             var loaderType = selected.Tag?.ToString()?.ToLowerInvariant() ?? "vanilla";
             UpdateEditViewIcon();
+            var isHorizon = loaderType == "horizon";
+            if (ProfileJavaOptionsPanel != null)
+                ProfileJavaOptionsPanel.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            if (ProfileBetasCheckBox != null)
+                ProfileBetasCheckBox.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            if (ProfileAlphasCheckBox != null)
+                ProfileAlphasCheckBox.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            if (ProfileRamLabel != null)
+                ProfileRamLabel.Content = isHorizon ? L("QT_HORIZON_MEM_MAX", "Rust memory") : LocalizedRam;
+            if (ProfileJavaArgsLabel != null)
+                ProfileJavaArgsLabel.Content = isHorizon ? L("QT_HORIZON_ARGS", "Rust arguments") : LocalizedJavaArgs;
+            LoadVersionsAsync();
             var mcVersion = ProfileVersionComboBox.SelectedItem?.ToString() ?? ProfileVersionComboBox.Text;
+            if (isHorizon && !VersionService.IsHorizonCompatibleMcVersion(mcVersion))
+                mcVersion = HorizonClient.DefaultGameVersion;
             if (loaderType == "vanilla")
             {
                 ProfileModLoaderVersionComboBox.ItemsSource = null;
@@ -995,7 +1053,7 @@ namespace OrangLauncher
             }
             ProfileModLoaderVersionComboBox.IsEnabled = true;
             var latest = L("QT_LATEST", "Latest");
-            if (string.IsNullOrEmpty(mcVersion))
+            if (string.IsNullOrEmpty(mcVersion) && loaderType != "horizon")
             {
                 ProfileModLoaderVersionComboBox.ItemsSource = new[] { latest };
                 ProfileModLoaderVersionComboBox.SelectedIndex = 0;
@@ -1165,8 +1223,10 @@ namespace OrangLauncher
             try
             {
                 string name = ProfileNameTextBox.Text.Trim();
-                string version = (ProfileVersionComboBox.SelectedItem?.ToString() ?? ProfileVersionComboBox.Text).Trim();
                 string modLoader = (ProfileModLoaderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()?.ToLowerInvariant() ?? "vanilla";
+                string version = (ProfileVersionComboBox.SelectedItem?.ToString() ?? ProfileVersionComboBox.Text).Trim();
+                if (modLoader == "horizon" && string.IsNullOrEmpty(version))
+                    version = HorizonClient.DefaultGameVersion;
                 string loaderVersion = ProfileModLoaderVersionComboBox.SelectedItem?.ToString() ?? ProfileModLoaderVersionComboBox.Text ?? "";
                 if (!LoaderVersionLooksReal(loaderVersion)) loaderVersion = "";
                 string ram = ((int)ProfileRamSlider.Value).ToString();
@@ -1210,6 +1270,8 @@ namespace OrangLauncher
             => PickAndImport(L("QT_IMPORT_KIND_MRPACK", "Modrinth modpack"), "*.mrpack;*.zip");
         private void ImportOrangpackButton_Click(object sender, RoutedEventArgs e)
             => PickAndImport(L("QT_IMPORT_KIND_ORANGPACK", "OrangLauncher pack"), "*.orangpack");
+        private void ImportHpackButton_Click(object sender, RoutedEventArgs e)
+            => PickAndImport(L("QT_FMT_HPACK", "Horizon modpack (.hpack)"), "*.hpack");
         private void PickAndImport(string title, string pattern)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
@@ -1222,7 +1284,7 @@ namespace OrangLauncher
         public void OpenFile(string path)
         {
             var low = path.ToLowerInvariant();
-            if (low.EndsWith(".mrpack") || low.EndsWith(ModpackImporter.OrangpackExt))
+            if (low.EndsWith(".mrpack") || low.EndsWith(".hpack") || low.EndsWith(ModpackImporter.OrangpackExt))
             {
                 ImportPack(path);
                 return;
@@ -1232,7 +1294,7 @@ namespace OrangLauncher
             {
                 using var zip = System.IO.Compression.ZipFile.OpenRead(path);
                 var names = zip.Entries.Select(x => x.FullName).ToHashSet();
-                if (!names.Contains("instance.json") && (names.Contains("modrinth.index.json") || names.Contains(ModpackImporter.OrangpackIndex)))
+                if (!names.Contains("instance.json") && (names.Contains("modrinth.index.json") || names.Contains("horizon-modpack.toml") || names.Contains(ModpackImporter.OrangpackIndex)))
                 {
                     ImportPack(path);
                     return;
@@ -1292,6 +1354,7 @@ namespace OrangLauncher
             GameProfilesListView.Visibility = Visibility.Collapsed;
             GameProfilesEditorHost.Visibility = Visibility.Collapsed;
             GameProfilesEditView.Visibility = Visibility.Visible;
+            HorizonLoaderComboItem.Visibility = LauncherSettings.RustMinecraftEnabled ? Visibility.Visible : Visibility.Collapsed;
             ConfigureRamSlider();
             RefreshJavaComboBoxInProfile();
             LoadVersionsAsync();
@@ -1316,7 +1379,9 @@ namespace OrangLauncher
         {
             try
             {
-                var instances = InstanceManager.Instance.GetInstances();
+                var instances = InstanceManager.Instance.GetInstances()
+                    .Where(i => LauncherSettings.RustMinecraftEnabled || !i.IsHorizon)
+                    .ToList();
                 _gameInstances.Clear();
                 foreach (var inst in instances) _gameInstances.Add(inst);
             }
@@ -1328,8 +1393,17 @@ namespace OrangLauncher
             {
                 var keep = ProfileVersionComboBox.SelectedItem as string;
                 var versions = await VersionService.GetVersionsAsync();
-                var types = LauncherSettings.VisibleVersionTypes();
-                var versionIds = versions.Where(v => types.Contains(v.Type)).Select(v => v.Id).Distinct().ToList();
+                var loaderType = (ProfileModLoaderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()?.ToLowerInvariant() ?? "vanilla";
+                List<string> versionIds;
+                if (loaderType == "horizon")
+                { versionIds = VersionService.GetHorizonCompatibleVersions(LauncherSettings.ShowSnapshots); }
+                else
+                {
+                    var types = LauncherSettings.VisibleVersionTypes();
+                    versionIds = versions.Where(v => types.Contains(v.Type) && (LauncherSettings.RustMinecraftEnabled || v.Id != HorizonClient.DefaultGameVersion)).Select(v => v.Id).Distinct().ToList();
+                    if (LauncherSettings.RustMinecraftEnabled && !versionIds.Contains(HorizonClient.DefaultGameVersion))
+                        versionIds.Insert(0, HorizonClient.DefaultGameVersion);
+                }
                 if (versionIds.Count == 0) throw new InvalidOperationException();
                 ProfileVersionComboBox.ItemsSource = versionIds;
                 var idx = keep == null ? -1 : versionIds.IndexOf(keep);
@@ -1337,7 +1411,10 @@ namespace OrangLauncher
             }
             catch
             {
-                ProfileVersionComboBox.ItemsSource = new[] { "1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2", "1.16.5", "1.12.2", "1.8.9", "1.7.10" };
+                var loaderType = (ProfileModLoaderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()?.ToLowerInvariant() ?? "vanilla";
+                ProfileVersionComboBox.ItemsSource = loaderType == "horizon"
+                    ? new[] { HorizonClient.DefaultGameVersion }
+                    : new[] { "1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2", "1.16.5", "1.12.2", "1.8.9", "1.7.10" };
                 ProfileVersionComboBox.SelectedIndex = 0;
             }
         }
@@ -1374,6 +1451,8 @@ namespace OrangLauncher
                 if (GameBarFix.Enabled) GameBarFix.Apply(true);
                 UseDiscreteGpuCheckBox.Checked += (s, e) => SaveSettings();
                 UseDiscreteGpuCheckBox.Unchecked += (s, e) => SaveSettings();
+                RustMinecraftCheckBox.Checked += (s, e) => OnRustMinecraftToggled();
+                RustMinecraftCheckBox.Unchecked += (s, e) => OnRustMinecraftToggled();
                 AddPluginButton.Click += AddPluginButton_Click;
                 JavaArchitectureCheckBox.IsChecked = JavaManager.PreferredArchitecture == JavaArchitecture.X86;
                 JavaArchitectureCheckBox.Checked += (s, e) => { JavaManager.PreferredArchitecture = JavaArchitecture.X86; RefreshJavaVersionsList(); };
@@ -1669,6 +1748,39 @@ namespace OrangLauncher
                 if (item.Tag?.ToString() == browser) { NewsBrowserComboBox.SelectedItem = item; break; }
             if (NewsBrowserComboBox.SelectedIndex < 0) NewsBrowserComboBox.SelectedIndex = 0;
             UseDiscreteGpuCheckBox.IsChecked = LauncherSettings.UseDiscreteGpu;
+            RustMinecraftCheckBox.IsChecked = LauncherSettings.RustMinecraftEnabled;
+            ApplyHorizonFeatureVisibility(LauncherSettings.RustMinecraftEnabled);
+        }
+        private void ApplyHorizonFeatureVisibility(bool enabled)
+        {
+            HorizonLoaderComboItem.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            if (ImportHpackButton != null)
+                ImportHpackButton.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            if (ContentSourceComboBox.Items.Count > 1 && ContentSourceComboBox.Items[1] is ComboBoxItem horizonMarketItem)
+                horizonMarketItem.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            if (!enabled && _contentSource == "horizon")
+                SetContentSource("modrinth", _contentInitialized);
+            if (!enabled && _editor?.Instance is { IsHorizon: true })
+                CloseEditor();
+        }
+        private void OnRustMinecraftToggled()
+        {
+            if (!_settingsReady) return;
+            var enabled = RustMinecraftCheckBox.IsChecked == true;
+            LauncherSettings.RustMinecraftEnabled = enabled;
+            ApplyHorizonFeatureVisibility(enabled);
+            if (!enabled && ReferenceEquals(ProfileModLoaderComboBox.SelectedItem, HorizonLoaderComboItem))
+                ProfileModLoaderComboBox.SelectedIndex = 0;
+            if (GameProfilesEditView.Visibility == Visibility.Visible)
+                LoadVersionsAsync();
+            LoadGameProfilesList();
+            LoadGameProfiles();
+            LoadResourcePacks();
+            LoadShaderPacks();
+            LoadMods();
+            LoadServerList();
+            if (_contentInitialized)
+                RefreshContentInstances();
         }
         private void LoadAccountsData()
         {
@@ -1716,6 +1828,7 @@ namespace OrangLauncher
             LauncherSettings.DebugModeEnabled = DebugModeCheckBox.IsChecked ?? false;
             LauncherSettings.NewsBrowser = (NewsBrowserComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "webview2";
             LauncherSettings.UseDiscreteGpu = UseDiscreteGpuCheckBox.IsChecked ?? false;
+            LauncherSettings.RustMinecraftEnabled = RustMinecraftCheckBox.IsChecked ?? false;
         }
         private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -1786,7 +1899,7 @@ namespace OrangLauncher
                 {
                     if (!UpdateManager.IsInstalledBuild())
                     {
-                        if (OlMessageBox.Show(this, L("QT_UPDATE_PORTABLE_MSG", "OrangLauncher is running from a folder, so the built-in updater is disabled.\n\nInstall OrangLauncher with the MSI package from the download page — installed copies update automatically.\n\nOpen the download page now?"), L("QT_UPDATE_PORTABLE_TITLE", "Updates unavailable"), MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                        if (OlMessageBox.Show(this, L("QT_UPDATE_PORTABLE_MSG", "OrangLauncher is running from a folder, so the built-in updater is disabled.\n\nInstall OrangLauncher with the MSI package from the download page - installed copies update automatically.\n\nOpen the download page now?"), L("QT_UPDATE_PORTABLE_TITLE", "Updates unavailable"), MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                             UpdateManager.OpenReleasePage(info);
                         return;
                     }
@@ -1912,6 +2025,7 @@ namespace OrangLauncher
                     catch (Exception ex)
                     {
                         LogMessage($"WebView2 initialization failed: {ex.Message}");
+                        ApplyNewsBrowser("native");
                     }
                 }
             }

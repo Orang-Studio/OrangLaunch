@@ -15,9 +15,6 @@ namespace OrangLauncher.Pages
             ("custom", "QT_TAB_CUSTOMIZATION", "Customization"),
             ("memvideo", "QT_TAB_MEM_VIDEO", "Mem and Video"),
             ("modpack", "QT_TAB_MODPACK", "Modpack Management"),
-            ("mods", "QT_TAB_MODS", "Mods"),
-            ("servers", "QT_TAB_SERVERS_WORLDS", "Servers and Worlds"),
-            ("packs", "QT_TAB_PACKS", "Resource packs and Shader packs"),
             ("sharing", "QT_TAB_SHARING", "Sharing"),
             ("screenshots", "QT_TAB_SCREENSHOTS", "Screenshots"),
             ("other", "QT_TAB_OTHER", "Other settings"),
@@ -31,9 +28,6 @@ namespace OrangLauncher.Pages
         private readonly TextBlock _title = Label("", "h1");
         private readonly TextBlock _subtitle = Label("", "muted");
         public MinecraftInstance? Instance { get; private set; }
-        private readonly ModsPanel _mods;
-        private readonly ServersWorldsPanel _servers;
-        private readonly PacksPanel _packs;
         public InstanceEditor(MainWindow launcher, Action onBack)
         {
             _launcher = launcher;
@@ -62,9 +56,6 @@ namespace OrangLauncher.Pages
             head.Children.Add(col);
             SetDock(head, Dock.Top);
             Children.Add(head);
-            _mods = new ModsPanel(launcher);
-            _servers = new ServersWorldsPanel(launcher);
-            _packs = new PacksPanel(launcher);
             foreach (var (key, tkey, def) in Tabs)
             {
                 FrameworkElement content = key switch
@@ -72,9 +63,6 @@ namespace OrangLauncher.Pages
                     "custom" => BuildCustomization(),
                     "memvideo" => BuildMemVideo(),
                     "modpack" => BuildModpack(),
-                    "mods" => _mods,
-                    "servers" => _servers,
-                    "packs" => _packs,
                     "sharing" => BuildSharing(),
                     "screenshots" => BuildScreenshots(),
                     "other" => BuildOther(),
@@ -89,16 +77,26 @@ namespace OrangLauncher.Pages
         {
             Instance = instance;
             _loadedTabs.Clear();
+            UpdateTabVisibility();
             RefreshHeader();
-            var target = tab == null ? null : _tabs.Items.OfType<TabItem>().FirstOrDefault(t => Equals(t.Tag, tab));
+            if (instance.IsHorizon && tab == "modpack") tab = "sharing";
+            var target = tab == null ? null : _tabs.Items.OfType<TabItem>().FirstOrDefault(t => Equals(t.Tag, tab) && t.Visibility == Visibility.Visible);
             if (target != null) _tabs.SelectedItem = target;
-            else if (_tabs.SelectedIndex < 0) _tabs.SelectedIndex = 0;
+            else if (_tabs.SelectedIndex < 0 || (_tabs.SelectedItem is TabItem cur && cur.Visibility != Visibility.Visible)) _tabs.SelectedIndex = 0;
             LoadTab();
+        }
+        private void UpdateTabVisibility()
+        {
+            var isHorizon = Instance?.IsHorizon == true;
+            var modpackTab = _tabs.Items.OfType<TabItem>().FirstOrDefault(t => Equals(t.Tag, "modpack"));
+            if (modpackTab != null)
+                modpackTab.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
         }
         public void RefreshHeader()
         {
             var inst = Instance;
             if (inst == null) return;
+            UpdateTabVisibility();
             _headerIcon.Source = InstanceIcons.For(inst, 56);
             _title.Text = inst.Name;
             var mb = inst.RamMb;
@@ -117,9 +115,6 @@ namespace OrangLauncher.Pages
                     case "custom": LoadCustomization(); break;
                     case "memvideo": LoadMemVideo(); break;
                     case "modpack": LoadModpack(); break;
-                    case "mods": _mods.Load(Instance); break;
-                    case "servers": _servers.Load(Instance); break;
-                    case "packs": _packs.Load(Instance); break;
                     case "sharing": LoadSharing(); break;
                     case "screenshots": LoadScreenshots(); break;
                     case "other": LoadOther(); break;
@@ -127,9 +122,7 @@ namespace OrangLauncher.Pages
                 }
             }
             catch (Exception ex)
-            {
-                _launcher.AppendLog($"[Editor] load {key}: {ex.Message}");
-            }
+            { _launcher.AppendLog($"[Editor] load {key}: {ex.Message}"); }
         }
         private void Play()
         {
@@ -176,7 +169,7 @@ namespace OrangLauncher.Pages
             col.Children.Add(Label(T("QT_ICON", "Icon"), "muted"));
             _custIconChoice = Combo(200);
             _custIconChoice.Items.Add(Item(T("QT_ICON_LOADER_DEFAULT", "Loader default"), "__default__"));
-            foreach (var l in LoaderVersionService.Loaders) _custIconChoice.Items.Add(Item(l, l));
+            foreach (var l in LoaderVersionService.GetLoaders(true)) _custIconChoice.Items.Add(Item(l, l));
             _custIconChoice.Items.Add(Item(T("QT_ICON_CUSTOM", "Custom image..."), "__custom__"));
             _custIconChoice.SelectionChanged += (_, _) => OnIconChoice();
             var line = Bar(_custIconChoice,
@@ -233,6 +226,15 @@ namespace OrangLauncher.Pages
         private void LoadCustomization()
         {
             var inst = Instance!;
+            _custFilling = true;
+            try
+            {
+                _custIconChoice.Items.Clear();
+                _custIconChoice.Items.Add(Item(T("QT_ICON_LOADER_DEFAULT", "Loader default"), "__default__"));
+                foreach (var l in LoaderVersionService.GetLoaders(inst.IsHorizon)) _custIconChoice.Items.Add(Item(l, l));
+                _custIconChoice.Items.Add(Item(T("QT_ICON_CUSTOM", "Custom image..."), "__custom__"));
+            }
+            finally { _custFilling = false; }
             _custName.Text = inst.Name;
             _custPath.Text = inst.BasePath;
             _custIconPath = !string.IsNullOrEmpty(inst.Icon) && File.Exists(inst.Icon) ? inst.Icon : "";
@@ -264,16 +266,20 @@ namespace OrangLauncher.Pages
         private CheckBox _mvFullscreen = null!;
         private TextBox _mvWidth = null!, _mvHeight = null!;
         private Slider _mvMin = null!, _mvMax = null!, _mvPerm = null!;
+        private FrameworkElement _mvMinRow = null!, _mvPermRow = null!;
+        private TextBlock _mvMaxLabel = null!, _mvMemHint = null!;
         private CheckBox _mvGpu = null!;
         private TextBox _mvJvm = null!, _mvEnv = null!, _mvPre = null!, _mvWrap = null!, _mvPost = null!;
-        private FrameworkElement SliderRow(string label, int lo, int hi, int step, string? zeroText, out Slider slider)
+        private TextBlock _mvJvmLabel = null!, _mvJvmHint = null!, _mvEnvHint = null!, _mvPreHint = null!, _mvWrapHint = null!;
+        private FrameworkElement SliderRow(string label, int lo, int hi, int step, string? zeroText, out Slider slider, out TextBlock titleLabel)
         {
             var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 6) };
             var head = new DockPanel();
             var value = Label("", "accent");
             DockPanel.SetDock(value, Dock.Right);
             head.Children.Add(value);
-            head.Children.Add(Label(label));
+            titleLabel = Label(label);
+            head.Children.Add(titleLabel);
             sp.Children.Add(head);
             var s = new Slider { Minimum = lo, Maximum = hi, TickFrequency = step, IsSnapToTickEnabled = true, SmallChange = step, LargeChange = Math.Max(step, 1024), Margin = new Thickness(0, 4, 0, 0) };
             void Fmt()
@@ -285,6 +291,20 @@ namespace OrangLauncher.Pages
             Fmt();
             sp.Children.Add(s);
             slider = s;
+            return sp;
+        }
+        private static FrameworkElement NamedFormRow(string label, UIElement control, string? hint, out TextBlock labelBlock, out TextBlock hintBlock)
+        {
+            var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
+            labelBlock = Label(label, "h3");
+            labelBlock.FontWeight = FontWeights.Normal;
+            labelBlock.Margin = new Thickness(0, 0, 0, 4);
+            sp.Children.Add(labelBlock);
+            sp.Children.Add(control);
+            hintBlock = Label(hint ?? "", "hint", true);
+            hintBlock.Margin = new Thickness(0, 3, 0, 0);
+            hintBlock.Visibility = string.IsNullOrEmpty(hint) ? Visibility.Collapsed : Visibility.Visible;
+            sp.Children.Add(hintBlock);
             return sp;
         }
         private FrameworkElement BuildMemVideo()
@@ -301,23 +321,26 @@ namespace OrangLauncher.Pages
             body.Children.Add(card);
             var usable = SystemPerformanceHelper.GetMaxGameRamMB();
             card = Card(T("QT_MEMORY", "Memory"), out cb);
-            cb.Children.Add(SliderRow(T("QT_MEM_MIN", "Minimum memory (Xms)"), 256, usable, 128, null, out _mvMin));
-            cb.Children.Add(SliderRow(T("QT_MEM_MAX", "Maximum memory (Xmx)"), 512, usable, 256, null, out _mvMax));
-            cb.Children.Add(SliderRow(T("QT_MEM_PERM", "PermGen / Metaspace"), 0, 2048, 64, T("QT_DEFAULT", "default"), out _mvPerm));
-            cb.Children.Add(Label(T("QT_MEM_HINT", "Detected system memory: {gb} GB. Sliders stop 1 GB below that so the desktop keeps breathing.", ("gb", SystemPerformanceHelper.GetTotalRamGB())), "hint", true));
+            _mvMinRow = SliderRow(T("QT_MEM_MIN", "Minimum memory (Xms)"), 256, usable, 128, null, out _mvMin, out _);
+            cb.Children.Add(_mvMinRow);
+            cb.Children.Add(SliderRow(T("QT_MEM_MAX", "Maximum memory (Xmx)"), 512, usable, 256, null, out _mvMax, out _mvMaxLabel));
+            _mvPermRow = SliderRow(T("QT_MEM_PERM", "PermGen / Metaspace"), 0, 2048, 64, T("QT_DEFAULT", "default"), out _mvPerm, out _);
+            cb.Children.Add(_mvPermRow);
+            _mvMemHint = Label(T("QT_MEM_HINT", "Detected system memory: {gb} GB. Sliders stop 1 GB below that so the desktop keeps breathing.", ("gb", SystemPerformanceHelper.GetTotalRamGB())), "hint", true);
+            cb.Children.Add(_mvMemHint);
             body.Children.Add(card);
             card = Card(T("QT_GRAPHICS", "Graphics"), out cb);
             cb.Children.Add(ToggleRow(T("QT_GPU_INSTANCE", "Run on the high-performance GPU"), T("QT_GPU_INSTANCE_DESC", "Sets the Windows graphics preference of this instance's Java to High performance. For laptops with two GPUs."), false, null, out _mvGpu));
             body.Children.Add(card);
             card = Card(T("QT_VARIABLES", "Variables"), out cb);
             _mvJvm = TextBox("", null, true);
-            cb.Children.Add(FormRow(T("QT_JVM_ARGS", "Java (JVM) arguments"), _mvJvm, T("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1")));
+            cb.Children.Add(NamedFormRow(T("QT_JVM_ARGS", "Java (JVM) arguments"), _mvJvm, T("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1"), out _mvJvmLabel, out _mvJvmHint));
             _mvEnv = TextBox("", null, true);
-            cb.Children.Add(FormRow(T("QT_ENV_VARS", "Environment variables"), _mvEnv, T("QT_ENV_VARS_HINT", "One KEY=VALUE per line, lines starting with # are ignored.")));
+            cb.Children.Add(NamedFormRow(T("QT_ENV_VARS", "Environment variables"), _mvEnv, T("QT_ENV_VARS_HINT", "One KEY=VALUE per line, lines starting with # are ignored."), out _, out _mvEnvHint));
             _mvPre = TextBox();
-            cb.Children.Add(FormRow(T("QT_PRE_LAUNCH", "Pre-launch command"), _mvPre, T("QT_PRE_LAUNCH_HINT_WIN", "Runs in the .minecraft folder (cmd) before the game starts; a non-zero exit aborts the launch. %INST_NAME%, %INST_DIR%, %INST_MC_DIR%, %INST_JAVA%, %INST_MC_VER% are set.")));
+            cb.Children.Add(NamedFormRow(T("QT_PRE_LAUNCH", "Pre-launch command"), _mvPre, T("QT_PRE_LAUNCH_HINT_WIN", "Runs in the .minecraft folder (cmd) before the game starts; a non-zero exit aborts the launch. %INST_NAME%, %INST_DIR%, %INST_MC_DIR%, %INST_JAVA%, %INST_MC_VER% are set."), out _, out _mvPreHint));
             _mvWrap = TextBox();
-            cb.Children.Add(FormRow(T("QT_WRAPPER", "Wrapper command"), _mvWrap, T("QT_WRAPPER_HINT_WIN", "Prepended to the java command line, e.g. a profiler or a custom starter executable.")));
+            cb.Children.Add(NamedFormRow(T("QT_WRAPPER", "Wrapper command"), _mvWrap, T("QT_WRAPPER_HINT_WIN", "Prepended to the java command line, e.g. a profiler or a custom starter executable."), out _, out _mvWrapHint));
             _mvPost = TextBox();
             cb.Children.Add(FormRow(T("QT_POST_EXIT", "Post-exit command"), _mvPost, T("QT_POST_EXIT_HINT_WIN", "Runs after Minecraft closes. %INST_EXIT_CODE% holds the exit code.")));
             body.Children.Add(card);
@@ -328,6 +351,30 @@ namespace OrangLauncher.Pages
         {
             var inst = Instance!;
             var o = inst.Options;
+            var isHorizon = inst.IsHorizon;
+            _mvMinRow.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            _mvPermRow.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            _mvMaxLabel.Text = isHorizon
+                ? T("QT_HORIZON_MEM_MAX", "Rust memory")
+                : T("QT_MEM_MAX", "Maximum memory (Xmx)");
+            _mvMemHint.Text = isHorizon
+                ? T("QT_HORIZON_MEM_HINT", "Detected system memory: {gb} GB.", ("gb", SystemPerformanceHelper.GetTotalRamGB()))
+                : T("QT_MEM_HINT", "Detected system memory: {gb} GB. Sliders stop 1 GB below that so the desktop keeps breathing.", ("gb", SystemPerformanceHelper.GetTotalRamGB()));
+            _mvJvmLabel.Text = isHorizon
+                ? T("QT_HORIZON_ARGS", "Rust arguments")
+                : T("QT_JVM_ARGS", "Java (JVM) arguments");
+            _mvJvmHint.Text = isHorizon
+                ? T("QT_HORIZON_ARGS_HINT", "Extra Horizon CLI flags, e.g. --render-distance 16 --pregen")
+                : T("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1");
+            _mvEnvHint.Text = isHorizon
+                ? T("QT_HORIZON_ENV_HINT", "KEY=VALUE pairs (one per line or space-separated, e.g. HORIZON_GRAPHICS_API=dx12).")
+                : T("QT_ENV_VARS_HINT", "One KEY=VALUE per line, lines starting with # are ignored.");
+            _mvPreHint.Text = isHorizon
+                ? T("QT_HORIZON_PRE_LAUNCH_HINT", "Runs in the instance folder before Horizon starts; a non-zero exit aborts launch. %INST_NAME%, %INST_ID%, %INST_DIR%, %INST_MC_DIR% are set.")
+                : T("QT_PRE_LAUNCH_HINT_WIN", "Runs in the .minecraft folder (cmd) before the game starts; a non-zero exit aborts the launch. %INST_NAME%, %INST_DIR%, %INST_MC_DIR%, %INST_JAVA%, %INST_MC_VER% are set.");
+            _mvWrapHint.Text = isHorizon
+                ? T("QT_HORIZON_WRAPPER_HINT", "Prepended to the Horizon executable command line.")
+                : T("QT_WRAPPER_HINT_WIN", "Prepended to the java command line, e.g. a profiler or a custom starter executable.");
             _mvFullscreen.IsChecked = o.Fullscreen;
             _mvWidth.Text = o.ResWidth > 0 ? o.ResWidth.ToString() : "";
             _mvHeight.Text = o.ResHeight > 0 ? o.ResHeight.ToString() : "";
@@ -545,14 +592,14 @@ namespace OrangLauncher.Pages
         }
         private void MpImportInto()
         {
-            var path = PickFile(T("QT_IMPORT_INTO_TITLE", "Import modpack into this instance"), Filter((T("QT_FT_MODPACKS", "Modpacks"), "*.mrpack;*.orangpack")) + "|" + AllFiles);
+            var path = PickFile(T("QT_IMPORT_INTO_TITLE", "Import modpack into this instance"), Filter((T("QT_FT_MODPACKS", "Modpacks"), "*.mrpack;*.orangpack;*.hpack")) + "|" + AllFiles);
             if (path == null) return;
             if (Ask(T("QT_IMPORT", "Import"), T("QT_IMPORT_INTO_CONFIRM", "Apply this pack on top of the current instance?\nManaged mods of the previously linked pack are removed first.")))
                 MpApply(null, null, true, path);
         }
 
         private TreeView _shTree = null!;
-        private RadioButton _fmtOrang = null!, _fmtMr = null!, _fmtZip = null!;
+        private RadioButton _fmtOrang = null!, _fmtMr = null!, _fmtHpack = null!, _fmtZip = null!;
         private FrameworkElement BuildSharing()
         {
             var (scroll, body) = Page(new Thickness(18, 16, 18, 16));
@@ -560,9 +607,11 @@ namespace OrangLauncher.Pages
             cb.Children.Add(Label(T("QT_EXPORT_HINT", "Tick what to include, choose a format, export. Files that exist on Modrinth are referenced by download link instead of being packed, which keeps .mrpack and .orangpack small."), "hint", true));
             _fmtOrang = new RadioButton { Content = T("QT_FMT_ORANGPACK", "OrangLauncher pack (.orangpack, smallest, keeps instance settings)"), IsChecked = true, GroupName = "fmt", Margin = new Thickness(0, 8, 0, 2) };
             _fmtMr = new RadioButton { Content = T("QT_FMT_MRPACK", "Modrinth pack (.mrpack, works in every launcher)"), GroupName = "fmt" };
+            _fmtHpack = new RadioButton { Content = T("QT_FMT_HPACK", "Horizon modpack (.hpack)"), GroupName = "fmt", Visibility = Visibility.Collapsed };
             _fmtZip = new RadioButton { Content = T("QT_FMT_ZIP", "Full zip (.zip, everything copied, biggest)"), GroupName = "fmt" };
             cb.Children.Add(_fmtOrang);
             cb.Children.Add(_fmtMr);
+            cb.Children.Add(_fmtHpack);
             cb.Children.Add(_fmtZip);
             _shTree = new TreeView { MinHeight = 320, MaxHeight = 520, Margin = new Thickness(0, 10, 0, 10), BorderThickness = new Thickness(1) };
             _shTree.Background = Brushes.Transparent;
@@ -625,6 +674,13 @@ namespace OrangLauncher.Pages
         }
         private void LoadSharing()
         {
+            var isHorizon = Instance?.IsHorizon == true;
+            _fmtMr.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            _fmtHpack.Visibility = isHorizon ? Visibility.Visible : Visibility.Collapsed;
+            if (isHorizon && _fmtMr.IsChecked == true)
+                _fmtHpack.IsChecked = true;
+            else if (!isHorizon && _fmtHpack.IsChecked == true)
+                _fmtOrang.IsChecked = true;
             _shTree.Items.Clear();
             _shRoots.Clear();
             var baseDir = Instance!.BasePath;
@@ -695,8 +751,8 @@ namespace OrangLauncher.Pages
         private async void Export()
         {
             var inst = Instance!;
-            var fmt = _fmtMr.IsChecked == true ? "mrpack" : _fmtZip.IsChecked == true ? "zip" : "orangpack";
-            var ext = fmt == "mrpack" ? ".mrpack" : fmt == "zip" ? ".zip" : ModpackImporter.OrangpackExt;
+            var fmt = _fmtHpack.IsChecked == true ? "hpack" : _fmtMr.IsChecked == true ? "mrpack" : _fmtZip.IsChecked == true ? "zip" : "orangpack";
+            var ext = fmt == "hpack" ? ".hpack" : fmt == "mrpack" ? ".mrpack" : fmt == "zip" ? ".zip" : ModpackImporter.OrangpackExt;
             var safe = Regex.Replace(inst.Name, @"[^\w.-]+", "_").Trim('_');
             if (safe.Length == 0) safe = "instance";
             var path = SaveFile(T("QT_EXPORT_NAME", "Export {name}", ("name", inst.Name)), $"{ext[1..]} (*{ext})|*{ext}", safe + ext);
@@ -780,17 +836,12 @@ namespace OrangLauncher.Pages
         {
             var sel = SelectedScreenshots();
             if (sel.Count == 0)
-            {
-                Info(T("QT_TAB_SCREENSHOTS", "Screenshots"), T("QT_SELECT_SCREENSHOTS_FIRST", "Click screenshots to select them first."));
-                return;
-            }
+            { Info(T("QT_TAB_SCREENSHOTS", "Screenshots"), T("QT_SELECT_SCREENSHOTS_FIRST", "Click screenshots to select them first.")); return; }
             var dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Minecraft", Regex.Replace(Instance!.Name, @"[^\w.-]+", "_"));
             Directory.CreateDirectory(dest);
             int n = 0;
             foreach (var p in sel)
-            {
-                try { File.Copy(p, Path.Combine(dest, Path.GetFileName(p)), true); n++; } catch { }
-            }
+            { try { File.Copy(p, Path.Combine(dest, Path.GetFileName(p)), true); n++; } catch { } }
             Info(T("QT_TAB_SCREENSHOTS", "Screenshots"), T("QT_COPIED_FILES_TO", "Copied {n} file(s) to\n{path}", ("n", n), ("path", dest)));
         }
         private void DeleteScreenshots()
@@ -807,16 +858,19 @@ namespace OrangLauncher.Pages
         }
 
         private CheckBox _otLegacy = null!, _otAnti = null!, _otDemo = null!;
+        private FrameworkElement _otLegacyRow = null!, _otDemoRow = null!;
         private FrameworkElement BuildOther()
         {
             var (scroll, body) = Page(new Thickness(18, 16, 18, 16));
             var card = Card(T("QT_COMPAT", "Compatibility"), out var cb);
-            cb.Children.Add(ToggleRow(T("QT_LEGACY_FIXES", "Legacy client fixes (old Minecraft versions)"),
-                T("QT_LEGACY_FIXES_DESC_WIN", "Adds the JVM flags old clients need (legacy merge sort, relaxed FML certificate checks). Only affects versions below 1.13."), false, null, out _otLegacy));
+            _otLegacyRow = ToggleRow(T("QT_LEGACY_FIXES", "Legacy client fixes (old Minecraft versions)"),
+                T("QT_LEGACY_FIXES_DESC_WIN", "Adds the JVM flags old clients need (legacy merge sort, relaxed FML certificate checks). Only affects versions below 1.13."), false, null, out _otLegacy);
+            cb.Children.Add(_otLegacyRow);
             cb.Children.Add(ToggleRow(T("QT_ANTI_BAN", "Bypass Mojang's blocked-server list"),
                 T("QT_ANTI_BAN_DESC", "Removes Mojang's server block list provider from the game's classpath, so servers on the secret sessionserver.mojang.com/blockedservers list can still be joined. Works on 1.16.4 and newer. Turn it off if a server refuses the connection."), true, null, out _otAnti));
-            cb.Children.Add(ToggleRow(T("QT_DEMO_MODE", "Launch the demo version (--demo)"),
-                T("QT_DEMO_MODE_DESC", "Passes --demo to the game. Use this if you want to try the Java Edition demo: it starts the demo world with the 5 in-game day limit, no account purchase needed."), false, null, out _otDemo));
+            _otDemoRow = ToggleRow(T("QT_DEMO_MODE", "Launch the demo version (--demo)"),
+                T("QT_DEMO_MODE_DESC", "Passes --demo to the game. Use this if you want to try the Java Edition demo: it starts the demo world with the 5 in-game day limit, no account purchase needed."), false, null, out _otDemo);
+            cb.Children.Add(_otDemoRow);
             body.Children.Add(card);
             var card2 = Card(T("QT_DANGER", "Danger zone"), out var cb2);
             cb2.Children.Add(Bar(
@@ -833,7 +887,11 @@ namespace OrangLauncher.Pages
         }
         private void LoadOther()
         {
-            var o = Instance!.Options;
+            var inst = Instance!;
+            var o = inst.Options;
+            var isHorizon = inst.IsHorizon;
+            _otLegacyRow.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            _otDemoRow.Visibility = isHorizon ? Visibility.Collapsed : Visibility.Visible;
             _otLegacy.IsChecked = o.LegacyFixes;
             _otAnti.IsChecked = o.AntiBan;
             _otDemo.IsChecked = o.Demo;
@@ -850,6 +908,7 @@ namespace OrangLauncher.Pages
         private McVersionCombo _vrMc = null!;
         private ComboBox _vrLoader = null!, _vrLoaderVer = null!;
         private JavaCombo _vrJava = null!;
+        private TextBlock _vrJavaLabel = null!, _vrJavaHint = null!;
         private TextBlock _vrStatus = null!, _vrInstalled = null!;
         private bool _vrLoading;
         private int _vrToken;
@@ -865,8 +924,16 @@ namespace OrangLauncher.Pages
             _vrLoader.MaxWidth = 360;
             _vrLoader.HorizontalAlignment = HorizontalAlignment.Left;
             _vrLoader.MinWidth = 180;
-            foreach (var l in LoaderVersionService.Loaders) _vrLoader.Items.Add(l);
-            _vrLoader.SelectionChanged += (_, _) => VrLoaderVersions();
+            foreach (var l in LoaderVersionService.GetLoaders()) _vrLoader.Items.Add(l);
+            _vrLoader.SelectionChanged += (_, _) =>
+            {
+                var isH = (_vrLoader.SelectedItem as string) == "horizon";
+                _vrMc.HorizonOnly = isH;
+                UpdateVersionsJavaVisibility(isH);
+                if (!_vrLoading && isH && !VersionService.IsHorizonCompatibleMcVersion(_vrMc.Version))
+                    _vrMc.Select(HorizonClient.DefaultGameVersion);
+                VrLoaderVersions();
+            };
             FormAdd(form, T("QT_MOD_LOADER", "Mod loader"), _vrLoader);
             _vrLoaderVer = Combo();
             _vrLoaderVer.MaxWidth = 360;
@@ -874,9 +941,22 @@ namespace OrangLauncher.Pages
             _vrLoaderVer.HorizontalAlignment = HorizontalAlignment.Left;
             FormAdd(form, T("QT_LOADER_VERSION", "Loader version"), _vrLoaderVer);
             _vrJava = new JavaCombo { MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
-            FormAdd(form, T("QT_JAVA_RUNTIME", "Java runtime"), _vrJava);
+            var javaRow = form.RowDefinitions.Count;
+            form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _vrJavaLabel = Label(T("QT_JAVA_RUNTIME", "Java runtime"), "muted");
+            _vrJavaLabel.HorizontalAlignment = HorizontalAlignment.Right;
+            _vrJavaLabel.Margin = new Thickness(0, 6, 12, 6);
+            _vrJavaLabel.TextAlignment = TextAlignment.Right;
+            _vrJavaLabel.TextWrapping = TextWrapping.Wrap;
+            Grid.SetRow(_vrJavaLabel, javaRow);
+            form.Children.Add(_vrJavaLabel);
+            _vrJava.Margin = new Thickness(0, 4, 0, 4);
+            Grid.SetRow(_vrJava, javaRow);
+            Grid.SetColumn(_vrJava, 1);
+            form.Children.Add(_vrJava);
             cb.Children.Add(form);
-            cb.Children.Add(Label(T("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17 or 21) and downloads it when missing."), "hint", true));
+            _vrJavaHint = Label(T("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17 or 21) and downloads it when missing."), "hint", true);
+            cb.Children.Add(_vrJavaHint);
             _vrStatus = Label("", "hint", true);
             _vrStatus.Margin = new Thickness(0, 6, 0, 0);
             cb.Children.Add(_vrStatus);
@@ -884,13 +964,21 @@ namespace OrangLauncher.Pages
             body.Children.Add(Bar(
                 Button(T("QT_SAVE", "Save"), SaveVersions, "accent"),
                 Button(T("QT_REINSTALL", "Reinstall game files"), Reinstall, "", "refresh"),
-                Button(T("QT_OPEN_VERSIONS", "Open versions folder"), () => OpenPath(Path.Combine(PlatformPaths.GetMinecraftDir(), "versions")), "", "folder")));
+                Button(T("QT_OPEN_VERSIONS", "Open versions folder"), () => OpenPath(Instance?.IsHorizon == true ? HorizonClient.VersionsDir : Path.Combine(PlatformPaths.GetMinecraftDir(), "versions")), "", "folder")));
             var inst = Label(T("QT_INSTALLED", "Installed"), "h3");
             inst.Margin = new Thickness(0, 12, 0, 4);
             body.Children.Add(inst);
             _vrInstalled = Label("", "muted", true);
             body.Children.Add(_vrInstalled);
             return scroll;
+        }
+        private void UpdateVersionsJavaVisibility(bool isHorizon)
+        {
+            var vis = isHorizon ? Visibility.Collapsed : Visibility.Visible;
+            _vrJavaLabel.Visibility = vis;
+            _vrJava.Visibility = vis;
+            _vrJavaHint.Visibility = vis;
+            _vrStatus.Visibility = vis;
         }
         private async void VrLoaderVersions()
         {
@@ -939,12 +1027,23 @@ namespace OrangLauncher.Pages
             _vrLoading = true;
             try
             {
-                _vrMc.Select(inst.Version);
+                _vrLoader.Items.Clear();
+                foreach (var l in LoaderVersionService.GetLoaders(inst.IsHorizon)) _vrLoader.Items.Add(l);
+                _vrMc.HorizonOnly = inst.IsHorizon;
+                _vrMc.Select(inst.IsHorizon && !VersionService.IsHorizonCompatibleMcVersion(inst.Version) ? HorizonClient.DefaultGameVersion : inst.Version);
                 _vrLoader.SelectedItem = inst.LoaderKey;
                 _vrJava.Fill(inst.JavaPath);
             }
             finally { _vrLoading = false; }
+            UpdateVersionsJavaVisibility(inst.IsHorizon);
             VrLoaderVersions();
+            if (inst.IsHorizon)
+            {
+                var installedBuilds = HorizonClient.GetInstalledVersions();
+                _vrInstalled.Text = T("QT_LAUNCH_ID", "Launch id: {id}", ("id", string.IsNullOrEmpty(inst.LoaderVersion) ? "Latest Horizon release" : inst.LoaderVersion)) + "\n" +
+                    T("QT_VERSION_FOLDERS", "Version folders: {folders}", ("folders", installedBuilds.Count > 0 ? string.Join(", ", installedBuilds) : T("QT_NONE_DETECTED", "none")));
+                return;
+            }
             _vrStatus.Text = T("QT_JAVA_REQUIRED", "Java required: {major}", ("major", JavaResolver.DownloadableMajor(JavaResolver.RequiredJavaFor(inst.Version))));
             var installed = string.IsNullOrEmpty(inst.InstalledVersionName) ? (inst.IsVanilla ? inst.Version : T("QT_NOTHING_INSTALLED", "nothing installed yet (installs on first launch)")) : inst.InstalledVersionName;
             var versionsDir = Path.Combine(PlatformPaths.GetMinecraftDir(), "versions");
@@ -959,7 +1058,9 @@ namespace OrangLauncher.Pages
             var inst = Instance!;
             var mc = _vrMc.Version.Trim();
             var loader = _vrLoader.SelectedItem as string ?? "vanilla";
-            if (!VersionService.IsKnown(mc))
+            if (loader == "horizon" && string.IsNullOrWhiteSpace(mc))
+                mc = HorizonClient.DefaultGameVersion;
+            if (loader != "horizon" && !VersionService.IsKnown(mc))
             {
                 var s = VersionService.Suggestions(mc);
                 Error(T("QT_UNKNOWN_VERSION", "Unknown version"), T("QT_UNKNOWN_VERSION_MSG", "'{version}' is not a valid Minecraft version.", ("version", mc)) +
@@ -987,6 +1088,22 @@ namespace OrangLauncher.Pages
             var inst = Instance!;
             if (!Ask(T("QT_REINSTALL_TITLE", "Reinstall"), T("QT_REINSTALL_CONFIRM", "Delete the installed version folders (not mods, worlds or configs) so they are downloaded again on the next launch?")))
                 return;
+            if (inst.IsHorizon)
+            {
+                try
+                {
+                    if (Directory.Exists(HorizonClient.VersionsDir))
+                        Directory.Delete(HorizonClient.VersionsDir, true);
+                }
+                catch (Exception ex)
+                {
+                    Error(T("QT_REINSTALL_TITLE", "Reinstall"), ex.Message);
+                    return;
+                }
+                Save(T("QT_REINSTALL_DONE", "Version files removed, they will be reinstalled on launch"));
+                LoadVersions();
+                return;
+            }
             var versionsDir = Path.Combine(PlatformPaths.GetMinecraftDir(), "versions");
             try
             {

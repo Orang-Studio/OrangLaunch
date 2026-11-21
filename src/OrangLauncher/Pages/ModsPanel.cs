@@ -24,7 +24,7 @@ namespace OrangLauncher.Pages
             public string Name { get; set; } = "";
             public string Version { get; set; } = "";
             public string File => System.IO.Path.GetFileName(Path);
-            public bool Disabled => Path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
+            public bool Disabled { get; set; }
             public double Opacity => Disabled ? 0.45 : 1;
             public string? Tip { get; set; }
         }
@@ -98,17 +98,33 @@ namespace OrangLauncher.Pages
             _warning.Visibility = inst.IsVanilla ? Visibility.Visible : Visibility.Collapsed;
             var dir = ModsDir();
             var files = Directory.Exists(dir)
-                ? Directory.GetFiles(dir).Where(f => f.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase))
+                ? Directory.GetFiles(dir).Where(f =>
+                        f.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".hmod.disabled", StringComparison.OrdinalIgnoreCase))
                     .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase).ToList()
                 : new List<string>();
+            if (inst.IsHorizon && Directory.Exists(dir))
+            {
+                foreach (var sub in Directory.GetDirectories(dir))
+                    if (File.Exists(Path.Combine(sub, "horizon-mod.toml"))) files.Add(sub);
+            }
             _count.Text = files.Count > 0 ? T("MODS_COUNT", "{n} mods", ("n", files.Count)) : T("MODS_NONE_INSTALLED", "No mods installed");
             var q = _search.Text.Trim();
             var rows = new List<ModRow>();
             foreach (var f in files)
             {
                 var cached = ModMetadataReader.GetCached(f);
-                var row = new ModRow { Path = f, Name = string.IsNullOrEmpty(cached?.Name) ? Path.GetFileName(f) : cached!.Name, Version = cached?.Version ?? "", Tip = cached?.Description };
-                if (row.Disabled) row.Tip = T("QT_MOD_DISABLED_TIP", "Disabled (renamed to .jar.disabled)");
+                var isDisabled = f.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
+                if (!isDisabled && inst.IsHorizon && (f.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) || Directory.Exists(f)))
+                {
+                    var hm = HorizonClient.ReadHmodMetadata(f);
+                    var modId = hm?.Id ?? Path.GetFileNameWithoutExtension(f);
+                    isDisabled = !HorizonClient.IsModEnabled(inst.MinecraftDir, modId, true);
+                }
+                var row = new ModRow { Path = f, Name = string.IsNullOrEmpty(cached?.Name) ? Path.GetFileName(f) : cached!.Name, Version = cached?.Version ?? "", Disabled = isDisabled, Tip = cached?.Description };
+                if (row.Disabled) row.Tip = inst.IsHorizon ? "Disabled in horizon-mods.txt" : T("QT_MOD_DISABLED_TIP", "Disabled (renamed to .jar.disabled)");
                 if (q.Length > 0 && !row.File.Contains(q, StringComparison.OrdinalIgnoreCase) && !row.Name.Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
                 rows.Add(row);
             }
@@ -154,14 +170,25 @@ namespace OrangLauncher.Pages
         {
             if (_instance!.IsVanilla && !Ask(T("MODS_NO_LOADER_TITLE", "No mod loader"), T("MODS_NO_LOADER_MSG", "This instance has no mod loader, mods will not load. Add them anyway?")))
                 return;
-            var files = PickFiles(T("MODS_FILE_SELECT_TITLE", "Select mods"), Filter((T("QT_FT_MODS", "Mod files"), "*.jar;*.zip")) + "|" + AllFiles);
+            var files = PickFiles(T("MODS_FILE_SELECT_TITLE", "Select mods"), Filter((T("QT_FT_MODS", "Mod files"), "*.jar;*.hmod;*.zip")) + "|" + AllFiles);
             if (files == null) return;
             var dir = ModsDir();
             Directory.CreateDirectory(dir);
             int added = 0;
             foreach (var f in files)
             {
-                try { File.Copy(f, Path.Combine(dir, Path.GetFileName(f)), true); added++; } catch { }
+                try
+                {
+                    var dest = Path.Combine(dir, Path.GetFileName(f));
+                    File.Copy(f, dest, true);
+                    if (_instance.IsHorizon && dest.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var hm = HorizonClient.ReadHmodMetadata(dest);
+                        HorizonClient.SetModEnabled(_instance.MinecraftDir, hm?.Id ?? Path.GetFileNameWithoutExtension(dest), true);
+                    }
+                    added++;
+                }
+                catch { }
             }
             Refresh();
             _launcher.SetStatus(T("QT_MODS_ADDED", "Added {n} mod(s)", ("n", added)));
@@ -177,7 +204,15 @@ namespace OrangLauncher.Pages
             var msg = paths.Count == 1 ? T("MODS_REMOVE_CONFIRM_SINGLE", "Remove {name}?", ("name", Path.GetFileName(paths[0])))
                 : T("MODS_REMOVE_CONFIRM_MULTI", "Remove {count} mods?", ("count", paths.Count));
             if (!Ask(T("MODS_REMOVE_CONFIRM_TITLE", "Remove"), msg)) return;
-            foreach (var p in paths) { try { File.Delete(p); } catch { } }
+            foreach (var p in paths)
+            {
+                try
+                {
+                    if (Directory.Exists(p)) Directory.Delete(p, true);
+                    else File.Delete(p);
+                }
+                catch { }
+            }
             Refresh();
         }
         private void ToggleSelected()
@@ -186,7 +221,14 @@ namespace OrangLauncher.Pages
             {
                 try
                 {
-                    if (p.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase)) File.Move(p, p[..^".disabled".Length]);
+                    if (_instance is { IsHorizon: true } && (p.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) || Directory.Exists(p)))
+                    {
+                        var hm = HorizonClient.ReadHmodMetadata(p);
+                        var modId = hm?.Id ?? Path.GetFileNameWithoutExtension(p);
+                        var cur = HorizonClient.IsModEnabled(_instance.MinecraftDir, modId, true);
+                        HorizonClient.SetModEnabled(_instance.MinecraftDir, modId, !cur);
+                    }
+                    else if (p.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase)) File.Move(p, p[..^".disabled".Length]);
                     else File.Move(p, p + ".disabled");
                 }
                 catch { }
@@ -196,7 +238,7 @@ namespace OrangLauncher.Pages
         private void GoContent()
         {
             InstanceManager.Instance.SetSelectedInstance(_instance!.InstanceId);
-            _launcher.ShowContent("mod");
+            _launcher.ShowContent("mod", _instance.IsHorizon ? "horizon" : null);
         }
         private void RestoreBackups()
         {
@@ -216,9 +258,35 @@ namespace OrangLauncher.Pages
             Info(T("MODS_BACKUP_RESTORE_DONE", "Restore complete"), T("QT_RESTORED_BACKUPS", "Restored {n} backup(s).", ("n", n)));
             Refresh();
         }
-        private void UpdateMods()
+        private async void UpdateMods()
         {
             var dir = ModsDir();
+            if (_instance is { IsHorizon: true })
+            {
+                var hmods = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.hmod") : Array.Empty<string>();
+                if (hmods.Length == 0)
+                {
+                    Info(T("MODS_UPDATE_TITLE", "Update mods"), T("QT_NO_MODS_TO_UPDATE", "No mods to update."));
+                    return;
+                }
+                int updated = 0;
+                foreach (var h in hmods)
+                {
+                    try
+                    {
+                        var meta = HorizonClient.ReadHmodMetadata(h);
+                        if (meta == null) continue;
+                        var proj = await HorizonClient.GetProjectAsync(meta.Id);
+                        var latest = proj?.Versions.FirstOrDefault();
+                        if (latest != null && !string.Equals(latest.Version, meta.Version, StringComparison.OrdinalIgnoreCase))
+                        { await HorizonClient.InstallProjectAsync(meta.Id, dir, _instance.MinecraftDir, latest.Version); updated++; }
+                    }
+                    catch { }
+                }
+                Refresh();
+                Info(T("MODS_UPDATE_TITLE", "Update mods"), updated > 0 ? $"Updated {updated} Horizon mod(s)." : "All Horizon mods are up to date.");
+                return;
+            }
             if (!Directory.Exists(dir) || Directory.GetFiles(dir, "*.jar").Length == 0)
             {
                 Info(T("MODS_UPDATE_TITLE", "Update mods"), T("QT_NO_MODS_TO_UPDATE", "No mods to update."));

@@ -6,7 +6,7 @@ namespace OrangLauncher.Managers
     public static class StartupState
     {
         private const string PipeName = "OrangLauncher.OpenFile";
-        private static readonly string[] PackExtensions = [".mrpack", ".orangpack", ".zip"];
+        private static readonly string[] PackExtensions = [".mrpack", ".orangpack", ".hpack", ".zip"];
         private static Mutex? _instanceMutex;
         public static string? PendingMrpackPath { get; set; }
         public static event Action<string>? FileReceived;
@@ -83,6 +83,4 @@ namespace OrangLauncher.Managers
                 }
             }
             catch { }
-        }
-    }
-}
+}   }   }

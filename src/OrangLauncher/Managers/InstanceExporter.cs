@@ -8,19 +8,9 @@ namespace OrangLauncher.Managers
     public static class InstanceExporter
     {
         public static readonly HashSet<string> DefaultSkip = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".minecraft/versions", ".minecraft/libraries", ".minecraft/assets", ".minecraft/logs",
-            ".minecraft/crash-reports", ".minecraft/runtime", ".minecraft/saves", ".minecraft/screenshots",
-            ".minecraft/.fabric", ".minecraft/.mixin.out", ".minecraft/.cache", ".minecraft/usercache.json",
-            ".minecraft/usernamecache.json", ".minecraft/servers.dat_old", ".minecraft/options.txt"
-        };
+        { ".minecraft/versions", ".minecraft/libraries", ".minecraft/assets", ".minecraft/logs", ".minecraft/crash-reports", ".minecraft/runtime", ".minecraft/saves", ".minecraft/screenshots", ".minecraft/.fabric", ".minecraft/.mixin.out", ".minecraft/.cache", ".minecraft/usercache.json", ".minecraft/usernamecache.json", ".minecraft/servers.dat_old", ".minecraft/options.txt" };
         private static readonly Dictionary<string, string> LoaderKeys = new()
-        {
-            ["fabric"] = "fabric-loader",
-            ["quilt"] = "quilt-loader",
-            ["forge"] = "forge",
-            ["neoforge"] = "neoforge"
-        };
+        { ["fabric"] = "fabric-loader", ["quilt"] = "quilt-loader", ["forge"] = "forge", ["neoforge"] = "neoforge" };
         public static bool IsSkipped(string rel) => DefaultSkip.Contains(rel) || DefaultSkip.Any(d => rel.StartsWith(d + "/", StringComparison.OrdinalIgnoreCase));
         public static async Task<string> ExportAsync(MinecraftInstance instance, string outPath, string format, IReadOnlyCollection<string> selected,
             Action<string>? log = null, Action<int, int, string>? progress = null)
@@ -45,6 +35,49 @@ namespace OrangLauncher.Managers
                 }
                 return outPath;
             }
+            if (format == "hpack")
+            {
+                using var zf = ZipFile.Open(outPath, ZipArchiveMode.Create);
+                var safeId = Regex.Replace(instance.Name.ToLowerInvariant(), @"[^a-z0-9_-]+", "_").Trim('_');
+                if (safeId.Length == 0) safeId = "horizon_pack";
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("format = 1");
+                sb.AppendLine($"id = \"{safeId}\"");
+                sb.AppendLine($"name = \"{instance.Name.Replace("\"", "\\\"")}\"");
+                sb.AppendLine("version = \"0.1.0\"");
+                sb.AppendLine($"game = \"{HorizonClient.DefaultGameVersion}\"");
+                var modsDir = instance.ModsDir;
+                if (Directory.Exists(modsDir))
+                {
+                    foreach (var hmod in Directory.GetFiles(modsDir, "*.hmod"))
+                    {
+                        var meta = HorizonClient.ReadHmodMetadata(hmod);
+                        var id = meta?.Id ?? Path.GetFileNameWithoutExtension(hmod);
+                        var ver = meta?.Version ?? "0.1.0";
+                        var sha = HorizonClient.ComputeFileSha256(hmod);
+                        var on = HorizonClient.IsModEnabled(instance.MinecraftDir, id, true);
+                        sb.AppendLine();
+                        sb.AppendLine("[[mods]]");
+                        sb.AppendLine($"id = \"{id}\"");
+                        sb.AppendLine($"version = \"{ver}\"");
+                        sb.AppendLine($"sha256 = \"{sha}\"");
+                        sb.AppendLine($"on = {(on ? "true" : "false")}");
+                    }
+                }
+                var te = zf.CreateEntry("horizon-modpack.toml");
+                await using (var w = new StreamWriter(te.Open())) await w.WriteAsync(sb.ToString());
+                for (int i = 0; i < files.Count; i++)
+                {
+                    var (rel, path) = files[i];
+                    if (!rel.StartsWith(mcRoot, StringComparison.OrdinalIgnoreCase)) continue;
+                    var sub = rel[mcRoot.Length..];
+                    if (sub.StartsWith("horizon-mods/", StringComparison.OrdinalIgnoreCase) && sub.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    zf.CreateEntryFromFile(path, "overrides/" + sub, CompressionLevel.Optimal);
+                    progress?.Invoke(i + 1, files.Count, rel);
+                }
+                return outPath;
+            }
             var candidates = files.Where(f => f.Rel.StartsWith(mcRoot) &&
                 (f.Rel.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) || f.Rel.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) &&
                 new[] { "mods/", "resourcepacks/", "shaderpacks/", "datapacks/" }.Any(d => f.Rel[mcRoot.Length..].StartsWith(d))).ToList();
@@ -66,11 +99,7 @@ namespace OrangLauncher.Managers
                 var rel = local.Rel[mcRoot.Length..];
                 remoteFiles.Add(new JsonObject
                 {
-                    ["path"] = rel,
-                    ["hashes"] = new JsonObject { ["sha1"] = sha1, ["sha512"] = vf.Hashes.Sha512 ?? ModrinthClient.Sha512(local.Path) },
-                    ["env"] = new JsonObject { ["client"] = "required", ["server"] = rel.StartsWith("mods/") ? "required" : "unsupported" },
-                    ["downloads"] = new JsonArray(vf.Url),
-                    ["fileSize"] = new FileInfo(local.Path).Length
+                    ["path"] = rel, ["hashes"] = new JsonObject { ["sha1"] = sha1, ["sha512"] = vf.Hashes.Sha512 ?? ModrinthClient.Sha512(local.Path) }, ["env"] = new JsonObject { ["client"] = "required", ["server"] = rel.StartsWith("mods/") ? "required" : "unsupported" }, ["downloads"] = new JsonArray(vf.Url), ["fileSize"] = new FileInfo(local.Path).Length
                 });
             }
             var deps = new JsonObject { ["minecraft"] = instance.Version };
@@ -84,15 +113,7 @@ namespace OrangLauncher.Managers
                 }
             }
             var index = new JsonObject
-            {
-                ["formatVersion"] = 1,
-                ["game"] = "minecraft",
-                ["versionId"] = "1.0.0",
-                ["name"] = instance.Name,
-                ["summary"] = $"Exported from OrangLauncher {UpdateManager.GetCurrentVersionString().TrimStart('v')}",
-                ["files"] = remoteFiles,
-                ["dependencies"] = deps
-            };
+            { ["formatVersion"] = 1, ["game"] = "minecraft", ["versionId"] = "1.0.0", ["name"] = instance.Name, ["summary"] = $"Exported from OrangLauncher {UpdateManager.GetCurrentVersionString().TrimStart('v')}", ["files"] = remoteFiles, ["dependencies"] = deps };
             var jsonOptions = new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
             using (var zf = ZipFile.Open(outPath, ZipArchiveMode.Create))
             {
@@ -100,16 +121,9 @@ namespace OrangLauncher.Managers
                 {
                     var orang = new JsonObject
                     {
-                        ["launcher"] = UpdateManager.GetCurrentVersionString().TrimStart('v'),
-                        ["instance"] = new JsonObject
+                        ["launcher"] = UpdateManager.GetCurrentVersionString().TrimStart('v'), ["instance"] = new JsonObject
                         {
-                            ["name"] = instance.Name,
-                            ["version"] = instance.Version,
-                            ["mod_loader"] = instance.LoaderKey,
-                            ["loader_version"] = instance.LoaderVersion,
-                            ["ram"] = instance.Ram,
-                            ["env_vars"] = instance.EnvVars,
-                            ["options"] = JsonSerializer.SerializeToNode(instance.Options)
+                            ["name"] = instance.Name, ["version"] = instance.Version, ["mod_loader"] = instance.LoaderKey, ["loader_version"] = instance.LoaderVersion, ["ram"] = instance.Ram, ["env_vars"] = instance.EnvVars, ["options"] = JsonSerializer.SerializeToNode(instance.Options)
                         }
                     };
                     index["orangpack"] = orang;

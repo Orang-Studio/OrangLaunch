@@ -64,7 +64,7 @@ namespace OrangLauncher.Managers
             return 8192;
         }
         public static int GetTotalRamGB() => (int)Math.Round(GetTotalRamMB() / 1024.0);
-        public static int GetMaxGameRamMB() => Math.Max(2048, (GetTotalRamGB() - 1) * 1024);
+        public static int GetMaxGameRamMB() => (int)Math.Max(2048, (GetTotalRamMB() / 256) * 256);
         public static List<string> GetPerformanceArgumentStrings(string tier, int allocatedRamMB)
         {
             var args = new List<string>();
@@ -156,17 +156,42 @@ namespace OrangLauncher.Managers
                 {
                     _cache = Cached;
                 }
+                if (LauncherSettings.RustMinecraftEnabled && _cache.All(v => v.Id != HorizonClient.DefaultGameVersion))
+                    _cache.Insert(0, new GameVersionEntry { Id = HorizonClient.DefaultGameVersion, Type = "release" });
+                else if (!LauncherSettings.RustMinecraftEnabled)
+                    _cache.RemoveAll(v => v.Id == HorizonClient.DefaultGameVersion);
                 return _cache;
             }
             finally
-            {
-                Gate.Release();
-            }
+            { Gate.Release(); }
+        }
+        public static bool IsHorizonCompatibleMcVersion(string? version)
+        {
+            if (string.IsNullOrWhiteSpace(version)) return false;
+            var v = version.Trim();
+            if (v == HorizonClient.DefaultGameVersion) return true;
+            var m = System.Text.RegularExpressions.Regex.Match(v, @"^(\d+)\.(\d+)");
+            if (!m.Success) return false;
+            if (!int.TryParse(m.Groups[1].Value, out var major) || !int.TryParse(m.Groups[2].Value, out var minor))
+                return false;
+            return major > 26 || (major == 26 && minor >= 3);
+        }
+        public static List<string> GetHorizonCompatibleVersions(bool includeSnapshots)
+        {
+            var list = Cached
+                .Where(v => (v.Type == "release" || (includeSnapshots && v.Type == "snapshot")) && IsHorizonCompatibleMcVersion(v.Id))
+                .Select(v => v.Id)
+                .Distinct()
+                .ToList();
+            if (!list.Contains(HorizonClient.DefaultGameVersion))
+                list.Insert(0, HorizonClient.DefaultGameVersion);
+            return list;
         }
         public static bool IsKnown(string version)
         {
+            if (IsHorizonCompatibleMcVersion(version) && LauncherSettings.RustMinecraftEnabled) return true;
             var list = Cached;
-            return list.Count == 0 || list.Any(v => v.Id == version);
+            return list.Count == 0 || list.Any(v => v.Id == version && (LauncherSettings.RustMinecraftEnabled || v.Id != HorizonClient.DefaultGameVersion));
         }
         public static List<string> Suggestions(string version)
         {
@@ -178,6 +203,10 @@ namespace OrangLauncher.Managers
     public static class LoaderVersionService
     {
         public static readonly string[] Loaders = ["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"];
+        public static string[] GetLoaders(bool includeHorizon = false) =>
+            (includeHorizon || LauncherSettings.RustMinecraftEnabled)
+                ? ["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine", "horizon"]
+                : Loaders;
         private static readonly HttpClient Http = CreateClient();
         private static HttpClient CreateClient()
         {
@@ -188,8 +217,11 @@ namespace OrangLauncher.Managers
         private static List<string>? _forgeAll;
         public static async Task<List<string>> FetchAsync(string loader, string mcVersion)
         {
+            var key = (loader ?? "").ToLowerInvariant();
+            if (key == "horizon")
+                return (await HorizonClient.GetReleaseTagsAsync()).ToList();
             if (string.IsNullOrWhiteSpace(mcVersion)) return new List<string>();
-            switch ((loader ?? "").ToLowerInvariant())
+            switch (key)
             {
                 case "forge":
                     {
@@ -236,6 +268,4 @@ namespace OrangLauncher.Managers
                 if (x != y) return x.CompareTo(y);
             }
             return string.CompareOrdinal(a, b);
-        }
-    }
-}
+}   }   }

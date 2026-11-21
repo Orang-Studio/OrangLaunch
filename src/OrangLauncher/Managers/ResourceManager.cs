@@ -10,7 +10,10 @@ namespace OrangLauncher.Managers
             var packs = new List<ResourcePackInfo>();
             if (!Directory.Exists(path)) return packs;
             var files = Directory.GetFiles(path, "*.*")
-                .Where(f => f.EndsWith(".zip") || f.EndsWith(".jar") || Directory.Exists(f));
+                .Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ||
+                            (isShader && f.EndsWith(".hshader", StringComparison.OrdinalIgnoreCase)) ||
+                            Directory.Exists(f));
             foreach (var file in files)
             {
                 var fi = new FileInfo(file);

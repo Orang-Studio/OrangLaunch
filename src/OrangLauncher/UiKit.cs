@@ -414,9 +414,59 @@ namespace OrangLauncher
             ThemeManager.ThemeChanged += handler;
             if (root is Window w) w.Closed += (_, _) => ThemeManager.ThemeChanged -= handler;
         }
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseClipboard();
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool EmptyClipboard();
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalLock(IntPtr hMem);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GlobalUnlock(IntPtr hMem);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalFree(IntPtr hMem);
         public static void Copy(string text)
         {
-            try { Clipboard.SetText(text); } catch { }
+            SetClipboardText(text);
+        }
+        public static bool SetClipboardText(string text)
+        {
+            text ??= "";
+            var bytes = System.Text.Encoding.Unicode.GetBytes(text + "\0");
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    IntPtr hGlobal = IntPtr.Zero;
+                    try
+                    {
+                        EmptyClipboard();
+                        hGlobal = GlobalAlloc(0x0002, (UIntPtr)bytes.Length);
+                        if (hGlobal == IntPtr.Zero) return false;
+                        var ptr = GlobalLock(hGlobal);
+                        if (ptr == IntPtr.Zero)
+                        {GlobalFree(hGlobal); return false;}
+                        try
+                        {System.Runtime.InteropServices.Marshal.Copy(bytes, 0, ptr, bytes.Length);}
+                        finally
+                        {GlobalUnlock(hGlobal);}
+                        if (SetClipboardData(13, hGlobal) != IntPtr.Zero)
+                        {hGlobal = IntPtr.Zero; return true;}
+                    }
+                    finally
+                    {
+                        if (hGlobal != IntPtr.Zero) GlobalFree(hGlobal);
+                        CloseClipboard();
+                    }
+                }
+                System.Threading.Thread.Sleep(15);
+            }
+            return false;
         }
         public static void OnUi(Action a)
         {

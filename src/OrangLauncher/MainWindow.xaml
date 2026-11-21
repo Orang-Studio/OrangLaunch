@@ -60,6 +60,100 @@
                     </Setter.Value>
                 </Setter>
             </Style>
+            <Style x:Key="RustToggleSwitchStyle" TargetType="CheckBox">
+                <Setter Property="Background" Value="{DynamicResource BgTertiaryBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CheckBox">
+                            <Grid x:Name="templateRoot" Background="Transparent" SnapsToDevicePixels="True">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="toggleTrack"
+                                        Grid.Column="0"
+                                        Width="44" Height="24"
+                                        CornerRadius="0"
+                                        Background="{DynamicResource BgTertiaryBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,10,0">
+                                    <Grid>
+                                        <Border x:Name="toggleThumb"
+                                                Width="18" Height="18"
+                                                CornerRadius="0"
+                                                Background="#888888"
+                                                HorizontalAlignment="Left"
+                                                Margin="2,0,0,0"/>
+                                        <Viewbox x:Name="rustThumbLogo"
+                                                 Width="19" Height="19"
+                                                 HorizontalAlignment="Right"
+                                                 VerticalAlignment="Center"
+                                                 Margin="0,0,2,0"
+                                                 Stretch="Uniform"
+                                                 Visibility="Collapsed">
+                                            <Canvas Width="108" Height="108">
+                                                <Path Fill="White" Data="F0 m71.05 23.68c-26.06 0-47.27 21.22-47.27 47.27s21.22 47.27 47.27 47.27 47.27-21.22 47.27-47.27-21.22-47.27-47.27-47.27zm-.07 4.2a3.1 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm7.12 5.12a38.27 38.27 0 0 1 26.2 18.66l-3.67 8.28c-.63 1.43.02 3.11 1.44 3.75l7.06 3.13a38.27 38.27 0 0 1 .08 6.64h-3.93c-.39 0-.55.26-.55.64v1.8c0 4.24-2.39 5.17-4.49 5.4-2 .23-4.21-.84-4.49-2.06-1.18-6.63-3.14-8.04-6.24-10.49 3.85-2.44 7.85-6.05 7.85-10.87 0-5.21-3.57-8.49-6-10.1-3.42-2.25-7.2-2.7-8.22-2.7h-40.6a38.27 38.27 0 0 1 21.41-12.08l4.79 5.02c1.08 1.13 2.87 1.18 4 .09zm-44.2 23.02a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm74.15.14a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm-68.29.5h5.42v24.44h-10.94a38.27 38.27 0 0 1 -1.24-14.61l6.7-2.98c1.43-.64 2.08-2.31 1.44-3.74zm22.62.26h12.91c.67 0 4.71.77 4.71 3.8 0 2.51-3.1 3.41-5.65 3.41h-11.98zm0 17.56h9.89c.9 0 4.83.26 6.08 5.28.39 1.54 1.26 6.56 1.85 8.17.59 1.8 2.98 5.4 5.53 5.4h16.14a38.27 38.27 0 0 1 -3.54 4.1l-6.57-1.41c-1.53-.33-3.04.65-3.37 2.18l-1.56 7.28a38.27 38.27 0 0 1 -31.91-.15l-1.56-7.28c-.33-1.53-1.83-2.51-3.36-2.18l-6.43 1.38a38.27 38.27 0 0 1 -3.32-3.92h31.27c.35 0 .59-.06.59-.39v-11.06c0-.32-.24-.39-.59-.39h-9.15zm-14.43 25.33a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm46.05.14a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11z">
+                                                    <Path.RenderTransform>
+                                                        <TranslateTransform X="-17" Y="-17"/>
+                                                    </Path.RenderTransform>
+                                                </Path>
+                                                <Path Fill="White" Stroke="White" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="F0 m115.68 70.95a44.63 44.63 0 0 1 -44.63 44.63 44.63 44.63 0 0 1 -44.63-44.63 44.63 44.63 0 0 1 44.63-44.63 44.63 44.63 0 0 1 44.63 44.63zm-.84-4.31 6.96 4.31-6.96 4.31 5.98 5.59-7.66 2.87 4.78 6.65-8.09 1.32 3.4 7.46-8.19-.29 1.88 7.98-7.98-1.88.29 8.19-7.46-3.4-1.32 8.09-6.65-4.78-2.87 7.66-5.59-5.98-4.31 6.96-4.31-6.96-5.59 5.98-2.87-7.66-6.65 4.78-1.32-8.09-7.46 3.4.29-8.19-7.98 1.88 1.88-7.98-8.19.29 3.4-7.46-8.09-1.32 4.78-6.65-7.66-2.87 5.98-5.59-6.96-4.31 6.96-4.31-5.98-5.59 7.66-2.87-4.78-6.65 8.09-1.32-3.4-7.46 8.19.29-1.88-7.98 7.98 1.88-.29-8.19 7.46 3.4 1.32-8.09 6.65 4.78 2.87-7.66 5.59 5.98 4.31-6.96 4.31 6.96 5.59-5.98 2.87 7.66 6.65-4.78 1.32 8.09 7.46-3.4-.29 8.19 7.98-1.88-1.88 7.98 8.19-.29-3.4 7.46 8.09 1.32-4.78 6.65 7.66 2.87z">
+                                                    <Path.RenderTransform>
+                                                        <TranslateTransform X="-17" Y="-17"/>
+                                                    </Path.RenderTransform>
+                                                </Path>
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Grid>
+                                </Border>
+                                <ContentPresenter x:Name="contentPresenter"
+                                                  Grid.Column="1"
+                                                  Focusable="False"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  RecognizesAccessKey="True"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                                  VerticalAlignment="Center"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="False">
+                                    <Setter TargetName="toggleTrack" Property="Background" Value="{DynamicResource BgTertiaryBrush}"/>
+                                    <Setter TargetName="toggleThumb" Property="Background" Value="#888888"/>
+                                    <Setter TargetName="toggleThumb" Property="Visibility" Value="Visible"/>
+                                    <Setter TargetName="rustThumbLogo" Property="Visibility" Value="Collapsed"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="toggleTrack" Property="Background" Value="#867DBC"/>
+                                    <Setter TargetName="toggleTrack" Property="BorderBrush" Value="#867DBC"/>
+                                    <Setter TargetName="toggleThumb" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="rustThumbLogo" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="toggleThumb" Property="Background" Value="#AAAAAA"/>
+                                    <Setter TargetName="toggleTrack" Property="BorderBrush" Value="#867DBC"/>
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsMouseOver" Value="True"/>
+                                        <Condition Property="IsChecked" Value="True"/>
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="toggleTrack" Property="Background" Value="#9B93CC"/>
+                                    <Setter TargetName="toggleTrack" Property="BorderBrush" Value="#9B93CC"/>
+                                </MultiTrigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="toggleTrack" Property="Opacity" Value="0.5"/>
+                                    <Setter TargetName="contentPresenter" Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
     <Grid SnapsToDevicePixels="True">
@@ -159,7 +253,6 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-
                 </Grid>
             </TabItem>
             <TabItem>
@@ -186,7 +279,6 @@
                         <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
                             <TextBlock Text="{Binding LocalizedGameProfilesTitle}" FontSize="20" FontWeight="Bold" 
                                      VerticalAlignment="Center" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,20,5"/>
-
                             <Button x:Name="AddProfileButton" Margin="0,0,10,5" Padding="15,6" 
                                   Style="{DynamicResource DefaultButtonStyle}" Click="AddProfileButton_Click">
                                 <StackPanel Orientation="Horizontal">
@@ -218,6 +310,17 @@
                                         </Rectangle.OpacityMask>
                                     </Rectangle>
                                     <TextBlock Text="{Binding LocalizedImportOrangpack, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ImportHpackButton" Margin="0,0,10,5" Padding="15,6" Visibility="Collapsed"
+                                  Style="{DynamicResource DefaultButtonStyle}" Click="ImportHpackButton_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
+                                        <Rectangle.OpacityMask>
+                                            <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/install.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        </Rectangle.OpacityMask>
+                                    </Rectangle>
+                                    <TextBlock Text="{Binding LocalizedImportHpack, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                 </StackPanel>
                             </Button>
                         </WrapPanel>
@@ -315,7 +418,6 @@
                                         <StackPanel Margin="0,0,10,0">
                                             <Label Content="{Binding LocalizedName, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
                                             <TextBox x:Name="ProfileNameTextBox" Style="{DynamicResource DefaultTextBoxStyle}" Margin="0,0,0,15"/>
-
                                             <Grid Margin="0,0,0,15">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -332,6 +434,7 @@
                                                         <ComboBoxItem Content="Quilt" Tag="quilt"/>
                                                         <ComboBoxItem Content="NeoForge" Tag="neoforge"/>
                                                         <ComboBoxItem Content="OptiFine" Tag="optifine"/>
+                                                        <ComboBoxItem x:Name="HorizonLoaderComboItem" Content="Horizon (Rust)" Tag="horizon" Visibility="Collapsed"/>
                                                     </ComboBox>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2">
@@ -346,24 +449,25 @@
                                                 <CheckBox x:Name="ProfileBetasCheckBox" Content="{Binding LocalizedShowBetas}" Margin="0,0,15,5" Foreground="{DynamicResource FgPrimaryBrush}" Style="{DynamicResource ModernToggleSwitchStyle}"/>
                                                 <CheckBox x:Name="ProfileAlphasCheckBox" Content="{Binding LocalizedShowAlphas}" Margin="0,0,15,5" Foreground="{DynamicResource FgPrimaryBrush}" Style="{DynamicResource ModernToggleSwitchStyle}"/>
                                             </WrapPanel>
-
-                                            <Label Content="{Binding LocalizedRam, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
+                                            <Label x:Name="ProfileRamLabel" Content="{Binding LocalizedRam, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
                                                 <TextBlock Text="{Binding Value, ElementName=ProfileRamSlider, StringFormat={}{0:F0} MB}" 
                                                            Foreground="{DynamicResource FgPrimaryBrush}" Width="60" VerticalAlignment="Center"/>
                                                 <Slider x:Name="ProfileRamSlider" Width="300" Minimum="1024" Maximum="32768" TickFrequency="256" 
                                                         IsSnapToTickEnabled="True" SmallChange="256" LargeChange="1024" VerticalAlignment="Center"/>
                                             </StackPanel>
-                                            <Label Content="{Binding LocalizedPerformance, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
-                                            <ComboBox x:Name="ProfilePerformanceTierComboBox" Style="{DynamicResource DefaultComboBoxStyle}" Margin="0,0,0,15">
-                                                <ComboBoxItem Content="Auto (Detect)" Tag="Auto" IsSelected="True"/>
-                                                <ComboBoxItem Content="Low (Conservative)" Tag="Low"/>
-                                                <ComboBoxItem Content="Mid (Balanced)" Tag="Mid"/>
-                                                <ComboBoxItem Content="High (Aggressive)" Tag="High"/>
-                                            </ComboBox>
-                                            <Label Content="{Binding LocalizedJavaVersion, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
-                                            <ComboBox x:Name="ProfileJavaComboBox" Style="{DynamicResource DefaultComboBoxStyle}" Margin="0,0,0,15"/>
-                                            <Label Content="{Binding LocalizedJavaArgs, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
+                                            <StackPanel x:Name="ProfileJavaOptionsPanel">
+                                                <Label Content="{Binding LocalizedPerformance, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="ProfilePerformanceTierComboBox" Style="{DynamicResource DefaultComboBoxStyle}" Margin="0,0,0,15">
+                                                    <ComboBoxItem Content="Auto (Detect)" Tag="Auto" IsSelected="True"/>
+                                                    <ComboBoxItem Content="Low (Conservative)" Tag="Low"/>
+                                                    <ComboBoxItem Content="Mid (Balanced)" Tag="Mid"/>
+                                                    <ComboBoxItem Content="High (Aggressive)" Tag="High"/>
+                                                </ComboBox>
+                                                <Label Content="{Binding LocalizedJavaVersion, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="ProfileJavaComboBox" Style="{DynamicResource DefaultComboBoxStyle}" Margin="0,0,0,15"/>
+                                            </StackPanel>
+                                            <Label x:Name="ProfileJavaArgsLabel" Content="{Binding LocalizedJavaArgs, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{DynamicResource FgPrimaryBrush}" Margin="0,0,0,5"/>
                                             <TextBox x:Name="ProfileJavaArgsTextBox" Style="{DynamicResource DefaultTextBoxStyle}" Margin="0,0,0,10"/>
                                         </StackPanel>
                                     </ScrollViewer>
@@ -642,6 +746,17 @@
                                                 <TextBlock Text="{Binding LocalizedAddMod, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button x:Name="ToggleModButton" Margin="0,0,10,5" Padding="15,5"
+                                              Style="{DynamicResource DefaultButtonStyle}" Click="ToggleModButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
+                                                    <Rectangle.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/select.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    </Rectangle.OpacityMask>
+                                                </Rectangle>
+                                                <TextBlock Text="{Binding LocalizedEnableDisableMod, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            </StackPanel>
+                                        </Button>
                                         <Button x:Name="UpdateModsButton" Margin="0,0,10,5" Padding="15,5" 
                                               Style="{DynamicResource DefaultButtonStyle}" Click="UpdateModsButton_Click">
                                             <StackPanel Orientation="Horizontal">
@@ -651,6 +766,17 @@
                                                     </Rectangle.OpacityMask>
                                                 </Rectangle>
                                                 <TextBlock Text="{Binding LocalizedUpdate, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="RestoreModBackupsButton" Margin="0,0,10,5" Padding="15,5"
+                                              Style="{DynamicResource DefaultButtonStyle}" Click="RestoreModBackupsButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
+                                                    <Rectangle.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/refresh.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    </Rectangle.OpacityMask>
+                                                </Rectangle>
+                                                <TextBlock Text="{Binding LocalizedRestoreModBackups, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="RefreshModsButton" Margin="0,0,10,5" Padding="15,5"
@@ -686,15 +812,25 @@
                                                 <TextBlock Text="{Binding LocalizedOpenFolder, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                             </StackPanel>
                                         </Button>
-                                        
+                                        <Button x:Name="GetModsContentButton" Margin="0,0,10,5" Padding="15,5"
+                                              Style="{DynamicResource DefaultButtonStyle}" Click="GetModsContentButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
+                                                    <Rectangle.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/search.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    </Rectangle.OpacityMask>
+                                                </Rectangle>
+                                                <TextBlock Text="{Binding LocalizedGetMods, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            </StackPanel>
+                                        </Button>
                                     </WrapPanel>
                                 </StackPanel>
-
                                 <ListBox x:Name="ModsListBox" Grid.Row="1" Margin="0,0,0,10" SelectionMode="Extended"
+                                    MouseDoubleClick="ModsListBox_MouseDoubleClick"
                                     Style="{DynamicResource DefaultListBoxStyle}">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Margin="5">
+                                        <StackPanel Orientation="Horizontal" Margin="5" Opacity="{Binding Opacity}">
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}"/>
                                                 <TextBlock Text="{Binding Size}" FontSize="10" Foreground="{DynamicResource FgTertiaryBrush}"/>
@@ -708,7 +844,7 @@
                     </TabItem>
                 </TabControl>
             </TabItem>
-            <TabItem>
+            <TabItem x:Name="ServersWorldsTabItem">
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal">
                         <Rectangle Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{DynamicResource FgPrimaryBrush}">
@@ -719,91 +855,7 @@
                         <TextBlock Text="{Binding LocalizedServerManager}"/>
                     </StackPanel>
                 </TabItem.Header>
-                <Grid Margin="10" Background="{DynamicResource BgPrimaryBrush}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding LocalizedServerManager}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,20,5"/>
-                        <Button x:Name="AddServerButton" Margin="0,0,10,5" Padding="15,6" Style="{DynamicResource DefaultButtonStyle}" Click="AddServerButton_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
-                                    <Rectangle.OpacityMask>
-                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/add.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    </Rectangle.OpacityMask>
-                                </Rectangle>
-                                <TextBlock Text="{Binding LocalizedAddServer}"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="RefreshServerButton" Margin="0,0,10,5" Padding="15,6" Style="{DynamicResource DefaultButtonStyle}" Click="RefreshServerButton_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
-                                    <Rectangle.OpacityMask>
-                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/refresh.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    </Rectangle.OpacityMask>
-                                </Rectangle>
-                                <TextBlock Text="{Binding LocalizedRefresh, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="RemoveServerButton" Margin="0,0,0,5" Padding="15,6" Style="{DynamicResource DefaultButtonStyle}" Click="RemoveServerButton_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <Rectangle Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
-                                    <Rectangle.OpacityMask>
-                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/remove.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    </Rectangle.OpacityMask>
-                                </Rectangle>
-                                <TextBlock Text="{Binding LocalizedRemoveSelected, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                            </StackPanel>
-                        </Button>
-                    </WrapPanel>
-                    <ListBox x:Name="ServersListBox" Grid.Row="1" SelectionMode="Single" Style="{DynamicResource DefaultListBoxStyle}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="5">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <Image Grid.Column="0" Source="{Binding Icon, Converter={StaticResource Base64ImageConverter}, FallbackValue={x:Null}}" Width="32" Height="32" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
-
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}" FontSize="14"/>
-                                        <TextBlock Text="{Binding Ip}" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="12"/>
-                                        <TextBlock Text="{Binding LocalizedHidden, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="Red" FontSize="10" Visibility="{Binding IsHidden, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10,0,10,0">
-                                        <TextBlock Text="{Binding PlayerCountText}" FontSize="11" Foreground="{DynamicResource FgPrimaryBrush}" HorizontalAlignment="Right" Margin="0,0,0,2"/>
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Image Source="{Binding PingIcon}" Width="24" Height="18" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" Margin="0,0,5,0"/>
-                                            <TextBlock Text="{Binding PingText}" FontSize="10" Foreground="{DynamicResource FgSecondaryBrush}" VerticalAlignment="Center" ToolTip="{Binding PingError}"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                    <Button Grid.Column="3" 
-                                            Visibility="{Binding SupportsQuickPlay, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                            Style="{DynamicResource DefaultButtonStyle}" 
-                                            Padding="10,5" 
-                                            Margin="5,0,0,0"
-                                            VerticalAlignment="Center"
-                                            Click="QuickPlayServer_Click"
-                                            Tag="{Binding}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Rectangle Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
-                                                <Rectangle.OpacityMask>
-                                                    <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/game.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                </Rectangle.OpacityMask>
-                                            </Rectangle>
-                                            <TextBlock Text="{Binding LocalizedQuickPlay, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
+                <Grid x:Name="MainServersWorldsHost" Background="{DynamicResource BgPrimaryBrush}"/>
             </TabItem>
             <TabItem x:Name="ContentTabItem">
                 <TabItem.Header>
@@ -824,13 +876,22 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button x:Name="ContentTabMods" Content="Mods" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="mod"/>
-                        <Button x:Name="ContentTabResourcePacks" Content="Resource Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="resourcepack"/>
-                        <Button x:Name="ContentTabDataPacks" Content="Data Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="datapack"/>
-                        <Button x:Name="ContentTabShaders" Content="Shaders" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="shader"/>
-                        <Button x:Name="ContentTabModpacks" Content="Modpacks" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Click="ContentTabButton_Click" Tag="modpack"/>
-                    </StackPanel>
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="ContentSourceLabel" Text="Marketplace:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource FgSecondaryBrush}"/>
+                            <ComboBox x:Name="ContentSourceComboBox" Style="{DynamicResource DefaultComboBoxStyle}" MinWidth="170" SelectedIndex="0" SelectionChanged="ContentSource_Changed">
+                                <ComboBoxItem Content="Modrinth" Tag="modrinth"/>
+                                <ComboBoxItem Content="Horizon Marketplace" Tag="horizon"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="ContentTabMods" Content="Mods" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="mod"/>
+                            <Button x:Name="ContentTabResourcePacks" Content="Resource Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="resourcepack"/>
+                            <Button x:Name="ContentTabDataPacks" Content="Data Packs" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="datapack"/>
+                            <Button x:Name="ContentTabShaders" Content="Shaders" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Margin="0,0,5,0" Click="ContentTabButton_Click" Tag="shader"/>
+                            <Button x:Name="ContentTabModpacks" Content="Modpacks" Style="{DynamicResource DefaultButtonStyle}" Padding="12,6" Click="ContentTabButton_Click" Tag="modpack"/>
+                        </StackPanel>
+                    </DockPanel>
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -1061,7 +1122,6 @@
                                             </StackPanel>
                                             <TextBlock Text="{Binding LocalizedMinecraftAccountsDesc}" 
                                                      FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" Margin="0,0,0,15"/>
-
                                             <ListBox x:Name="AccountsListBox" Height="200" Margin="0,0,0,15" Style="{DynamicResource DefaultListBoxStyle}">
                                                 <ListBox.ItemTemplate>
                                                     <DataTemplate>
@@ -1102,7 +1162,6 @@
                                                     </DataTemplate>
                                                 </ListBox.ItemTemplate>
                                             </ListBox>
-
                                             <WrapPanel Orientation="Horizontal">
                                                 <Button x:Name="AddMicrosoftAccountButton" Style="{DynamicResource DefaultButtonStyle}" MinHeight="35" MinWidth="180" Padding="15,8" Margin="0,0,10,5">
                                                     <StackPanel Orientation="Horizontal">
@@ -1139,7 +1198,6 @@
                                             </StackPanel>
                                             <TextBlock Text="{Binding LocalizedSkinPreviewDesc}" 
                                                      FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" Margin="0,0,0,15"/>
-
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
@@ -1279,7 +1337,6 @@
                                                     </DataTemplate>
                                                 </ListBox.ItemTemplate>
                                             </ListBox>
-
                                             <WrapPanel Orientation="Horizontal">
                                                 <Button x:Name="AddPluginButton" Style="{DynamicResource DefaultButtonStyle}" MinHeight="35" MinWidth="140" Padding="15,8" Margin="0,0,10,5">
                                                     <StackPanel Orientation="Horizontal">
@@ -1321,6 +1378,23 @@
                                                      FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" Margin="0,0,0,15"/>
                                             <TextBox x:Name="DebugInfoTextBox" Height="100" IsReadOnly="True" 
                                                    FontFamily="Consolas" FontSize="10" Visibility="Collapsed" Style="{DynamicResource DefaultTextBoxStyle}"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Background="Transparent" CornerRadius="0" Padding="15" Margin="0,0,0,15">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                <Rectangle Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}">
+                                                    <Rectangle.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://siteoforigin:,,,/Other/images/icons/game.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    </Rectangle.OpacityMask>
+                                                </Rectangle>
+                                                <TextBlock Text="{Binding LocalizedRustMinecraftTitle}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}"/>
+                                            </StackPanel>
+                                            <CheckBox x:Name="RustMinecraftCheckBox" Content="{Binding LocalizedEnableRustMinecraft}"
+                                                    Margin="0,0,0,10" Foreground="{DynamicResource FgPrimaryBrush}"
+                                                    Style="{StaticResource RustToggleSwitchStyle}"/>
+                                            <TextBlock Text="{Binding LocalizedRustMinecraftDesc}"
+                                                     FontSize="12" Foreground="{DynamicResource FgSecondaryBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Background="Transparent" CornerRadius="0" Padding="15" Margin="0,0,0,15">
@@ -1474,7 +1548,6 @@
                                     </Border>
                                 </StackPanel>
                                 <StackPanel x:Name="AboutSettingsPanel" Visibility="Collapsed">
-
                                     <Border Background="Transparent" CornerRadius="0" Padding="15">
                                         <StackPanel>
                                             <Image Source="pack://siteoforigin:,,,/Other/images/orange.png" Width="64" Height="64" HorizontalAlignment="Center" Margin="0,0,0,15"/>

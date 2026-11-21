@@ -16,7 +16,7 @@ namespace OrangLauncher.Pages
             MinWidth = 180;
             Fill();
             SelectionChanged += (_, _) => { if (!_suppress) VersionChanged?.Invoke(Version); };
-            Action<string> onSetting = key => { if (key is "showSnapshots" or "showBetas" or "showAlphas") OnUi(() => Fill()); };
+            Action<string> onSetting = key => { if (key is "showSnapshots" or "showBetas" or "showAlphas" or "rustMinecraftEnabled") OnUi(() => Fill()); };
             Loaded += (_, _) => LauncherSettings.Changed += onSetting;
             Unloaded += (_, _) => LauncherSettings.Changed -= onSetting;
             DropDownOpened += async (_, _) =>
@@ -34,14 +34,29 @@ namespace OrangLauncher.Pages
                 Fill();
             };
         }
+        private bool _horizonOnly;
+        public bool HorizonOnly
+        {get => _horizonOnly; set { if (_horizonOnly != value) { _horizonOnly = value; Fill(); } }}
         public string Version => SelectedItem as string ?? "";
         public void Fill(string? keep = null)
         {
             var before = Version;
             keep ??= before;
-            var types = LauncherSettings.VisibleVersionTypes();
-            var ids = VersionService.Cached.Where(v => types.Contains(v.Type)).Select(v => v.Id).ToList();
-            if (!string.IsNullOrEmpty(keep) && !ids.Contains(keep)) ids.Insert(0, keep);
+            List<string> ids;
+            if (_horizonOnly)
+            {
+                ids = VersionService.GetHorizonCompatibleVersions(LauncherSettings.ShowSnapshots);
+                if (!string.IsNullOrEmpty(keep) && VersionService.IsHorizonCompatibleMcVersion(keep) && !ids.Contains(keep))
+                    ids.Insert(0, keep);
+            }
+            else
+            {
+                var types = LauncherSettings.VisibleVersionTypes();
+                ids = VersionService.Cached.Where(v => types.Contains(v.Type) && (LauncherSettings.RustMinecraftEnabled || v.Id != HorizonClient.DefaultGameVersion)).Select(v => v.Id).ToList();
+                if (LauncherSettings.RustMinecraftEnabled && !ids.Contains(HorizonClient.DefaultGameVersion))
+                    ids.Insert(0, HorizonClient.DefaultGameVersion);
+                if (!string.IsNullOrEmpty(keep) && !ids.Contains(keep)) ids.Insert(0, keep);
+            }
             _suppress = true;
             try
             {

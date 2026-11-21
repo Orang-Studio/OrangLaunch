@@ -39,7 +39,7 @@
         public InstanceOptions Options { get; set; } = new();
         public string BasePath => Path.Combine(Managers.PlatformPaths.GetInstancesDir(), InstanceId);
         public string MinecraftDir => Path.Combine(BasePath, ".minecraft");
-        public string ModsDir => Path.Combine(MinecraftDir, "mods");
+        public string ModsDir => Path.Combine(MinecraftDir, IsHorizon ? "horizon-mods" : "mods");
         public string SavesDir => Path.Combine(MinecraftDir, "saves");
         public string ResourcePacksDir => Path.Combine(MinecraftDir, "resourcepacks");
         public string ShaderPacksDir => Path.Combine(MinecraftDir, "shaderpacks");
@@ -47,6 +47,7 @@
         public string LoaderKey => string.IsNullOrWhiteSpace(ModLoader) || ModLoader.Equals("none", StringComparison.OrdinalIgnoreCase)
             ? "vanilla" : ModLoader.Trim().ToLowerInvariant();
         public bool IsVanilla => LoaderKey == "vanilla";
+        public bool IsHorizon => LoaderKey == "horizon";
         public int RamMb
         {
             get

@@ -10,17 +10,50 @@ namespace OrangLauncher.Managers
             var mods = new List<ModInfo>();
             if (!Directory.Exists(modsPath)) return mods;
             var files = Directory.GetFiles(modsPath, "*.*")
-                .Where(f => f.EndsWith(".jar") || f.EndsWith(".jar.disabled"));
+                .Where(f => f.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".hmod.disabled", StringComparison.OrdinalIgnoreCase));
+            var isHorizonMods = string.Equals(Path.GetFileName(modsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), "horizon-mods", StringComparison.OrdinalIgnoreCase);
+            var instanceDir = Directory.GetParent(modsPath)?.FullName ?? modsPath;
             foreach (var file in files)
             {
                 var fi = new FileInfo(file);
+                var enabled = !file.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
+                string displayName = Path.GetFileNameWithoutExtension(file)
+                    .Replace(".jar", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace(".hmod", "", StringComparison.OrdinalIgnoreCase);
+                if (file.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".hmod.disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hm = HorizonClient.ReadHmodMetadata(file);
+                    if (hm != null && !string.IsNullOrWhiteSpace(hm.Name))
+                        displayName = hm.Name;
+                    if (enabled && isHorizonMods)
+                    {
+                        var modId = hm?.Id ?? Path.GetFileNameWithoutExtension(file);
+                        enabled = HorizonClient.IsModEnabled(instanceDir, modId, true);
+                    }
+                }
                 mods.Add(new ModInfo
                 {
-                    Name = Path.GetFileNameWithoutExtension(file).Replace(".jar", ""),
+                    Name = displayName,
                     Path = file,
                     Size = FormatSize(fi.Length),
-                    IsEnabled = !file.EndsWith(".disabled")
+                    IsEnabled = enabled
                 });
+            }
+            if (isHorizonMods)
+            {
+                foreach (var dir in Directory.GetDirectories(modsPath))
+                {
+                    var hm = HorizonClient.ReadHmodMetadata(dir);
+                    if (hm == null) continue;
+                    var enabled = HorizonClient.IsModEnabled(instanceDir, hm.Id, true);
+                    mods.Add(new ModInfo
+                    {
+                        Name = string.IsNullOrWhiteSpace(hm.Name) ? Path.GetFileName(dir) : hm.Name, Path = dir, Size = "Folder", IsEnabled = enabled
+                    });
+                }
             }
             return mods;
         }
@@ -61,6 +94,4 @@ namespace OrangLauncher.Managers
                 len /= 1024;
             }
             return $"{len:0.##} {sizes[order]}";
-        }
-    }
-}
+}   }   }

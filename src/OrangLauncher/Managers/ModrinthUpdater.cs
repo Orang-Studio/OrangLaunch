@@ -10,13 +10,50 @@ namespace OrangLauncher.Managers
         public string Url { get; set; } = "";
         public string NewFileName { get; set; } = "";
         public string? Sha1 { get; set; }
+        public string? HorizonModId { get; set; }
+        public string? InstanceMcDir { get; set; }
         public bool IsDowngrade { get; set; }
     }
     public static class ModrinthUpdater
     {
+        public static async Task<List<UpdateCandidate>> ScanHorizonAsync(string directory,
+            Action<int, int, string>? progress, CancellationToken ct)
+        {
+            var files = Directory.Exists(directory)
+                ? Directory.GetFiles(directory, "*.hmod").Concat(Directory.GetFiles(directory, "*.hmod.disabled")).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
+                : new List<string>();
+            var result = new List<UpdateCandidate>();
+            var instanceMcDir = Directory.GetParent(directory)?.FullName;
+            for (int i = 0; i < files.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var path = files[i];
+                progress?.Invoke(i + 1, Math.Max(1, files.Count), LocalizationManager.T("QT_HASHING_N", "Hashing {done}/{total}", ("done", i + 1), ("total", files.Count)));
+                var meta = HorizonClient.ReadHmodMetadata(path);
+                if (meta == null) continue;
+                var proj = await HorizonClient.GetProjectAsync(meta.Id, ct);
+                var latest = proj?.Versions.FirstOrDefault();
+                if (proj == null || latest == null) continue;
+                if (string.Equals(latest.Version, meta.Version, StringComparison.OrdinalIgnoreCase)) continue;
+                result.Add(new UpdateCandidate
+                {
+                    LocalPath = path,
+                    ProjectTitle = proj.Name,
+                    CurrentVersion = meta.Version,
+                    NewVersion = latest.Version,
+                    Url = latest.File.Url,
+                    NewFileName = $"{meta.Id}.hmod",
+                    HorizonModId = meta.Id,
+                    InstanceMcDir = instanceMcDir
+                });
+            }
+            return result;
+        }
         public static async Task<List<UpdateCandidate>> ScanAsync(string directory, string loader, string gameVersion, string[] exts,
             Action<int, int, string>? progress, CancellationToken ct)
         {
+            if (string.Equals(loader, "horizon", StringComparison.OrdinalIgnoreCase) || exts.Any(e => e.Equals(".hmod", StringComparison.OrdinalIgnoreCase)))
+                return await ScanHorizonAsync(directory, progress, ct);
             var files = Directory.Exists(directory)
                 ? Directory.GetFiles(directory).Where(f => exts.Any(e => f.EndsWith(e, StringComparison.OrdinalIgnoreCase))).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
                 : new List<string>();
@@ -59,6 +96,16 @@ namespace OrangLauncher.Managers
         public static async Task<(bool Ok, string Message)> ApplyAsync(UpdateCandidate c)
         {
             var dir = Path.GetDirectoryName(c.LocalPath)!;
+            if (!string.IsNullOrEmpty(c.HorizonModId))
+            {
+                try
+                {
+                    await HorizonClient.InstallProjectAsync(c.HorizonModId, dir, c.InstanceMcDir, c.NewVersion);
+                    return (true, c.NewVersion);
+                }
+                catch (Exception ex)
+                { return (false, ex.Message); }
+            }
             var tmp = Path.Combine(Path.GetTempPath(), "orang_upd_" + Guid.NewGuid().ToString("N") + "_" + c.NewFileName);
             try
             {

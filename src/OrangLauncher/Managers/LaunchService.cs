@@ -42,9 +42,7 @@ namespace OrangLauncher.Managers
         {
             _cts?.Cancel();
             try
-            {
-                if (_process is { HasExited: false }) _process.Kill(true);
-            }
+            { if (_process is { HasExited: false }) _process.Kill(true);}
             catch { }
         }
         public static List<string> SplitArgs(string? text)
@@ -57,20 +55,12 @@ namespace OrangLauncher.Managers
             foreach (var c in text)
             {
                 if (quote != '\0')
-                {
-                    if (c == quote) quote = '\0';
-                    else sb.Append(c);
-                }
+                { if (c == quote) quote = '\0'; else sb.Append(c); }
                 else if (c == '"' || c == '\'')
-                {
-                    quote = c;
-                    any = true;
-                }
+                { quote = c; any = true; }
                 else if (char.IsWhiteSpace(c))
                 {
-                    if (sb.Length > 0 || any) result.Add(sb.ToString());
-                    sb.Clear();
-                    any = false;
+                    if (sb.Length > 0 || any) result.Add(sb.ToString()); sb.Clear(); any = false;
                 }
                 else sb.Append(c);
             }
@@ -83,21 +73,14 @@ namespace OrangLauncher.Managers
             var updates = new Dictionary<string, string>();
             var o = instance.Options;
             if (o.Fullscreen)
-            {
-                updates["fullscreen"] = "true";
-                o.FullscreenManaged = true;
-            }
+            { updates["fullscreen"] = "true"; o.FullscreenManaged = true; }
             else if (o.FullscreenManaged)
             {
                 updates["fullscreen"] = "false";
                 o.FullscreenManaged = false;
             }
             if (o.ResWidth > 0 && o.ResHeight > 0)
-            {
-                updates["overrideWidth"] = o.ResWidth.ToString();
-                updates["overrideHeight"] = o.ResHeight.ToString();
-                o.ResManaged = true;
-            }
+            { updates["overrideWidth"] = o.ResWidth.ToString(); updates["overrideHeight"] = o.ResHeight.ToString(); o.ResManaged = true; }
             else if (o.ResManaged)
             {
                 updates["overrideWidth"] = "0";
@@ -182,16 +165,15 @@ namespace OrangLauncher.Managers
                 return p.ExitCode;
             }
             catch (Exception ex)
-            {
-                log($"[Hook] failed: {ex.Message}");
-                return -1;
-            }
+            { log($"[Hook] failed: {ex.Message}"); return -1; }
         }
         public async Task<LaunchResult> RunAsync(LaunchRequest request)
         {
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
             var instance = request.Instance;
+            if (instance.IsHorizon)
+                return await RunHorizonAsync(request, ct);
             var mcPath = new MinecraftPath(PlatformPaths.GetMinecraftDir());
             var launcher = new MinecraftLauncher(mcPath);
             Directory.CreateDirectory(instance.MinecraftDir);
@@ -222,9 +204,7 @@ namespace OrangLauncher.Managers
                     installed = instance.InstalledVersionName;
                 installed ??= ModLoaderInstaller.FindInstalledVersion(mcPath.BasePath, instance.LoaderKey, instance.Version, instance.LoaderVersion);
                 if (installed != null)
-                {
-                    L($"[Launcher] Using installed version: {installed}");
-                }
+                { L($"[Launcher] Using installed version: {installed}"); }
                 else
                 {
                     L($"[Launcher] Installing {instance.LoaderKey} {(string.IsNullOrEmpty(instance.LoaderVersion) ? "latest" : instance.LoaderVersion)} for {instance.Version}...");
@@ -310,12 +290,7 @@ namespace OrangLauncher.Managers
             SetGpuPreference(javaPath, instance.Options.DiscreteGpu || request.GlobalDiscreteGpu);
             var hookEnv = new Dictionary<string, string>
             {
-                ["INST_NAME"] = instance.Name,
-                ["INST_ID"] = instance.InstanceId,
-                ["INST_DIR"] = instance.BasePath,
-                ["INST_MC_DIR"] = instance.MinecraftDir,
-                ["INST_JAVA"] = javaPath,
-                ["INST_MC_VER"] = instance.Version
+                ["INST_NAME"] = instance.Name, ["INST_ID"] = instance.InstanceId, ["INST_DIR"] = instance.BasePath, ["INST_MC_DIR"] = instance.MinecraftDir, ["INST_JAVA"] = javaPath, ["INST_MC_VER"] = instance.Version
             };
             if (!string.IsNullOrWhiteSpace(instance.Options.PreLaunchCmd))
             {
@@ -377,6 +352,7 @@ namespace OrangLauncher.Managers
             process.Start();
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
+            WindowStyleManager.WatchAndApplyProcessWindow(process, ct);
             GameStarted?.Invoke();
             try { await process.WaitForExitAsync(ct); }
             catch (OperationCanceledException)
@@ -427,5 +403,241 @@ namespace OrangLauncher.Managers
             }
             return new LaunchResult { ExitCode = exitCode, Started = true, CrashReportPath = crashPath, CrashSummary = crashSummary };
         }
-    }
-}
+        private async Task<LaunchResult> RunHorizonAsync(LaunchRequest request, CancellationToken ct)
+        {
+            var instance = request.Instance;
+            if (string.IsNullOrWhiteSpace(instance.Version))
+                instance.Version = HorizonClient.DefaultGameVersion;
+            Directory.CreateDirectory(instance.MinecraftDir);
+            Directory.CreateDirectory(instance.ModsDir);
+            L($"[Horizon] Launching Horizon ({instance.Version}) as {request.Account.Username}...");
+            var session = await ResolveSessionAsync(request.Account);
+            ct.ThrowIfCancellationRequested();
+            try { SharingManager.PullBeforeLaunch(instance); }
+            catch (Exception ex) { L($"[Sharing] {ex.Message}"); }
+            P(2, "Resolving Horizon build...");
+            var tag = await HorizonClient.ResolveTagAsync(instance.LoaderVersion, ct);
+            await HorizonClient.EnsureInstalledAsync(tag, (pct, msg) => P((int)Math.Round(pct), msg), L, ct);
+            await HorizonClient.PrepareAsync(tag, instance.MinecraftDir, (pct, msg) => P((int)Math.Round(pct), msg), L, ct);
+            await HorizonClient.TurnOffRevokedAsync(instance.MinecraftDir, L, ct);
+            ct.ThrowIfCancellationRequested();
+            var clientExe = HorizonClient.GetClientExePath(tag);
+            if (!File.Exists(clientExe))
+                throw new FileNotFoundException($"Horizon client executable not found at {clientExe}");
+            var resourcesDir = HorizonClient.GetResourcesDir(tag);
+            var supportedFlags = await HorizonClient.GetSupportedClientFlagsAsync(clientExe, ct);
+            string? sessionFile = null;
+            if (request.Account.IsMicrosoft)
+            {
+                sessionFile = HorizonClient.WriteSessionFile(
+                    instance.MinecraftDir,
+                    session.Username ?? request.Account.Username,
+                    session.Uuid ?? request.Account.Uuid,
+                    session.AccessToken ?? "0",
+                    true);
+            }
+            else
+            {
+                try
+                {
+                    var playerName = string.IsNullOrWhiteSpace(request.Account.Username) ? "Player" : request.Account.Username.Trim();
+                    File.WriteAllText(Path.Combine(instance.MinecraftDir, "horizon-player.txt"), playerName + "\n");
+                }
+                catch { }
+            }
+            if (instance.Options.Fullscreen)
+            {
+                try { ApplyVideoOptions(instance); } catch { }
+            }
+            SetGpuPreference(clientExe, instance.Options.DiscreteGpu || request.GlobalDiscreteGpu);
+            var hookEnv = new Dictionary<string, string>
+            {
+                ["INST_NAME"] = instance.Name,
+                ["INST_ID"] = instance.InstanceId,
+                ["INST_DIR"] = instance.MinecraftDir,
+                ["INST_MC_DIR"] = instance.MinecraftDir,
+                ["INST_MC_VER"] = HorizonClient.GetGameVersion(tag),
+                ["HORIZON_HOME"] = instance.MinecraftDir,
+                ["HORIZON_MEMORY_MB"] = instance.RamMb.ToString()
+            };
+            foreach (var (k, v) in HorizonClient.ParseHorizonEnvVars(instance.EnvVars))
+                hookEnv[k] = v;
+            if (!string.IsNullOrWhiteSpace(instance.Options.PreLaunchCmd))
+            {
+                L("[Hook] Running pre-launch command...");
+                var rc = await Task.Run(() => RunHook(instance.Options.PreLaunchCmd, instance.MinecraftDir, hookEnv, L));
+                if (rc != 0)
+                {
+                    try { if (sessionFile != null && File.Exists(sessionFile)) File.Delete(sessionFile); } catch { }
+                    L($"[Hook] Pre-launch command exited with {rc}, aborting launch");
+                    return new LaunchResult { ExitCode = rc, Started = false };
+                }
+            }
+            var psi = new ProcessStartInfo
+            {
+                FileName = clientExe,
+                WorkingDirectory = instance.MinecraftDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            psi.ArgumentList.Add("--resources");
+            psi.ArgumentList.Add(resourcesDir);
+            if (supportedFlags.Contains("--game-dir"))
+            {
+                psi.ArgumentList.Add("--game-dir");
+                psi.ArgumentList.Add(instance.MinecraftDir);
+            }
+            if (supportedFlags.Contains("--home"))
+            {
+                psi.ArgumentList.Add("--home");
+                psi.ArgumentList.Add(instance.MinecraftDir);
+            }
+            if (sessionFile != null)
+            {
+                psi.ArgumentList.Add("--session-file");
+                psi.ArgumentList.Add(sessionFile);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Account.Username))
+            {
+                psi.ArgumentList.Add("--name");
+                psi.ArgumentList.Add(request.Account.Username.Trim());
+            }
+            if (instance.Options.Fullscreen && supportedFlags.Contains("--fullscreen"))
+                psi.ArgumentList.Add("--fullscreen");
+            if (instance.Options.ResWidth > 0 && instance.Options.ResHeight > 0)
+            {
+                psi.ArgumentList.Add("--width");
+                psi.ArgumentList.Add(instance.Options.ResWidth.ToString());
+                psi.ArgumentList.Add("--height");
+                psi.ArgumentList.Add(instance.Options.ResHeight.ToString());
+            }
+            if (!string.IsNullOrWhiteSpace(request.QuickPlayServer))
+            {
+                psi.ArgumentList.Add("--quickPlayMultiplayer");
+                psi.ArgumentList.Add(request.QuickPlayServer.Trim());
+            }
+            var extraArgsText = !string.IsNullOrWhiteSpace(instance.Options.JvmArgs) ? instance.Options.JvmArgs : instance.JavaArgs;
+            foreach (var extraArg in SplitArgs(extraArgsText))
+            {
+                if (extraArg.StartsWith("-X", StringComparison.Ordinal) || extraArg.StartsWith("-D", StringComparison.Ordinal))
+                    continue;
+                psi.ArgumentList.Add(extraArg);
+            }
+            foreach (var (k, v) in hookEnv)
+                psi.Environment[k] = v;
+            if (!string.IsNullOrWhiteSpace(request.Account.Username))
+                psi.Environment["HORIZON_PLAYER_NAME"] = request.Account.Username.Trim();
+            if (instance.Options.AntiBan)
+            {
+                psi.Environment["HORIZON_BYPASS_SERVER_BLOCKLIST"] = "1";
+                psi.Environment["HORIZON_DISABLE_SERVER_BLACKLIST"] = "1";
+            }
+            var wrapper = SplitArgs(instance.Options.WrapperCmd);
+            if (wrapper.Count > 0)
+            {
+                var original = new List<string> { psi.FileName };
+                original.AddRange(psi.ArgumentList);
+                psi.FileName = wrapper[0];
+                psi.ArgumentList.Clear();
+                foreach (var a in wrapper.Skip(1).Concat(original)) psi.ArgumentList.Add(a);
+            }
+            P(100, LocalizationManager.GetString("QT_INSTALL_COMPLETE", "Installation complete!"));
+            L($"[Horizon] Starting Horizon {tag}...");
+            ct.ThrowIfCancellationRequested();
+            try { await PluginManager.Instance.NotifyBeforeGameLaunch(instance.Name, instance.Version); } catch { }
+            StreamWriter? gameLog = null;
+            try
+            {
+                var gameLogPath = Path.Combine(LogsDir, $"horizon_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                gameLog = new StreamWriter(gameLogPath, false, Encoding.UTF8) { AutoFlush = true };
+                gameLog.WriteLine($"# Horizon {tag} ({instance.Version}) in {instance.MinecraftDir}");
+                L($"[Horizon] Game output is saved to {gameLogPath}");
+            }
+            catch { gameLog = null; }
+            var logLock = new object();
+            var recentLines = new List<string>();
+            string? detectedCrashPath = null;
+            void OnLine(string? data)
+            {
+                if (data == null) return;
+                lock (logLock)
+                {
+                    if (recentLines.Count < 300) recentLines.Add(data);
+                    const string marker = "Horizon: crash report saved to ";
+                    var idx = data.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        var p = data[(idx + marker.Length)..].Trim();
+                        if (File.Exists(p)) detectedCrashPath = p;
+                    }
+                    L(data);
+                    try { gameLog?.WriteLine(data); } catch { }
+                }
+            }
+            var process = new Process { StartInfo = psi };
+            _process = process;
+            process.OutputDataReceived += (_, e) => OnLine(e.Data);
+            process.ErrorDataReceived += (_, e) => OnLine(e.Data);
+            var started = DateTime.Now;
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            WindowStyleManager.WatchAndApplyProcessWindow(process, ct);
+            GameStarted?.Invoke();
+            try { await process.WaitForExitAsync(ct); }
+            catch (OperationCanceledException)
+            {
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+                await process.WaitForExitAsync();
+            }
+            finally
+            { try { if (sessionFile != null && File.Exists(sessionFile)) File.Delete(sessionFile); } catch { } }
+            process.WaitForExit();
+            var exitCode = process.ExitCode;
+            _process = null;
+            lock (logLock)
+            { try { gameLog?.WriteLine($"# exit code {exitCode}"); gameLog?.Dispose(); } catch { } }
+            if (exitCode != 0)
+                HorizonClient.HandleStartCrashFallback(instance.MinecraftDir, exitCode, recentLines, L);
+            if (!string.IsNullOrWhiteSpace(instance.Options.PostExitCmd))
+            {
+                hookEnv["INST_EXIT_CODE"] = exitCode.ToString();
+                L("[Hook] Running post-exit command...");
+                await Task.Run(() => RunHook(instance.Options.PostExitCmd, instance.MinecraftDir, hookEnv, L));
+            }
+            var elapsed = (long)(DateTime.Now - started).TotalSeconds;
+            if (elapsed > 5)
+            {
+                instance.PlayTimeSeconds += elapsed;
+                instance.LastPlayed = DateTime.Now;
+                InstanceManager.Instance.SaveInstances();
+            }
+            L($"[Horizon] Horizon exited with code {exitCode}");
+            try { SharingManager.PushAfterExit(instance); }
+            catch (Exception ex) { L($"[Sharing] {ex.Message}"); }
+            try { await PluginManager.Instance.NotifyAfterGameExit(instance.Name, exitCode); } catch { }
+            string? crashPath = detectedCrashPath, crashSummary = null;
+            if (exitCode != 0)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(crashPath))
+                    {
+                        var dir = Path.Combine(instance.MinecraftDir, "crash-reports");
+                        var latest = Directory.Exists(dir)
+                            ? new DirectoryInfo(dir).GetFiles("crash-*.txt").OrderByDescending(f => f.LastWriteTime).FirstOrDefault()
+                            : null;
+                        if (latest != null && DateTime.Now - latest.LastWriteTime < TimeSpan.FromMinutes(10))
+                            crashPath = latest.FullName;
+                    }
+                    if (!string.IsNullOrEmpty(crashPath) && File.Exists(crashPath))
+                        crashSummary = string.Join("\n", File.ReadLines(crashPath).Take(80).Where(l => l.Trim().Length > 0).Take(30));
+                }
+                catch { }
+            }
+            return new LaunchResult { ExitCode = exitCode, Started = true, CrashReportPath = crashPath, CrashSummary = crashSummary };
+}   }   }

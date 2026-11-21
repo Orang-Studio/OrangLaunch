@@ -30,11 +30,12 @@ namespace OrangLauncher
         private readonly string _installPath;
         private readonly string _gameVersion;
         private readonly string _modLoader;
+        private readonly string _source;
         private string _projectSlug;
         private string? _projectBody;
         private readonly List<ProjectVersion> _versions = [];
         public ModDetailsWindow(string projectId, string title, string description, string? iconUrl, string projectType,
-            string installPath = "", string gameVersion = "", string modLoader = "")
+            string installPath = "", string gameVersion = "", string modLoader = "", string source = "modrinth")
         {
             InitializeComponent();
             OlChrome.Apply(this);
@@ -45,6 +46,7 @@ namespace OrangLauncher
             _installPath = installPath;
             _gameVersion = gameVersion;
             _modLoader = modLoader;
+            _source = string.IsNullOrWhiteSpace(source) ? "modrinth" : source.ToLowerInvariant();
             TitleText.Text = title;
             DescText.Text = description;
             LoadIconAsync(iconUrl);
@@ -73,6 +75,25 @@ namespace OrangLauncher
         {
             try
             {
+                if (_source == "horizon")
+                {
+                    var hProj = await Managers.HorizonClient.GetProjectAsync(_projectId);
+                    if (hProj != null)
+                    {
+                        _projectSlug = hProj.Id;
+                        var sb = new System.Text.StringBuilder();
+                        if (!string.IsNullOrWhiteSpace(hProj.Description)) sb.AppendLine(hProj.Description);
+                        else if (!string.IsNullOrWhiteSpace(hProj.Summary)) sb.AppendLine(hProj.Summary);
+                        if (hProj.Authors.Count > 0) sb.AppendLine($"\n**Authors:** {string.Join(", ", hProj.Authors)}");
+                        if (!string.IsNullOrWhiteSpace(hProj.License)) sb.AppendLine($"\n**License:** {hProj.License}");
+                        if (!string.IsNullOrWhiteSpace(hProj.Source)) sb.AppendLine($"\n**Source:** [{hProj.Source}]({hProj.Source})");
+                        var caps = hProj.Versions.FirstOrDefault()?.Capabilities;
+                        if (caps is { Count: > 0 }) sb.AppendLine($"\n**Capabilities:** `{string.Join("`, `", caps)}`");
+                        _projectBody = sb.ToString();
+                        await RenderMarkdownAsync(_projectBody);
+                    }
+                    return;
+                }
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0 (github.com/Orang-Studio/OrangLaunch)");
                 var response = await client.GetStringAsync($"https://api.modrinth.com/v2/project/{_projectId}");
@@ -213,29 +234,20 @@ namespace OrangLauncher
                 if (string.IsNullOrEmpty(trimmed))
                 {
                     if (inParagraph)
-                    {
-                        result.Append("</p>");
-                        inParagraph = false;
-                    }
+                    {result.Append("</p>");inParagraph = false;}
                     result.AppendLine();
                 }
                 else if (trimmed.StartsWith("<h") || trimmed.StartsWith("<ul") || trimmed.StartsWith("<ol") || 
                          trimmed.StartsWith("<pre") || trimmed.StartsWith("<blockquote") || trimmed.StartsWith("<hr"))
                 {
                     if (inParagraph)
-                    {
-                        result.Append("</p>");
-                        inParagraph = false;
-                    }
+                    {result.Append("</p>"); inParagraph = false;}
                     result.AppendLine(line);
                 }
                 else
                 {
                     if (!inParagraph)
-                    {
-                        result.Append("<p>");
-                        inParagraph = true;
-                    }
+                    {result.Append("<p>");inParagraph = true;}
                     result.Append(line + " ");
                 }
             }
@@ -257,6 +269,32 @@ namespace OrangLauncher
         {
             try
             {
+                if (_source == "horizon")
+                {
+                    var hProj = await Managers.HorizonClient.GetProjectAsync(_projectId);
+                    _versions.Clear();
+                    if (hProj != null)
+                    {
+                        foreach (var hv in hProj.Versions)
+                        {
+                            _versions.Add(new ProjectVersion
+                            {
+                                Name = $"{hProj.Name} {hv.Version}",
+                                VersionNumber = hv.Version,
+                                GameVersions = string.IsNullOrWhiteSpace(hv.Game) ? Managers.HorizonClient.DefaultGameVersion : hv.Game,
+                                Loaders = "horizon",
+                                DatePublished = hv.Published,
+                                Changelog = hv.Changelog,
+                                VersionId = hv.Version,
+                                DownloadUrl = hv.File.Url,
+                                FileName = !string.IsNullOrWhiteSpace(hv.File.Name) ? hv.File.Name : $"{hProj.Id}.hmod"
+                            });
+                        }
+                    }
+                    VersionsListBox.ItemsSource = _versions;
+                    if (_versions.Count > 0) ShowChangelog(_versions[0], switchTab: false);
+                    return;
+                }
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0 (github.com/Orang-Studio/OrangLaunch)");
                 var url = $"https://api.modrinth.com/v2/project/{_projectId}/version";
@@ -375,8 +413,10 @@ namespace OrangLauncher
         }
         private void CopyLinkButton_Click(object sender, RoutedEventArgs e)
         {
-            var url = $"https://modrinth.com/{_projectType}/{_projectSlug}";
-            Clipboard.SetText(url);
+            var url = _source == "horizon"
+                ? $"https://playhorizon.dev/mods/{_projectSlug}"
+                : $"https://modrinth.com/{_projectType}/{_projectSlug}";
+            UiKit.SetClipboardText(url);
             CopyLinkButton.Content = Managers.LocalizationManager.GetString("MODDET_COPIED", "Copied!");
             var timer = new System.Windows.Threading.DispatcherTimer
             {
@@ -391,7 +431,9 @@ namespace OrangLauncher
         }
         private void OpenInBrowserButton_Click(object sender, RoutedEventArgs e)
         {
-            var url = $"https://modrinth.com/{_projectType}/{_projectSlug}";
+            var url = _source == "horizon"
+                ? $"https://playhorizon.dev/mods/{_projectSlug}"
+                : $"https://modrinth.com/{_projectType}/{_projectSlug}";
             try
             {
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
@@ -417,16 +459,23 @@ namespace OrangLauncher
                         basePath = _installPath;
                     }
                     else
+                    { basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft", _source == "horizon" ? "horizon-mods" : "mods"); }
+                    if (_source == "horizon")
                     {
-                        basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft", "mods");
+                        var mcDir = Directory.GetParent(basePath)?.FullName;
+                        var savedPath = await Managers.HorizonClient.InstallProjectAsync(_projectId, basePath, mcDir, version.VersionNumber);
+                        OlMessageBox.Show(Managers.LocalizationManager.T("MODDET_INSTALLED", "Installed {file} successfully!", ("file", Path.GetFileName(savedPath))), Managers.LocalizationManager.GetString("CONTENT_INSTALLED", "Installed"), MessageBoxButton.OK, MessageBoxImage.Information);
                     }
-                    Directory.CreateDirectory(basePath);
-                    using var client = new HttpClient();
-                    client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0 (github.com/Orang-Studio/OrangLaunch)");
-                    var fileBytes = await client.GetByteArrayAsync(version.DownloadUrl);
-                    var filePath = Path.Combine(basePath, version.FileName);
-                    await File.WriteAllBytesAsync(filePath, fileBytes);
-                    OlMessageBox.Show(Managers.LocalizationManager.T("MODDET_INSTALLED", "Installed {file} successfully!", ("file", version.FileName)), Managers.LocalizationManager.GetString("CONTENT_INSTALLED", "Installed"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    else
+                    {
+                        Directory.CreateDirectory(basePath);
+                        using var client = new HttpClient();
+                        client.DefaultRequestHeaders.Add("User-Agent", "OrangLauncher/1.0 (github.com/Orang-Studio/OrangLaunch)");
+                        var fileBytes = await client.GetByteArrayAsync(version.DownloadUrl);
+                        var filePath = Path.Combine(basePath, version.FileName);
+                        await File.WriteAllBytesAsync(filePath, fileBytes);
+                        OlMessageBox.Show(Managers.LocalizationManager.T("MODDET_INSTALLED", "Installed {file} successfully!", ("file", version.FileName)), Managers.LocalizationManager.GetString("CONTENT_INSTALLED", "Installed"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
                 catch (Exception ex)
                 {

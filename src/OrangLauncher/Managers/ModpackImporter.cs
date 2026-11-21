@@ -85,11 +85,15 @@ namespace OrangLauncher.Managers
                 var file = new FileInfo(mrpackPath);
                 if (!file.Exists) return (false, T("QT_ERR_FILE_NOT_FOUND", "File not found: {path}", ("path", mrpackPath)), null);
                 if (file.Length == 0) return (false, T("QT_ERR_MRPACK_EMPTY", "The mrpack file is empty (0 bytes)"), null);
+                if (mrpackPath.EndsWith(".hpack", StringComparison.OrdinalIgnoreCase))
+                    return await ImportHPackAsync(mrpackPath);
                 ZipArchive zip;
                 try { zip = ZipFile.OpenRead(mrpackPath); }
                 catch { return (false, T("QT_ERR_MRPACK_INVALID", "The selected file is not a valid .mrpack (zip) file.\n\nFile: {name}\nSize: {size} bytes\n\nMake sure the file downloaded completely.", ("name", file.Name), ("size", file.Length)), null); }
                 using (zip)
                 {
+                    if (zip.GetEntry("horizon-modpack.toml") != null)
+                    { zip.Dispose(); return await ImportHPackAsync(mrpackPath); }
                     Report(T("QT_IMPORTING_MODPACK", "Importing modpack..."), 0);
                     var index = ReadIndex(zip);
                     if (index == null) return (false, "Invalid modpack: modrinth.index.json not found", null);
@@ -122,7 +126,11 @@ namespace OrangLauncher.Managers
             _failed.Clear();
             try
             {
+                if (packPath.EndsWith(".hpack", StringComparison.OrdinalIgnoreCase))
+                    return await ApplyHPackToInstanceAsync(packPath, instance);
                 using var zip = ZipFile.OpenRead(packPath);
+                if (zip.GetEntry("horizon-modpack.toml") != null)
+                { zip.Dispose(); return await ApplyHPackToInstanceAsync(packPath, instance); }
                 var index = ReadIndex(zip);
                 if (index == null) return (false, "Invalid modpack: modrinth.index.json not found");
                 if (removeManaged)
@@ -146,9 +154,7 @@ namespace OrangLauncher.Managers
                 InstanceManager.Instance.SaveInstances();
                 var note = _failed.Count > 0 ? "\n\n" + T("QT_FILES_NOT_DOWNLOADED", "{n} file(s) could not be downloaded", ("n", _failed.Count)) + "." : "";
                 return (true, T("QT_PACK_APPLIED", "Applied {name} {version} to '{instance}'.",
-                    ("name", index["name"]?.GetValue<string>() ?? Path.GetFileName(packPath)),
-                    ("version", index["versionId"]?.GetValue<string>() ?? ""),
-                    ("instance", instance.Name)) + note);
+                    ("name", index["name"]?.GetValue<string>() ?? Path.GetFileName(packPath)), ("version", index["versionId"]?.GetValue<string>() ?? ""), ("instance", instance.Name)) + note);
             }
             catch (Exception ex)
             {
@@ -289,6 +295,7 @@ namespace OrangLauncher.Managers
                 }
                 else if (inst["opts"] is JsonObject pyOpts)
                 {
+                    // undertale type shit, needs more ifs.
                     if (pyOpts["jvm_args"]?.GetValue<string>() is string jvm) instance.Options.JvmArgs = jvm;
                     if (pyOpts["min_ram_mb"] is JsonValue mr && mr.TryGetValue<int>(out var mrv)) instance.Options.MinRamMb = mrv;
                     if (pyOpts["res_width"] is JsonValue rw && rw.TryGetValue<int>(out var rwv)) instance.Options.ResWidth = rwv;
@@ -329,9 +336,7 @@ namespace OrangLauncher.Managers
                         if (ml?["primary"]?.GetValue<bool>() == true) { loaderId = ml["id"]?.GetValue<string>() ?? ""; break; }
                 string loader = "vanilla", loaderVersion = "";
                 foreach (var name in new[] { "neoforge", "forge", "fabric", "quilt" })
-                {
-                    if (loaderId.StartsWith(name + "-")) { loader = name; loaderVersion = loaderId[(name.Length + 1)..]; break; }
-                }
+                { if (loaderId.StartsWith(name + "-")) { loader = name; loaderVersion = loaderId[(name.Length + 1)..]; break; } }
                 var packName = manifest["name"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(zipPath);
                 var instance = InstanceManager.Instance.CreateInstance(packName, mcVersion, loader, "4096", loaderVersion)
                     ?? throw new Exception(T("QT_ERR_CREATE_INSTANCE", "Failed to create instance"));
@@ -406,5 +411,117 @@ namespace OrangLauncher.Managers
             var destFull = Path.GetFullPath(Path.Combine(baseFull, relativePath));
             return destFull.StartsWith(baseFull, StringComparison.OrdinalIgnoreCase) ? destFull : null;
         }
-    }
-}
+        public async Task<(bool Success, string Message, string? InstanceId)> ImportHPackAsync(string hpackPath)
+        {
+            _failed.Clear();
+            try
+            {
+                var file = new FileInfo(hpackPath);
+                if (!file.Exists) return (false, T("QT_ERR_FILE_NOT_FOUND", "File not found: {path}", ("path", hpackPath)), null);
+                using var zip = ZipFile.OpenRead(hpackPath);
+                var entry = zip.GetEntry("horizon-modpack.toml");
+                if (entry == null) return (false, "Invalid Horizon modpack: horizon-modpack.toml not found", null);
+                string toml;
+                using (var sr = new StreamReader(entry.Open()))
+                    toml = await sr.ReadToEndAsync();
+                var kv = HorizonClient.ParseSimpleTomlKeyValues(toml);
+                var packName = kv.GetValueOrDefault("name");
+                if (string.IsNullOrWhiteSpace(packName)) packName = Path.GetFileNameWithoutExtension(hpackPath);
+                var gameVer = kv.GetValueOrDefault("game") ?? HorizonClient.DefaultGameVersion;
+                var releaseTag = await HorizonClient.ResolveTagAsync(null);
+                var instance = InstanceManager.Instance.CreateInstance(packName, gameVer, "horizon", "4096", releaseTag)
+                    ?? throw new Exception(T("QT_ERR_CREATE_INSTANCE", "Failed to create instance"));
+                InstanceManager.Instance.SetSelectedInstance(instance.InstanceId);
+                zip.Dispose();
+                var applied = await ApplyHPackToInstanceAsync(hpackPath, instance);
+                if (!applied.Success) return (false, applied.Message, null);
+                return (true, T("QT_IMPORT_SUCCESS", "Successfully imported {name} (Minecraft {version}, {loader})", ("name", packName), ("version", gameVer), ("loader", "horizon")), instance.InstanceId);
+            }
+            catch (Exception ex)
+            { return (false, T("QT_ERR_IMPORT_MODPACK", "Error importing modpack: {error}", ("error", ex.Message)), null); }
+        }
+        public async Task<(bool Success, string Message)> ApplyHPackToInstanceAsync(string hpackPath, MinecraftInstance instance)
+        {
+            _failed.Clear();
+            try
+            {
+                using var zip = ZipFile.OpenRead(hpackPath);
+                var entry = zip.GetEntry("horizon-modpack.toml");
+                if (entry == null) return (false, "Invalid Horizon modpack: horizon-modpack.toml not found");
+                string toml;
+                using (var sr = new StreamReader(entry.Open()))
+                    toml = await sr.ReadToEndAsync();
+                var kv = HorizonClient.ParseSimpleTomlKeyValues(toml);
+                var packName = kv.GetValueOrDefault("name") ?? Path.GetFileNameWithoutExtension(hpackPath);
+                var packVer = kv.GetValueOrDefault("version") ?? "";
+                var gameVer = kv.GetValueOrDefault("game") ?? HorizonClient.DefaultGameVersion;
+                instance.ModLoader = "horizon";
+                instance.Version = gameVer;
+                if (string.IsNullOrWhiteSpace(instance.LoaderVersion))
+                    instance.LoaderVersion = await HorizonClient.ResolveTagAsync(null);
+                Directory.CreateDirectory(instance.MinecraftDir);
+                Directory.CreateDirectory(instance.ModsDir);
+                var mods = ParseHPackMods(toml);
+                int done = 0;
+                foreach (var (id, version, on) in mods)
+                {
+                    done++;
+                    Report(T("QT_DOWNLOADING_N", "Downloading files {done}/{total}", ("done", done), ("total", mods.Count)), 5 + done * 80.0 / Math.Max(1, mods.Count));
+                    try
+                    { await HorizonClient.InstallProjectAsync(id, instance.ModsDir, instance.MinecraftDir, version); HorizonClient.SetModEnabled(instance.MinecraftDir, id, on); }
+                    catch
+                    { _failed.Add(id); }
+                }
+                Report(T("QT_EXTRACTING_OVERRIDES", "Extracting overrides..."), 90);
+                foreach (var e in zip.Entries)
+                {
+                    if (string.IsNullOrEmpty(e.Name)) continue;
+                    foreach (var prefix in new[] { "overrides/", "client-overrides/" })
+                    {
+                        if (!e.FullName.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                        var dest = ResolveInside(instance.MinecraftDir, e.FullName[prefix.Length..]);
+                        if (dest == null) continue;
+                        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                        e.ExtractToFile(dest, true);
+                    }
+                }
+                var meta = new ModpackMeta
+                {
+                    Name = packName,
+                    VersionId = packVer,
+                    Summary = kv.GetValueOrDefault("description") ?? "",
+                    Imported = DateTime.Now.ToString("s"),
+                    SourceFile = hpackPath,
+                    FileCount = mods.Count,
+                    ManagedFiles = mods.Select(m => $"horizon-mods/{m.Id}.hmod").ToList()
+                };
+                try { meta.Save(instance); } catch { }
+                InstanceManager.Instance.SaveInstances();
+                Report(T("QT_READY", "Ready"), 100);
+                var note = _failed.Count > 0 ? "\n\n" + T("QT_FILES_NOT_DOWNLOADED", "{n} file(s) could not be downloaded", ("n", _failed.Count)) + "." : "";
+                return (true, T("QT_PACK_APPLIED", "Applied {name} {version} to '{instance}'.", ("name", packName), ("version", packVer), ("instance", instance.Name)) + note);
+            }
+            catch (Exception ex)
+            {
+                return (false, T("QT_ERR_APPLY_MODPACK", "Error applying modpack: {error}", ("error", ex.Message)));
+            }
+        }
+        private static List<(string Id, string? Version, bool On)> ParseHPackMods(string toml)
+        {
+            var list = new List<(string Id, string? Version, bool On)>();
+            var sections = toml.Split("[[mods]]", StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 1; i < sections.Length; i++)
+            {
+                var block = sections[i];
+                var nextSec = block.IndexOf("\n[", StringComparison.Ordinal);
+                if (nextSec >= 0) block = block[..nextSec];
+                var kv = HorizonClient.ParseSimpleTomlKeyValues(block);
+                var id = kv.GetValueOrDefault("id");
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                var ver = kv.GetValueOrDefault("version");
+                var onStr = kv.GetValueOrDefault("on") ?? "true";
+                var on = !string.Equals(onStr, "false", StringComparison.OrdinalIgnoreCase);
+                list.Add((id, ver, on));
+            }
+            return list;
+}   }   }

@@ -17,6 +17,8 @@ namespace OrangLauncher.Pages
             public TextBlock Count = null!;
             public TextBlock Info = null!;
             public TextBlock Shared = null!;
+            public Button UpdateBtn = null!;
+            public Button BrowseBtn = null!;
         }
         private readonly Column _rp, _sp;
         public PacksPanel(MainWindow launcher)
@@ -47,9 +49,9 @@ namespace OrangLauncher.Pages
             col.Shared.Visibility = Visibility.Collapsed;
             DockPanel.SetDock(col.Shared, Dock.Top);
             box.Children.Add(col.Shared);
-            var b2 = Bar(
-                Button(T("QT_UPDATE_MODRINTH", "Update (Modrinth)"), () => Update(kind), "", "update"),
-                Button(T("QT_BROWSE_MODRINTH", "Browse Modrinth"), () => Browse(kind), "", "modrinth"));
+            col.UpdateBtn = Button(T("QT_UPDATE_MODRINTH", "Update (Modrinth)"), () => Update(kind), "", "update");
+            col.BrowseBtn = Button(T("QT_BROWSE_MODRINTH", "Browse Modrinth"), () => Browse(kind), "", "modrinth");
+            var b2 = Bar(col.UpdateBtn, col.BrowseBtn);
             DockPanel.SetDock(b2, Dock.Bottom);
             box.Children.Add(b2);
             var b1 = Bar(
@@ -84,6 +86,8 @@ namespace OrangLauncher.Pages
             if (_instance == null) return;
             foreach (var col in new[] { _rp, _sp })
             {
+                col.UpdateBtn.Visibility = _instance.IsHorizon ? Visibility.Collapsed : Visibility.Visible;
+                SetButtonContent(col.BrowseBtn, _instance.IsHorizon ? T("CONTENT_SOURCE_HORIZON", "Horizon Marketplace") : T("QT_BROWSE_MODRINTH", "Browse Modrinth"), "modrinth");
                 col.List.Items.Clear();
                 var link = col.Kind == "resourcepacks" ? _instance.ResourcePacksDir : _instance.ShaderPacksDir;
                 col.Shared.Visibility = FileLinks.IsLink(link) ? Visibility.Visible : Visibility.Collapsed;
@@ -93,7 +97,7 @@ namespace OrangLauncher.Pages
                 {
                     foreach (var e in new DirectoryInfo(d).GetFileSystemInfos().OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
                     {
-                        if (e is FileInfo f && f.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) names.Add(f.Name);
+                        if (e is FileInfo f && (f.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) || (col.Kind == "shaderpacks" && f.Extension.Equals(".hshader", StringComparison.OrdinalIgnoreCase)))) names.Add(f.Name);
                         else if (e is DirectoryInfo di && !di.Name.StartsWith(".")) names.Add(di.Name);
                     }
                 }
@@ -129,7 +133,8 @@ namespace OrangLauncher.Pages
         }
         private void Add(string kind)
         {
-            var files = PickFiles(T("QT_SELECT_PACKS", "Select packs"), Filter((T("QT_FT_PACKS", "Packs"), "*.zip")) + "|" + AllFiles);
+            var ext = kind == "shaderpacks" ? "*.zip;*.hshader" : "*.zip";
+            var files = PickFiles(T("QT_SELECT_PACKS", "Select packs"), Filter((T("QT_FT_PACKS", "Packs"), ext)) + "|" + AllFiles);
             if (files != null) CopyIn(kind, files);
         }
         private void Remove(string kind)
@@ -171,7 +176,5 @@ namespace OrangLauncher.Pages
         private void Browse(string kind)
         {
             InstanceManager.Instance.SetSelectedInstance(_instance!.InstanceId);
-            _launcher.ShowContent(kind == "resourcepacks" ? "resourcepack" : "shader");
-        }
-    }
-}
+            _launcher.ShowContent(kind == "resourcepacks" ? "resourcepack" : "shader", _instance.IsHorizon ? "horizon" : null);
+}   }   }

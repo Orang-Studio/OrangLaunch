@@ -82,6 +82,36 @@ namespace OrangLauncher
                     TitleTextBlock.Text = Managers.LocalizationManager.GetString("UPDWIN_NO_FILES", "No files found");
                     return;
                 }
+                if (_projectType == "mod" && (string.Equals(_modLoader, "horizon", StringComparison.OrdinalIgnoreCase) || _installPath.EndsWith("horizon-mods", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var hFiles = Directory.GetFiles(_installPath, "*.hmod").Concat(Directory.GetFiles(_installPath, "*.hmod.disabled")).ToList();
+                    if (hFiles.Count == 0)
+                    {TitleTextBlock.Text = Managers.LocalizationManager.GetString("UPDWIN_NO_FILES", "No files found"); return;}
+                    foreach (var hf in hFiles)
+                    {
+                        var meta = Managers.HorizonClient.ReadHmodMetadata(hf);
+                        if (meta == null) continue;
+                        var proj = await Managers.HorizonClient.GetProjectAsync(meta.Id);
+                        var latest = proj?.Versions.FirstOrDefault();
+                        if (proj != null && latest != null && !string.Equals(latest.Version, meta.Version, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _updates.Add(new UpdateItem
+                            {
+                                FilePath = hf,
+                                Name = proj.Name,
+                                CurrentVersion = meta.Version,
+                                LatestVersion = latest.Version,
+                                ProjectId = proj.Id,
+                                DownloadUrl = latest.File.Url,
+                                NewFileName = $"{proj.Id}.hmod"
+                            });
+                        }
+                    }
+                    TitleTextBlock.Text = _updates.Count > 0
+                        ? Managers.LocalizationManager.T("UPDWIN_COUNT", "{count} update(s) available", ("count", _updates.Count))
+                        : Managers.LocalizationManager.GetString("UPDWIN_UP_TO_DATE", "All files are up to date");
+                    return;
+                }
                 var files = Directory.GetFiles(_installPath, "*.jar")
                     .Concat(Directory.GetFiles(_installPath, "*.zip"))
                     .ToList();
@@ -377,6 +407,15 @@ namespace OrangLauncher
                     if (string.IsNullOrEmpty(item.DownloadUrl) || string.IsNullOrEmpty(item.NewFileName))
                     {
                         failed++;
+                        continue;
+                    }
+                    if (item.NewFileName.EndsWith(".hmod", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(item.ProjectId))
+                    {
+                        var mcDir = Directory.GetParent(_installPath)?.FullName;
+                        await Managers.HorizonClient.InstallProjectAsync(item.ProjectId, _installPath, mcDir, item.LatestVersion);
+                        _updates.Remove(item);
+                        success++;
+                        UpdateProgressBar.Value++;
                         continue;
                     }
                     var fileBytes = await client.GetByteArrayAsync(item.DownloadUrl);
