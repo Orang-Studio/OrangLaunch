@@ -1,35 +1,38 @@
 # Welcome to main version of Orange Launcher! 
-# Here is the code for the launcher, written in Python 3.14 pi version in jokes. Rewrtitten to PySide6.
-# Recently edited by Adasjusk, 2026-10-29
+# Here is the code for the launcher, written in Python 3.15, PySide6.
+# Recently edited by Adasjusk, 2026-11-22
 
 # imports
-import os
-import sys
 import atexit
 import base64
-import builtins
 import copy
+import ctypes
 import errno
+import faulthandler
+import gc
 import glob
+import gzip
 import hashlib
-import importlib
 import importlib.util
-import io
 import json
 import math
+import os
 import platform
 import queue
 import random
 import re
+import shlex
 import shutil
 import socket
 import stat
 import struct
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
 import time
+import tomllib
 import traceback
 import urllib.parse
 import uuid as uuid_module
@@ -37,43 +40,79 @@ import weakref
 import webbrowser
 import zipfile
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Callable, Tuple
-
-
-
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import fcntl
 except ImportError:
     fcntl = None
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
-class _LazyModule:
-    def __init__(self, name):
-        object.__setattr__(self, "_lazy_name", name)
-        object.__setattr__(self, "_lazy_mod", None)
-    def _lazy_load(self):
-        mod = object.__getattribute__(self, "_lazy_mod")
-        if mod is None:
-            mod = importlib.import_module(object.__getattribute__(self, "_lazy_name"))
-            object.__setattr__(self, "_lazy_mod", mod)
-        return mod
-    def __getattr__(self, name):
-        return getattr(self._lazy_load(), name)
-    def __setattr__(self, name, value):
-        setattr(self._lazy_load(), name, value)
-    def __bool__(self):
-        return True
 
-minecraft_launcher_lib = _LazyModule("minecraft_launcher_lib")
-requests = _LazyModule("requests")
+# Third-party imports
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    import minecraft_launcher_lib
+    from minecraft_launcher_lib.mod_loader import Neoforge
+except ImportError:
+    minecraft_launcher_lib = None
+    Neoforge = None
+
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    Fernet = hashes = Ed25519PublicKey = PBKDF2HMAC = None
+    ENCRYPTION_AVAILABLE = False
+
+try:
+    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6.QtCore import QObject, QPointF, QRect, QSize, Qt, QTimer, Signal
+    QT_AVAILABLE = True
+except Exception:
+    QT_AVAILABLE = False
+
+    class _QtPlaceholder:
+        def __init__(self, *a, **k):
+            pass
+
+    class _QtNamespace:
+        def __getattr__(self, name):
+            return _QtPlaceholder
+
+    QtCore = QtGui = QtWidgets = _QtNamespace()
+    Qt = _QtNamespace()
+    QObject = QTimer = QSize = QPointF = QRect = _QtPlaceholder
+
+    def Signal(*a, **k):
+        return None
+
+try:
+    from PySide6 import QtWebEngineCore, QtWebEngineWidgets
+except Exception:
+    QtWebEngineWidgets = QtWebEngineCore = None
+
+try:
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+except Exception:
+    QMediaPlayer = QAudioOutput = None
+
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 _NEOFORGE_COMPAT = [None]
 
 
 def _NeoforgeCompat():
     if _NEOFORGE_COMPAT[0] is None:
-        from minecraft_launcher_lib.mod_loader import Neoforge
+        if Neoforge is None:
+            raise RuntimeError("minecraft_launcher_lib is required for NeoForge support")
         class _NeoforgeCompatImpl(Neoforge):
             _LEGACY_MC_VERSION = "1.20.1"
             _LEGACY_API_URL = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge"
@@ -387,9 +426,14 @@ class MinecraftInstance:
         self.base_path = InstanceManager.get_instances_dir() / self.instance_id
         self.minecraft_dir = self.base_path / ".minecraft"
         self.mods_dir = self.minecraft_dir / "mods"
+        self.horizon_mods_dir = self.minecraft_dir / "horizon-mods"
+        self.horizon_native_mods_dir = self.minecraft_dir / "horizon-native-mods"
         self.saves_dir = self.minecraft_dir / "saves"
         self.resourcepacks_dir = self.minecraft_dir / "resourcepacks"
         self.shaderpacks_dir = self.minecraft_dir / "shaderpacks"
+
+    def is_horizon(self) -> bool:
+        return (self.mod_loader or "").lower() == "horizon"
 
     def to_dict(self) -> dict:
         return {
@@ -445,17 +489,30 @@ class MinecraftInstance:
         directories = [
             self.base_path,
             self.minecraft_dir,
-            self.mods_dir,
             self.saves_dir,
             self.resourcepacks_dir,
             self.shaderpacks_dir
         ]
+        if self.is_horizon():
+            directories.extend([self.horizon_mods_dir, self.horizon_native_mods_dir])
+        else:
+            directories.append(self.mods_dir)
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
         instance_file = self.base_path / "instance.json"
         with open(instance_file, 'w', encoding='utf-8') as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
     def get_mod_count(self) -> int:
+        if self.is_horizon():
+            total = 0
+            for d in (self.horizon_mods_dir, self.horizon_native_mods_dir):
+                if d.exists():
+                    for f in d.iterdir():
+                        if f.is_file() and f.suffix.lower() == '.hmod':
+                            total += 1
+                        elif f.is_dir() and (f / "horizon-mod.toml").exists():
+                            total += 1
+            return total
         if not self.mods_dir.exists():
             return 0
         return len([f for f in self.mods_dir.iterdir() if f.suffix.lower() == '.jar'])
@@ -465,7 +522,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 # Change this to the current version
-CURRENT_VERSION = "8.5.1"
+CURRENT_VERSION = "9.0.0"
 # If you fork, at least leave some credit in the code, thanks.
 # I'm not getting paid for this. Please don't sell this or use it for profit. 
 # I worked hard on this and I want to keep it free for everyone.
@@ -615,7 +672,7 @@ def perform_update(download_url, launcher_root):
         try:
             if 'update_file' in locals() and update_file.exists():
                 update_file.unlink()
-            if extract_path.exists():
+            if 'extract_path' in locals() and extract_path.exists():
                 shutil.rmtree(extract_path)
         except:
             pass
@@ -977,6 +1034,9 @@ def _load_settings(launcher):
             if not hasattr(launcher, 'use_dri_prime'):
                 launcher.use_dri_prime = _Var(False)
             launcher.use_dri_prime.set(data.get('use_dri_prime', False))
+            if not hasattr(launcher, 'horizon_rust_support'):
+                launcher.horizon_rust_support = _Var(False)
+            launcher.horizon_rust_support.set(bool(data.get('horizon_rust_support', _adv_get('horizon_rust_support', False))))
             for attr, key in [('share_options', 'share_options'),
                                ('share_resourcepacks', 'share_resourcepacks'),
                                ('share_shaderpacks', 'share_shaderpacks'),
@@ -1013,6 +1073,7 @@ def _save_settings(launcher):
             'debug_mode_enabled': launcher.debug_mode_enabled.get() if hasattr(launcher, 'debug_mode_enabled') else False,
             'show_progress_bar': launcher.show_progress_bar.get() if hasattr(launcher, 'show_progress_bar') else False,
             'use_dri_prime': launcher.use_dri_prime.get() if hasattr(launcher, 'use_dri_prime') else False,
+            'horizon_rust_support': bool(launcher.horizon_rust_support.get()) if hasattr(launcher, 'horizon_rust_support') else False,
             'share_options': launcher.share_options.get() if hasattr(launcher, 'share_options') else False,
             'share_resourcepacks': launcher.share_resourcepacks.get() if hasattr(launcher, 'share_resourcepacks') else False,
             'share_shaderpacks': launcher.share_shaderpacks.get() if hasattr(launcher, 'share_shaderpacks') else False,
@@ -1197,7 +1258,6 @@ def install_crash_handlers():
     install_crash_handlers._done = True
     log_dir = _launcher_log_dir()
     try:
-        import faulthandler
         fh = open(log_dir / "faulthandler.log", "a", encoding="utf-8")
         fh.write(f"\n=== OrangLauncher {CURRENT_VERSION} started {datetime.now().isoformat()} (pid {os.getpid()}) ===\n")
         fh.flush()
@@ -1510,7 +1570,6 @@ class ModrinthPackImporter:
             with lock:
                 self._failed_files.append(file_path)
             return False
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=6) as pool:
             for ok in pool.map(_fetch, wanted):
                 with lock:
@@ -3915,20 +3974,22 @@ def build_launch_env(instance, launcher=None):
             env.pop(key, None)
     env.pop("ORANG_PROXY_SET", None)
     if platform.system() == "Linux":
-        backend = _instance_or_global(instance, "display_backend", "x11")
-        if backend == "x11" and _is_wayland_session():
-            env["XDG_SESSION_TYPE"] = "x11"
-            env["SDL_VIDEO_DRIVER"] = "x11"
-            env["SDL_VIDEODRIVER"] = "x11"
-        elif backend == "wayland":
-            env.pop("SDL_VIDEODRIVER", None)
-            env.pop("SDL_VIDEO_DRIVER", None)
+        is_horizon = bool(instance is not None and getattr(instance, "is_horizon", None) and instance.is_horizon())
+        if not is_horizon:
+            backend = _instance_or_global(instance, "display_backend", "x11")
+            if backend == "x11" and _is_wayland_session():
+                env["XDG_SESSION_TYPE"] = "x11"
+                env["SDL_VIDEO_DRIVER"] = "x11"
+                env["SDL_VIDEODRIVER"] = "x11"
+            elif backend == "wayland":
+                env.pop("SDL_VIDEODRIVER", None)
+                env.pop("SDL_VIDEO_DRIVER", None)
         theme, size = _detect_cursor_env()
         if theme and not env.get("XCURSOR_THEME"):
             env["XCURSOR_THEME"] = theme
         if size and not env.get("XCURSOR_SIZE"):
             env["XCURSOR_SIZE"] = size
-        if _instance_or_global(instance, "use_zink", False):
+        if not is_horizon and _instance_or_global(instance, "use_zink", False):
             env["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
             env["__GLX_VENDOR_LIBRARY_NAME"] = "mesa"
         use_prime = _instance_or_global(instance, "use_prime", False)
@@ -3987,7 +4048,6 @@ def apply_wrapper_command(command, wrapper_text):
     if not wrapper_text or not wrapper_text.strip():
         return command
     try:
-        import shlex
         return shlex.split(wrapper_text) + list(command)
     except Exception:
         return command
@@ -4011,7 +4071,6 @@ def extra_jvm_args(instance):
         return []
     text = instance.opt("jvm_args", "") or ""
     try:
-        import shlex
         return [a for a in shlex.split(text) if a]
     except Exception:
         return text.split()
@@ -4256,7 +4315,6 @@ def open_with_browser(url):
     custom = (_adv_get("custom_browser", "") or "").strip()
     if custom:
         try:
-            import shlex
             subprocess.Popen(shlex.split(custom) + [url])
             return True
         except Exception as e:
@@ -4271,7 +4329,6 @@ def open_with_editor(path):
     custom = (_adv_get("custom_editor", "") or "").strip()
     if custom:
         try:
-            import shlex
             subprocess.Popen(shlex.split(custom) + [str(path)])
             return True
         except Exception as e:
@@ -4434,7 +4491,6 @@ def _pick_directory(**kwargs):
 
 def _levelname_from_level_dat(level_dat):
     try:
-        import gzip
         raw = gzip.open(level_dat, "rb").read()
         marker = b"\x08\x00\x09LevelName"
         idx = raw.find(marker)
@@ -4449,7 +4505,6 @@ def _levelname_from_level_dat(level_dat):
 
 def _set_levelname_in_level_dat(level_dat, new_name):
     try:
-        import gzip
         raw = gzip.open(level_dat, "rb").read()
         marker = b"\x08\x00\x09LevelName"
         idx = raw.find(marker)
@@ -4997,6 +5052,1068 @@ def get_resource_shader_manager(instance_manager=None):
 
 
 MODRINTH_API_URL = "https://api.modrinth.com/v2"
+# horizon support in 9.0
+HORIZON_REPO = "horizon-rust/horizon"
+HORIZON_RELEASES_API = f"https://api.github.com/repos/{HORIZON_REPO}/releases?per_page=100"
+HORIZON_REGISTRY_URL = "https://horizon-rust.github.io/horizon-mods/index.json"
+HORIZON_RELEASE_KEYS = ("MU4oiIQcCxkZvbwSjjXs7SySCuM6ywRQ3nGaJYZG0gw=",)
+HORIZON_DEFAULT_MC = "26.3"
+HORIZON_MAX_FILE_BYTES = 64 * 1024 * 1024
+HORIZON_GRAPHICS_PRESETS = ("custom", "full_performance", "performance", "balanced", "quality", "ultra")
+HORIZON_GRAPHICS_APIS = ("auto", "vulkan", "dx12", "opengl") if platform.system() == "Windows" else (("auto",) if platform.system() == "Darwin" else ("auto", "vulkan", "opengl"))
+HORIZON_PRESENT_MODES = ("auto", "fifo", "mailbox", "immediate")
+HORIZON_HDR_MODES = ("false", "true", "auto")
+HORIZON_GPU_CULL_MODES = ("false", "true", "auto")
+HORIZON_CULL_MODES = ("off", "sync", "async")
+
+# when enabled
+def _horizon_enabled(launcher=None) -> bool:
+    if launcher is not None and hasattr(launcher, "horizon_rust_support"):
+        try:
+            return bool(launcher.horizon_rust_support.get())
+        except Exception:
+            pass
+    app = _QT_APP_REF[0] if "_QT_APP_REF" in globals() and _QT_APP_REF else None
+    if app is not None and hasattr(app, "horizon_rust_support"):
+        try:
+            return bool(app.horizon_rust_support.get())
+        except Exception:
+            pass
+    return bool(_adv_get("horizon_rust_support", False))
+
+
+def _visible_instances(instance_manager, launcher=None):
+    enabled = _horizon_enabled(launcher)
+    return [inst for inst in instance_manager.instances.values() if enabled or not inst.is_horizon()]
+
+
+def _horizon_kv_read(path: Path) -> Dict[str, str]:
+    out = {}
+    if not path.exists():
+        return out
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or ":" not in s:
+                continue
+            k, v = s.split(":", 1)
+            out[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return out
+
+
+def _horizon_kv_write(path: Path, updates: Dict[str, Any], remove_keys=None):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    remove_set = set(remove_keys or ())
+    lines = []
+    if path.exists():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            lines = []
+    seen = set()
+    out = []
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and ":" in s:
+            k = s.split(":", 1)[0].strip()
+            if k in remove_set:
+                seen.add(k)
+                continue
+            if k in updates:
+                val = updates[k]
+                if isinstance(val, bool):
+                    val = "true" if val else "false"
+                out.append(f"{k}:{val}")
+                seen.add(k)
+                continue
+        out.append(line)
+    for k, val in updates.items():
+        if k in seen or k in remove_set:
+            continue
+        if isinstance(val, bool):
+            val = "true" if val else "false"
+        out.append(f"{k}:{val}")
+    _atomic_write_text(path, "\n".join(out) + ("\n" if out else ""))
+
+
+def horizon_read_mods_state(game_dir: Path) -> Tuple[Dict[str, bool], int]:
+    kv = _horizon_kv_read(Path(game_dir) / "horizon-mods.txt")
+    states = {}
+    cap = 4096
+    for k, v in kv.items():
+        if k.startswith("mod."):
+            states[k[4:]] = v.lower() == "true"
+        elif k == "wasm.memory_cap_mib":
+            try:
+                cap = max(1, min(4096, int(v)))
+            except Exception:
+                cap = 4096
+    return states, cap
+
+
+def horizon_set_mod_enabled(game_dir: Path, mod_id: str, enabled: bool):
+    if not mod_id:
+        return
+    _horizon_kv_write(Path(game_dir) / "horizon-mods.txt", {f"mod.{mod_id}": bool(enabled)})
+
+
+def horizon_remove_mod_state(game_dir: Path, mod_id: str):
+    if not mod_id:
+        return
+    p = Path(game_dir) / "horizon-mods.txt"
+    if p.exists():
+        _horizon_kv_write(p, {}, remove_keys={f"mod.{mod_id}"})
+
+# assinmybutt
+def horizon_set_wasm_memory_cap(game_dir: Path, cap_mib: int):
+    val = max(1, min(4096, int(cap_mib)))
+    _horizon_kv_write(Path(game_dir) / "horizon-mods.txt", {"wasm.memory_cap_mib": str(val)})
+
+
+def horizon_read_mod_manifest(path: Path) -> Dict[str, Any]:
+    path = Path(path)
+    try:
+        text = None
+        if path.is_dir():
+            mf = path / "horizon-mod.toml"
+            if mf.exists():
+                text = mf.read_text(encoding="utf-8", errors="replace")
+        elif path.is_file():
+            with zipfile.ZipFile(path, "r") as zf:
+                if "horizon-mod.toml" in zf.namelist():
+                    text = zf.read("horizon-mod.toml").decode("utf-8", errors="replace")
+        if not text:
+            return {}
+        data = tomllib.loads(text)
+        kind = "native-mod" if "native" in data else ("wasm" if "wasm" in data else "mod")
+        authors = data.get("authors") or []
+        if isinstance(authors, str):
+            authors = [authors]
+        return {
+            "id": str(data.get("id") or path.stem),
+            "name": str(data.get("name") or data.get("id") or path.stem).strip(),
+            "version": str(data.get("version") or ""),
+            "api": str(data.get("api") or ""),
+            "description": str(data.get("description") or "").strip(),
+            "authors": [str(a) for a in authors],
+            "license": str(data.get("license") or ""),
+            "kind": kind,
+            "loader": "horizon",
+            "wasm_memory_mib": data.get("wasm_memory_mib"),
+        }
+    except Exception:
+        return {}
+
+# parsing and other url stuff
+def _horizon_allowed_download_url(url: str, project: Optional[Dict[str, Any]] = None) -> bool:
+    if not url or not url.startswith("https://"):
+        return False
+    
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        return False
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 6 or parts[2] != "releases" or parts[3] != "download":
+        return False
+    
+    if any(p in (".", "..") for p in parts):
+        return False
+    owner, repo = parts[0].lower(), parts[1].lower()
+    if owner == "horizon-rust" and repo == "horizon-mods":
+        return True
+    
+    if project and project.get("source"):
+        sp = urllib.parse.urlparse(str(project["source"]))
+        sparts = [p for p in sp.path.split("/") if p]
+        if sp.netloc.lower() == "github.com" and len(sparts) >= 2:
+            if owner == sparts[0].lower() and repo == sparts[1].lower():
+                return True
+    return False
+
+
+def _horizon_is_revoked(index_data: Optional[Dict[str, Any]], project_id: str, sha256_hex: Optional[str] = None) -> Optional[str]:
+    if not isinstance(index_data, dict):
+        return None
+    
+    for entry in index_data.get("revoked") or []:
+        if not isinstance(entry, dict):
+            continue
+
+        eid = entry.get("id")
+        esha = entry.get("sha256")
+        if esha and sha256_hex and esha.lower() == sha256_hex.lower():
+            return str(entry.get("reason") or "Revoked")
+        if eid and not esha and eid == project_id:
+            return str(entry.get("reason") or "Revoked")
+    return None
+
+
+def _horizon_verify_ed25519(tag: str, sums_bytes: bytes, sig_bytes: bytes) -> bool:
+    if Ed25519PublicKey is None:
+        raise RuntimeError("The 'cryptography' package is required to verify Horizon release signatures")
+    raw_sig = sig_bytes.strip()
+    try:
+        if len(raw_sig) != 64:
+            raw_sig = base64.b64decode(raw_sig)
+    except Exception:
+        return False
+    if len(raw_sig) != 64:
+        return False
+    candidates = [tag]
+
+    if tag.startswith("nightly"):
+        candidates.append("nightly")
+
+    for key_b64 in HORIZON_RELEASE_KEYS:
+        try:
+            pub = Ed25519PublicKey.from_public_bytes(base64.b64decode(key_b64))
+        except Exception:
+            continue
+
+        for ctag in candidates:
+            msg = f"horizon release {ctag}\n".encode("utf-8") + sums_bytes
+            try:
+                pub.verify(raw_sig, msg)
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def _horizon_sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 256), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+# hor man
+class HorizonManager:
+    def __init__(self):
+        self.root_dir = DATA_DIR / "horizon"
+        self.builds_dir = self.root_dir / "builds"
+        self.prepared_dir = self.root_dir / "prepared"
+        self.mojang_dir = self.root_dir / "mojang"
+        self.registry_cache_path = self.root_dir / "registry_index.json"
+        self._releases_cache = None
+        self._releases_ts = 0.0
+        self._registry_cache = None
+        self._registry_ts = 0.0
+        self._launch_api_cache = {}
+        self._prepare_lock = threading.Lock()
+
+    @staticmethod
+    def platform_asset_names() -> Tuple[str, Optional[str]]:
+        sys_name = platform.system()
+        arch = platform.machine().lower()
+        if sys_name == "Windows":
+            if arch in ("arm64", "aarch64"):
+                return ("horizon-windows-arm64.zip", "horizon-windows-x64.zip")
+            return ("horizon-windows-x64.zip", None)
+        if sys_name == "Darwin":
+            if arch in ("arm64", "aarch64"):
+                return ("horizon-macos-arm64.zip", "horizon-macos-x64.zip")
+            return ("horizon-macos-x64.zip", None)
+        return ("horizon-linux-x86_64.tar.gz", "horizon-linux-musl-x86_64.tar.gz")
+
+    @staticmethod
+    def _exe_name(base: str) -> str:
+        return f"{base}.exe" if platform.system() == "Windows" else base
+
+    def build_dir(self, tag: str) -> Path:
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", (tag or "nightly").strip()) or "nightly"
+        return self.builds_dir / safe
+
+    def list_installed_builds(self) -> List[str]:
+        if not self.builds_dir.exists():
+            return []
+        found = []
+        for d in sorted(self.builds_dir.iterdir(), key=lambda p: p.name.lower(), reverse=True):
+            if d.is_dir() and self.client_executable(d.name) is not None:
+                found.append(d.name)
+        return found
+
+    def _find_binary_in_dir(self, root: Path, base: str) -> Optional[Path]:
+        name = self._exe_name(base)
+        direct = root / name
+        if direct.is_file():
+            return direct
+        if root.exists():
+            for cand in root.rglob(name):
+                if cand.is_file():
+                    return cand
+        return None
+
+    def client_executable(self, tag: str, custom_path: str = "") -> Optional[Path]:
+        if custom_path:
+            p = Path(custom_path).expanduser()
+            if p.is_file():
+                return p
+        return self._find_binary_in_dir(self.build_dir(tag), "horizon-client")
+
+    def prepare_executable(self, tag: str, custom_path: str = "") -> Optional[Path]:
+        if custom_path:
+            p = Path(custom_path).expanduser()
+            if p.is_file():
+                return p
+        return self._find_binary_in_dir(self.build_dir(tag), "horizon-prepare")
+
+    def _read_research_lock(self, exe_path: Path) -> Dict[str, Any]:
+        for base in (exe_path.parent, exe_path.parent.parent):
+            cand = base / "research-lock.json"
+            if cand.is_file():
+                try:
+                    data = json.loads(cand.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        return data
+                except Exception:
+                    pass
+        return {}
+
+    # launcher api
+    def probe_launch_api(self, exe_path: Path) -> Dict[str, Any]:
+        exe_path = Path(exe_path)
+        try:
+            st = exe_path.stat()
+            key = (str(exe_path), st.st_size, int(st.st_mtime))
+        except OSError:
+            return {}
+        
+        if key in self._launch_api_cache:
+            return dict(self._launch_api_cache[key])
+        try:
+            res = subprocess.run([str(exe_path), "--launch-api"], capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 and res.stdout.strip().startswith("{"):
+                data = json.loads(res.stdout.strip())
+                if isinstance(data, dict) and data.get("launch_api"):
+                    data["has_launch_api"] = True
+                    self._launch_api_cache[key] = data
+                    return dict(data)
+        except Exception:
+            pass
+        lock = self._read_research_lock(exe_path)
+        mc_info = lock.get("minecraft") if isinstance(lock.get("minecraft"), dict) else {}
+        mc_ver = str(mc_info.get("version") or HORIZON_DEFAULT_MC)
+        java_major = int(mc_info.get("java_major") or get_required_java_version(mc_ver))
+        opts = []
+        try:
+            hres = subprocess.run([str(exe_path), "--help"], capture_output=True, text=True, timeout=15)
+            htext = (hres.stdout or "") + "\n" + (hres.stderr or "")
+            found = sorted(set(re.findall(r"(?<![A-Za-z0-9-])(--[A-Za-z][A-Za-z0-9-]*)", htext)))
+            opts = [{"name": o, "value": None} for o in found]
+        except Exception:
+            opts = []
+        fallback_data = {
+            "has_launch_api": False,
+            "launch_api": "legacy",
+            "horizon": exe_path.parent.name,
+            "minecraft": mc_ver,
+            "java_major": java_major,
+            "options": opts,
+        }
+        self._launch_api_cache[key] = fallback_data
+        return dict(fallback_data)
+
+    # another parser
+    def _parse_release_item(self, item: Dict[str, Any], primary: str, fallback: Optional[str]) -> Optional[Dict[str, Any]]:
+        tag = str(item.get("tag_name") or "")
+        if not tag or tag.startswith("launcher@") or tag.startswith("sdk-"):
+            return None
+        assets = {a.get("name"): a for a in (item.get("assets") or []) if isinstance(a, dict) and a.get("name")}
+        chosen = assets.get(primary) or (assets.get(fallback) if fallback else None)
+        if not chosen:
+            return None
+        sums = assets.get("SHA256SUMS")
+        sig = assets.get("SHA256SUMS.sig")
+        return {
+            "tag": tag,
+            "name": str(item.get("name") or tag),
+            "published_at": str(item.get("published_at") or ""),
+            "prerelease": bool(item.get("prerelease", False)),
+            "asset_name": chosen["name"],
+            "asset_url": chosen["browser_download_url"],
+            "asset_size": int(chosen.get("size") or 0),
+            "sums_url": sums["browser_download_url"] if sums else "",
+            "sig_url": sig["browser_download_url"] if sig else "",
+        }
+
+    # fetcher
+    def fetch_releases(self, force: bool = False) -> List[Dict[str, Any]]:
+        if not force and self._releases_cache is not None and (time.time() - self._releases_ts) < 300:
+            return list(self._releases_cache)
+        primary, fallback = self.platform_asset_names()
+        seen = set()
+        releases = []
+        for page in range(1, 5):
+            r = _http_session.get(f"{HORIZON_RELEASES_API}&page={page}", timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+            if not isinstance(payload, list) or not payload:
+                break
+            for item in payload:
+                parsed = self._parse_release_item(item, primary, fallback)
+                if parsed and parsed["tag"] not in seen:
+                    seen.add(parsed["tag"])
+                    releases.append(parsed)
+            if len(payload) < 100:
+                break
+        stables = [x for x in releases if not x["prerelease"] and not x["tag"].startswith("nightly")]
+        stables.sort(key=lambda x: x["published_at"], reverse=True)
+        nightly_main = [x for x in releases if x["tag"] == "nightly"]
+        dated_nightlies = [x for x in releases if x["tag"] != "nightly" and (x["prerelease"] or x["tag"].startswith("nightly"))]
+        dated_nightlies.sort(key=lambda x: x["published_at"], reverse=True)
+        if stables:
+            ordered = [stables[0]] + nightly_main + stables[1:] + dated_nightlies
+        else:
+            ordered = nightly_main + dated_nightlies
+        self._releases_cache = ordered
+        self._releases_ts = time.time()
+        return list(ordered)
+
+    # tags
+    def default_build_tag(self, force: bool = False) -> str:
+        try:
+            rels = self.fetch_releases(force=force)
+            for rel in rels:
+                if not rel["prerelease"] and not rel["tag"].startswith("nightly"):
+                    return rel["tag"]
+            if rels:
+                return rels[0]["tag"]
+        except Exception:
+            pass
+        installed = self.list_installed_builds()
+        for b in installed:
+            if not b.startswith("nightly"):
+                return b
+        return installed[0] if installed else "nightly"
+
+    # tagss that may be or not available
+    def available_build_tags(self, force: bool = False) -> List[str]:
+        tags = []
+        try:
+            for rel in self.fetch_releases(force=force):
+                if rel["tag"] not in tags:
+                    tags.append(rel["tag"])
+        except Exception:
+            pass
+        for inst_tag in self.list_installed_builds():
+            if inst_tag not in tags:
+                tags.append(inst_tag)
+        if not tags:
+            tags = ["nightly"]
+        return tags
+
+    # installer
+    def install_build(self, tag: str, log_fn=None, progress_fn=None) -> Path:
+        tag = (tag or "").strip()
+        releases = self.fetch_releases(force=True)
+        if not tag or tag == "latest":
+            tag = self.default_build_tag(force=False)
+        rel = next((x for x in releases if x["tag"] == tag), None)
+        
+        if rel is None:
+            try:
+                r = _http_session.get(f"https://api.github.com/repos/{HORIZON_REPO}/releases/tags/{urllib.parse.quote(tag, safe='')}", timeout=20)
+                if r.status_code == 200:
+                    primary, fallback = self.platform_asset_names()
+                    rel = self._parse_release_item(r.json(), primary, fallback)
+            except Exception:
+                rel = None
+
+        if rel is None and tag == "nightly" and releases:
+            rel = releases[0]
+
+        if rel is None:
+            raise RuntimeError(f"Horizon build '{tag}' not found in releases")
+        
+        self.builds_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = self.build_dir(tag)
+
+        if log_fn:
+            log_fn(f"[Horizon] Downloading {rel['tag']} ({rel['asset_name']})...")
+        expected_sha = None
+
+        if rel.get("sums_url"):
+            sums_resp = _http_session.get(rel["sums_url"], timeout=30)
+            sums_resp.raise_for_status()
+            sums_bytes = sums_resp.content
+
+            if rel.get("sig_url"):
+                sig_resp = _http_session.get(rel["sig_url"], timeout=30)
+                if sig_resp.status_code == 200:
+                    if not _horizon_verify_ed25519(rel["tag"], sums_bytes, sig_resp.content):
+                        raise RuntimeError("Horizon SHA256SUMS signature verification failed")
+                    if log_fn:
+                        log_fn("[Horizon] Verified release signature")
+
+            for line in sums_bytes.decode("utf-8", errors="replace").splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[-1].lstrip("*") == rel["asset_name"]:
+                    expected_sha = parts[0].lower()
+                    break
+        tmpdir = Path(tempfile.mkdtemp(prefix="horizon_build_"))
+        try:
+            archive_path = tmpdir / rel["asset_name"]
+            total = rel.get("asset_size") or 0
+            got = 0
+
+            with _http_session.get(rel["asset_url"], stream=True, timeout=180) as dl:
+                dl.raise_for_status()
+
+                if not total:
+                    try:
+                        total = int(dl.headers.get("content-length") or 0)
+                    except Exception:
+                        total = 0
+
+                with open(archive_path, "wb") as out:
+                    for chunk in dl.iter_content(1024 * 256):
+                        if chunk:
+                            out.write(chunk)
+                            got += len(chunk)
+                            if progress_fn and total > 0:
+                                progress_fn(min(int(got * 80 / total), 80), f"Downloading Horizon {rel['tag']}...")
+
+            if expected_sha:
+                actual_sha = _horizon_sha256_file(archive_path)
+                if actual_sha.lower() != expected_sha:
+                    raise RuntimeError(f"Horizon archive SHA-256 mismatch: expected {expected_sha}, got {actual_sha}")
+                if log_fn:
+                    log_fn("[Horizon] Verified archive SHA-256")
+            if progress_fn:
+                progress_fn(85, f"Extracting Horizon {rel['tag']}...")
+            stage = tmpdir / "extract"
+            stage.mkdir(parents=True, exist_ok=True)
+            if rel["asset_name"].endswith(".tar.gz"):
+                with tarfile.open(archive_path, "r:gz") as tf:
+                    tf.extractall(stage, filter="data")
+            elif rel["asset_name"].endswith(".zip"):
+                with zipfile.ZipFile(archive_path, "r") as zf:
+                    zf.extractall(stage)
+            else:
+                raise RuntimeError(f"Unsupported archive format: {rel['asset_name']}")
+            entries = [p for p in stage.iterdir() if p.name != "__MACOSX"]
+            src_root = entries[0] if len(entries) == 1 and entries[0].is_dir() else stage
+            backup_dir = None
+            if dest_dir.exists():
+                backup_dir = dest_dir.with_name(dest_dir.name + ".old")
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+                shutil.move(str(dest_dir), str(backup_dir))
+            try:
+                shutil.move(str(src_root), str(dest_dir))
+            except Exception:
+                if backup_dir and backup_dir.exists() and not dest_dir.exists():
+                    shutil.move(str(backup_dir), str(dest_dir))
+                raise
+
+            if backup_dir and backup_dir.exists():
+                shutil.rmtree(backup_dir, ignore_errors=True)
+
+            if platform.system() != "Windows":
+                for bname in ("horizon-client", "horizon-prepare", "horizon-server", "horizon-ctl"):
+                    bpath = self._find_binary_in_dir(dest_dir, bname)
+                    if bpath:
+                        try:
+                            bpath.chmod(bpath.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                        except Exception:
+                            pass
+
+            if progress_fn:
+                progress_fn(100, f"Installed Horizon {rel['tag']}")
+
+            if log_fn:
+                log_fn(f"[Horizon] Installed {rel['tag']} to {dest_dir}")
+
+            return dest_dir
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def check_prepared(self, prepare_exe: Path, output_dir: Path) -> Tuple[bool, str]:
+        api = self.probe_launch_api(prepare_exe)
+        if not api.get("has_launch_api"):
+            mc_version = str(api.get("minecraft") or HORIZON_DEFAULT_MC)
+            legacy_dir = prepare_exe.parent / ".local" / "horizon-client" / mc_version
+            marker = legacy_dir / "horizon-resources.json"
+
+            if marker.is_file():
+                return True, str(legacy_dir)
+            return False, "Legacy Horizon resources not prepared yet"
+        try:
+            res = subprocess.run(
+                [str(prepare_exe), "--check", "--output", str(output_dir)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return res.returncode == 0, (res.stdout + "\n" + res.stderr).strip()
+        except Exception as e:
+            return False, str(e)
+
+    # locator
+    def find_local_minecraft_dir(self, mc_version: str, accepted_manifest_sha1s=None) -> Optional[Path]:
+        candidates = [self.mojang_dir, Path.home() / ".minecraft"]
+
+        try:
+            for inst in get_instance_manager().instances.values():
+                if not inst.is_horizon():
+                    candidates.append(inst.minecraft_dir)
+        except Exception:
+            pass
+        fallback = None
+        for root in candidates:
+            vdir = root / "versions" / mc_version
+            vjson = vdir / f"{mc_version}.json"
+            vjar = vdir / f"{mc_version}.jar"
+            if vjson.is_file() and vjar.is_file() and (root / "libraries").is_dir() and (root / "assets").is_dir():
+                if accepted_manifest_sha1s:
+                    try:
+                        if _sha1_file(vjson).lower() in accepted_manifest_sha1s:
+                            return root
+                    except Exception:
+                        pass
+                if fallback is None:
+                    fallback = root
+        return fallback
+
+    def _download_sha1_verified(self, url: str, dest: Path, expected_sha1: str = "") -> Path:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".part")
+        with _http_session.get(url, stream=True, timeout=180) as dl:
+            dl.raise_for_status()
+            with open(tmp, "wb") as out:
+                for chunk in dl.iter_content(1024 * 256):
+                    if chunk:
+                        out.write(chunk)
+        if expected_sha1:
+            actual = _sha1_file(tmp).lower()
+            if actual != expected_sha1.lower():
+                tmp.unlink(missing_ok=True)
+                raise RuntimeError(f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}")
+        os.replace(tmp, dest)
+        return dest
+
+    def _ensure_symlink_or_copy(self, src: Path, dst: Path):
+        if dst.is_symlink():
+            try:
+                if dst.resolve() == src.resolve():
+                    return
+            except Exception:
+                pass
+            dst.unlink()
+        elif dst.exists():
+            return
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dst.symlink_to(src, target_is_directory=src.is_dir())
+        except Exception:
+            if src.is_dir():
+                shutil.copytree(str(src), str(dst))
+            else:
+                shutil.copy2(str(src), str(dst))
+
+    # the mojang check
+    def ensure_mojang_files(self, mc_version: str, research_lock: Optional[Dict[str, Any]] = None, build_root: Optional[Path] = None, log_fn=None, progress_fn=None) -> Tuple[Path, Path]:
+        self.mojang_dir.mkdir(parents=True, exist_ok=True)
+        mc_lock = (research_lock or {}).get("minecraft") if isinstance((research_lock or {}).get("minecraft"), dict) else {}
+        pinned_manifest_sha1 = str(mc_lock.get("manifest_sha1") or "").lower()
+        accepted_manifest_sha1s = {str(s).lower() for s in (mc_lock.get("accepted_manifest_sha1") or []) if s}
+        if pinned_manifest_sha1:
+            accepted_manifest_sha1s.add(pinned_manifest_sha1)
+        accepted_asset_index_sha1s = {str(s).lower() for s in (mc_lock.get("accepted_asset_index_sha1") or []) if s}
+        mc_dir = self.find_local_minecraft_dir(mc_version, accepted_manifest_sha1s=accepted_manifest_sha1s or None)
+        if mc_dir is None:
+            mc_dir = self.mojang_dir
+            if log_fn:
+                log_fn(f"[Horizon] Downloading Minecraft {mc_version} files for resource preparation...")
+            install_max = [1]
+            def set_max(m):
+                install_max[0] = max(int(m or 1), 1)
+            def set_prog(c):
+                if progress_fn:
+                    pct = min(int((int(c) / install_max[0]) * 40), 40)
+                    progress_fn(pct, f"Downloading Minecraft {mc_version}... {pct}%")
+            minecraft_launcher_lib.install.install_minecraft_version(
+                mc_version,
+                str(mc_dir),
+                callback={
+                    "setStatus": lambda s: log_fn and log_fn(f"[Horizon/Mojang] {s}"),
+                    "setProgress": set_prog,
+                    "setMax": set_max,
+                },
+            )
+        version_json_path = mc_dir / "versions" / mc_version / f"{mc_version}.json"
+        if not version_json_path.is_file():
+            raise RuntimeError(f"Missing version JSON for Minecraft {mc_version}: {version_json_path}")
+        
+        def _use_mojang_overlay():
+            nonlocal mc_dir
+            if mc_dir != self.mojang_dir:
+                self._ensure_symlink_or_copy(mc_dir / "libraries", self.mojang_dir / "libraries")
+                self._ensure_symlink_or_copy(mc_dir / "versions" / mc_version / f"{mc_version}.jar", self.mojang_dir / "versions" / mc_version / f"{mc_version}.jar")
+                (self.mojang_dir / "assets").mkdir(parents=True, exist_ok=True)
+                if (mc_dir / "assets" / "objects").is_dir():
+                    self._ensure_symlink_or_copy(mc_dir / "assets" / "objects", self.mojang_dir / "assets" / "objects")
+                src_json = mc_dir / "versions" / mc_version / f"{mc_version}.json"
+                dst_json = self.mojang_dir / "versions" / mc_version / f"{mc_version}.json"
+                if src_json.is_file() and not dst_json.exists():
+                    dst_json.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_json, dst_json)
+                mc_dir = self.mojang_dir
+        if pinned_manifest_sha1:
+            current_sha1 = _sha1_file(version_json_path).lower()
+            if current_sha1 not in accepted_manifest_sha1s:
+                pinned_url = f"https://piston-meta.mojang.com/v1/packages/{pinned_manifest_sha1}/{mc_version}.json"
+                if log_fn:
+                    log_fn(f"[Horizon] Fetching pinned Minecraft {mc_version} version manifest ({pinned_manifest_sha1[:10]})...")
+                _use_mojang_overlay()
+                version_json_path = mc_dir / "versions" / mc_version / f"{mc_version}.json"
+                self._download_sha1_verified(pinned_url, version_json_path, pinned_manifest_sha1)
+                if build_root is not None:
+                    local_manifest = Path(build_root) / ".local" / "minecraft" / mc_version / "manifest.json"
+                    local_manifest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(version_json_path, local_manifest)
+        vdata = json.loads(version_json_path.read_text(encoding="utf-8"))
+        client_info = (vdata.get("downloads") or {}).get("client") or {}
+        client_url = str(client_info.get("url") or "")
+        client_sha1 = (str(mc_lock.get("client_sha1") or "") or str(client_info.get("sha1") or "")).lower()
+        client_jar_path = mc_dir / "versions" / mc_version / f"{mc_version}.jar"
+        if client_url and client_sha1 and (not client_jar_path.is_file() or _sha1_file(client_jar_path).lower() != client_sha1):
+            _use_mojang_overlay()
+            client_jar_path = mc_dir / "versions" / mc_version / f"{mc_version}.jar"
+            if client_jar_path.is_symlink():
+                client_jar_path.unlink()
+            if log_fn:
+                log_fn(f"[Horizon] Downloading pinned Minecraft {mc_version} client jar...")
+            self._download_sha1_verified(client_url, client_jar_path, client_sha1)
+        asset_idx = vdata.get("assetIndex") or {}
+        asset_id = str(asset_idx.get("id") or "")
+        asset_url = str(asset_idx.get("url") or "")
+        asset_sha1 = str(asset_idx.get("sha1") or "").lower()
+        if asset_id and asset_url:
+            idx_path = mc_dir / "assets" / "indexes" / f"{asset_id}.json"
+            valid_idx_shas = set(accepted_asset_index_sha1s)
+            if asset_sha1:
+                valid_idx_shas.add(asset_sha1)
+            need_idx = not idx_path.is_file()
+            if not need_idx and valid_idx_shas:
+                need_idx = _sha1_file(idx_path).lower() not in valid_idx_shas
+            if need_idx:
+                _use_mojang_overlay()
+                idx_path = mc_dir / "assets" / "indexes" / f"{asset_id}.json"
+                if log_fn:
+                    log_fn(f"[Horizon] Fetching pinned Minecraft {mc_version} asset index ({asset_id})...")
+                self._download_sha1_verified(asset_url, idx_path, asset_sha1)
+        srv_info = (vdata.get("downloads") or {}).get("server") or {}
+        srv_url = srv_info.get("url")
+        srv_sha1 = (str(mc_lock.get("server_sha1") or "") or str(srv_info.get("sha1") or "")).lower()
+        server_jar = self.mojang_dir / f"server-{mc_version}.jar"
+        need_srv = not server_jar.is_file()
+
+        if not need_srv and srv_sha1:
+            if _sha1_file(server_jar).lower() != srv_sha1:
+                need_srv = True
+        if need_srv:
+            if not srv_url:
+                raise RuntimeError(f"No server jar download entry in Minecraft {mc_version} version JSON")
+            if log_fn:
+                log_fn(f"[Horizon] Downloading Minecraft {mc_version} server jar...")
+            self._download_sha1_verified(srv_url, server_jar, srv_sha1)
+        return mc_dir, server_jar
+
+    
+    def prepared_output_dir(self, mc_version: str, tag: str) -> Path:
+        safe_tag = re.sub(r"[^A-Za-z0-9._-]+", "_", (tag or "nightly").strip()) or "nightly"
+        safe_mc = re.sub(r"[^A-Za-z0-9._-]+", "_", (mc_version or HORIZON_DEFAULT_MC).strip()) or HORIZON_DEFAULT_MC
+        return self.prepared_dir / f"{safe_mc}-{safe_tag}"
+    # check
+    def ensure_prepared(self, tag: str, custom_prepare: str = "", log_fn=None, progress_fn=None, force: bool = False) -> Tuple[Path, Dict[str, Any]]:
+        prep_exe = self.prepare_executable(tag, custom_prepare)
+        if prep_exe is None:
+            raise RuntimeError(f"horizon-prepare not found for build '{tag}'")
+        api = self.probe_launch_api(prep_exe)
+        mc_version = str(api.get("minecraft") or HORIZON_DEFAULT_MC)
+        java_major = int(api.get("java_major") or get_required_java_version(mc_version))
+        has_api = bool(api.get("has_launch_api"))
+        out_dir = self.prepared_output_dir(mc_version, tag) if has_api else (prep_exe.parent / ".local" / "horizon-client" / mc_version)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with self._prepare_lock:
+            if not force:
+                ok, _ = self.check_prepared(prep_exe, out_dir)
+                if ok:
+                    if log_fn:
+                        log_fn(f"[Horizon] Prepared resources are up to date ({out_dir})")
+                    return out_dir, api
+            research_lock = self._read_research_lock(prep_exe)
+            mc_dir, server_jar = self.ensure_mojang_files(
+                mc_version,
+                research_lock=research_lock,
+                build_root=prep_exe.parent,
+                log_fn=log_fn,
+                progress_fn=progress_fn,
+            )
+            java_exe = find_java_executable(java_major)
+            if not java_exe:
+                if log_fn:
+                    log_fn(f"[Horizon] Downloading Java {java_major} for resource preparation...")
+                java_exe = download_java_runtime(java_major, progress_callback=lambda p, m: progress_fn and progress_fn(40 + int(p * 0.1), m))
+            java_home = str(Path(java_exe).resolve().parent.parent) if java_exe else ""
+            prep_env = os.environ.copy()
+            if java_home:
+                prep_env["JAVA_HOME"] = java_home
+                prep_env["PATH"] = str(Path(java_home) / "bin") + os.pathsep + prep_env.get("PATH", "")
+            if has_api:
+                supported_opts = {o.get("name") for o in (api.get("options") or []) if isinstance(o, dict)}
+                cmd = [str(prep_exe), "--prepare", "--server-jar", str(server_jar), "--minecraft-dir", str(mc_dir), "--output", str(out_dir)]
+                if not supported_opts or "--complete" in supported_opts:
+                    cmd.append("--complete")
+                if not supported_opts or "--progress" in supported_opts:
+                    cmd.extend(["--progress", "json"])
+                if java_home and (not supported_opts or "--java-home" in supported_opts):
+                    cmd.extend(["--java-home", java_home])
+                if log_fn:
+                    log_fn(f"[Horizon] Preparing resources for Minecraft {mc_version}...")
+                proc = subprocess.Popen(cmd, cwd=str(prep_exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=prep_env)
+                last_error = ""
+                for raw in proc.stdout:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    if line.startswith("{") and line.endswith("}"):
+                        try:
+                            obj = json.loads(line)
+                            if "message" in obj and log_fn:
+                                log_fn(f"[Horizon/Prepare] {obj['message']}")
+                            if "fraction" in obj and progress_fn:
+                                frac = max(0.0, min(1.0, float(obj["fraction"])))
+                                pct = 50 + int(frac * 50)
+                                progress_fn(pct, str(obj.get("message") or f"Preparing Horizon resources... {int(frac * 100)}%"))
+                            if "error" in obj:
+                                last_error = str(obj["error"])
+                                if log_fn:
+                                    log_fn(f"[Horizon/Prepare] ERROR: {last_error}")
+                            continue
+                        except Exception:
+                            pass
+                    if log_fn:
+                        log_fn(f"[Horizon/Prepare] {line}")
+                proc.wait()
+                if proc.returncode != 0:
+                    raise RuntimeError(last_error or f"horizon-prepare failed with exit code {proc.returncode}")
+                ok, msg = self.check_prepared(prep_exe, out_dir)
+                if not ok:
+                    raise RuntimeError(f"Prepared resources check failed: {msg}")
+            else:
+                if log_fn:
+                    log_fn(f"[Horizon] Preparing legacy release resources for Minecraft {mc_version}...")
+                if progress_fn:
+                    progress_fn(55, f"Preparing Horizon {tag} resources...")
+                cmd = [str(prep_exe), "--prepare", "--server-jar", str(server_jar), "--minecraft-dir", str(mc_dir), "--root", str(prep_exe.parent)]
+                proc = subprocess.Popen(cmd, cwd=str(prep_exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=prep_env)
+                for raw in proc.stdout:
+                    line = raw.strip()
+                    if line and log_fn:
+                        log_fn(f"[Horizon/Prepare] {line}")
+                proc.wait()
+                if proc.returncode != 0:
+                    raise RuntimeError(f"horizon-prepare failed with exit code {proc.returncode}")
+                if progress_fn:
+                    progress_fn(85, f"Copying Horizon {tag} sounds...")
+                scmd = [str(prep_exe), "sounds", "--minecraft-dir", str(mc_dir), "--root", str(prep_exe.parent)]
+                sproc = subprocess.Popen(scmd, cwd=str(prep_exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=prep_env)
+                for raw in sproc.stdout:
+                    line = raw.strip()
+                    if line and log_fn:
+                        log_fn(f"[Horizon/Sounds] {line}")
+                sproc.wait()
+            if progress_fn:
+                progress_fn(100, "Horizon resources ready")
+            return out_dir, api
+
+    def fetch_registry_index(self, force: bool = False) -> Dict[str, Any]:
+        if not force and self._registry_cache is not None and (time.time() - self._registry_ts) < 300:
+            return self._registry_cache
+        try:
+            r = _http_session.get(HORIZON_REGISTRY_URL, timeout=25)
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, dict) or int(data.get("schema", 0)) > 1:
+                raise RuntimeError("Unsupported Horizon registry schema")
+            self.root_dir.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(self.registry_cache_path, json.dumps(data, ensure_ascii=False))
+            self._registry_cache = data
+            self._registry_ts = time.time()
+            return data
+        except Exception:
+            if self.registry_cache_path.exists():
+                data = json.loads(self.registry_cache_path.read_text(encoding="utf-8"))
+                self._registry_cache = data
+                return data
+            raise
+
+            # yessir it downloads it and runs check
+    def download_and_verify_content(self, project: Dict[str, Any], version_entry: Dict[str, Any], instance: MinecraftInstance, index_data: Optional[Dict[str, Any]] = None, log_fn=None) -> Path:
+        pid = str(project.get("id") or "")
+        kind = str(project.get("kind") or "mod")
+        finfo = version_entry.get("file") or {}
+        url = str(finfo.get("url") or "")
+        fname = os.path.basename(str(finfo.get("name") or ""))
+        expected_size = int(finfo.get("size") or 0)
+        expected_sha = str(finfo.get("sha256") or "").lower()
+        if not fname or not url:
+            raise RuntimeError("Missing file metadata in Horizon registry entry")
+        if not _horizon_allowed_download_url(url, project):
+            raise RuntimeError(f"Refused untrusted download URL: {url}")
+        if expected_size > HORIZON_MAX_FILE_BYTES:
+            raise RuntimeError("File exceeds Horizon 64 MiB limit")
+        revoked_reason = _horizon_is_revoked(index_data, pid, expected_sha)
+        if revoked_reason:
+            raise RuntimeError(f"Refused revoked content ({pid}): {revoked_reason}")
+        if kind == "mod":
+            dest_dir = instance.horizon_mods_dir
+        elif kind == "native-mod":
+            dest_dir = instance.horizon_native_mods_dir
+        elif kind in ("shader", "shaderpack"):
+            dest_dir = instance.shaderpacks_dir
+        elif kind == "resourcepack":
+            dest_dir = instance.resourcepacks_dir
+        elif kind == "datapack":
+            dest_dir = instance.minecraft_dir / "datapacks"
+        else:
+            raise RuntimeError(f"Unsupported Horizon content kind: {kind}")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = dest_dir / f".{fname}.part"
+        total = 0
+        h = hashlib.sha256()
+        try:
+            with _http_session.get(url, stream=True, timeout=120) as dl:
+                dl.raise_for_status()
+                with open(tmp_path, "wb") as out:
+                    for chunk in dl.iter_content(1024 * 128):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > HORIZON_MAX_FILE_BYTES:
+                            raise RuntimeError("Downloaded file exceeds 64 MiB limit")
+                        h.update(chunk)
+                        out.write(chunk)
+            if expected_size and total != expected_size:
+                raise RuntimeError(f"Size mismatch: expected {expected_size}, got {total}")
+            actual_sha = h.hexdigest().lower()
+            if expected_sha and actual_sha != expected_sha:
+                raise RuntimeError("SHA-256 checksum mismatch")
+            target_name = f"{pid}.hmod" if kind in ("mod", "native-mod") and pid else fname
+            dest_path = dest_dir / target_name
+            os.replace(tmp_path, dest_path)
+            if kind in ("mod", "native-mod") and pid:
+                horizon_set_mod_enabled(instance.minecraft_dir, pid, True)
+            if log_fn:
+                log_fn(f"[Horizon] Installed {kind} {pid} -> {dest_path}")
+            return dest_path
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+            # still needs more compatibility.
+    def install_hpack(self, hpack_path: str, launcher, log_fn=None, progress_fn=None) -> Tuple[bool, str, str]:
+        pack_path = Path(hpack_path)
+        if not pack_path.is_file():
+            return False, "Modpack file not found", ""
+        with zipfile.ZipFile(pack_path, "r") as zf:
+            if "horizon-modpack.toml" not in zf.namelist():
+                return False, "Missing horizon-modpack.toml in .hpack archive", ""
+            manifest = tomllib.loads(zf.read("horizon-modpack.toml").decode("utf-8", errors="replace"))
+            if int(manifest.get("format", 0)) != 1:
+                return False, f"Unsupported .hpack format: {manifest.get('format')}", ""
+            pack_name = str(manifest.get("name") or manifest.get("id") or pack_path.stem).strip()
+            game_ver = str(manifest.get("game") or HORIZON_DEFAULT_MC).strip()
+            mods_list = manifest.get("mods") or []
+            index_data = self.fetch_registry_index(force=False)
+            proj_by_id = {p.get("id"): p for p in (index_data.get("projects") or []) if isinstance(p, dict)}
+            resolved_mods = []
+            listed_ids = set()
+            for m in mods_list:
+                mid = str(m.get("id") or "")
+                mver = str(m.get("version") or "")
+                msha = str(m.get("sha256") or "").lower()
+                mon = bool(m.get("on", True))
+                listed_ids.add(mid)
+                proj = proj_by_id.get(mid)
+                if not proj:
+                    raise RuntimeError(f"Mod '{mid}' from pack not found in Horizon registry")
+                ver_entry = next((v for v in (proj.get("versions") or []) if str(v.get("version")) == mver and (not msha or str((v.get("file") or {}).get("sha256", "")).lower() == msha)), None)
+                if ver_entry is None:
+                    raise RuntimeError(f"Version {mver} of mod '{mid}' not found in Horizon registry")
+                resolved_mods.append((mid, mver, mon, proj, ver_entry))
+            candidate = pack_name
+            i = 2
+            while launcher.instance_manager.get_instance_by_name(candidate):
+                candidate = f"{pack_name} {i}"
+                i += 1
+            inst = launcher.instance_manager.create_instance(candidate, game_ver, "horizon", ram="4G", loader_version=self.default_build_tag())
+            if inst is None:
+                return False, "Could not create Horizon instance", ""
+            try:
+                installed_mods = 0
+                for idx_m, (mid, mver, mon, proj, ver_entry) in enumerate(resolved_mods):
+                    if progress_fn:
+                        progress_fn(int(((idx_m + 1) / max(len(resolved_mods), 1)) * 85), f"Installing {mid} {mver}...")
+                    self.download_and_verify_content(proj, ver_entry, inst, index_data=index_data, log_fn=log_fn)
+                    horizon_set_mod_enabled(inst.minecraft_dir, mid, mon)
+                    installed_mods += 1
+                override_total = 0
+                for info in zf.infolist():
+                    if info.is_dir() or not info.filename.startswith("overrides/"):
+                        continue
+                    rel = info.filename[len("overrides/"):]
+                    if not rel or rel.startswith("/") or ".." in Path(rel).parts:
+                        continue
+                    allowed = rel in ("options.txt", "horizon-graphics.txt", "horizon-extras.txt")
+                    if not allowed and rel.startswith("resourcepacks/") and rel.endswith(".zip") and rel.count("/") == 1:
+                        allowed = True
+                    if not allowed and rel.startswith("horizon-mods/.horizon-mod-data/"):
+                        sub = rel[len("horizon-mods/.horizon-mod-data/"):]
+                        owner = sub.split("/", 1)[0]
+                        allowed = owner in listed_ids
+                    if not allowed:
+                        continue
+                    if info.file_size > HORIZON_MAX_FILE_BYTES or (override_total + info.file_size) > (256 * 1024 * 1024):
+                        raise RuntimeError("Pack overrides exceed Horizon size limit")
+                    override_total += info.file_size
+                    dest = inst.minecraft_dir / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(info.filename))
+                meta = {
+                    "horizon_pack": True,
+                    "id": str(manifest.get("id") or ""),
+                    "name": pack_name,
+                    "version_id": str(manifest.get("version") or ""),
+                    "summary": str(manifest.get("description") or ""),
+                    "file_count": installed_mods,
+                    "imported": datetime.now().isoformat(),
+                    "source_file": str(pack_path),
+                }
+                (inst.base_path / "modpack.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+                launcher.instance_manager.set_selected_instance(inst.instance_id)
+                return True, f"Installed {installed_mods} Horizon mod(s).", inst.name
+            except Exception:
+                try:
+                    launcher.instance_manager.delete_instance(inst.instance_id)
+                except Exception:
+                    pass
+                raise
+
+
+_horizon_manager = None
+
+
+def get_horizon_manager() -> HorizonManager:
+    global _horizon_manager
+    if _horizon_manager is None:
+        _horizon_manager = HorizonManager()
+    return _horizon_manager
 
 
 # minecraft server list ping thingy
@@ -5414,10 +6531,6 @@ def _atexit_cleanup():
     except Exception:
         pass
 atexit.register(_atexit_cleanup)
-try:
-    ENCRYPTION_AVAILABLE = importlib.util.find_spec("cryptography") is not None
-except Exception:
-    ENCRYPTION_AVAILABLE = False
 PROFILE_FILENAME = "profiles.json"
 CLIENT_ID = "00000000402B5328"
 DEVICE_CLIENT_ID = "00000000441cc96b"
@@ -5436,8 +6549,6 @@ def _get_machine_key():
 
     if not ENCRYPTION_AVAILABLE:
         return None
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -5451,7 +6562,6 @@ def _get_cipher():
         return None
     key = _get_machine_key()
     if key:
-        from cryptography.fernet import Fernet
         return Fernet(key)
     return None
 def encrypt_token(token):
@@ -5692,6 +6802,9 @@ def _wizard_detect_javas():
 
 def terminal_launch_game(instance, profile, ram="4G"):
     try:
+        if getattr(instance, "is_horizon", None) and instance.is_horizon():
+            print("[ERROR] Horizon (Rust) instances are not supported in --terminal mode. Please launch this instance from GUI mode.")
+            return False
         version = instance.version
         mod_loader = instance.mod_loader
         username = profile.get("username", "Steve")
@@ -5773,10 +6886,11 @@ def terminal_main():
         print("OrangLauncher - Joke Mode, Less ram :>")
         print("="*50 + "\n")
         instance_manager = get_instance_manager()
-        if not instance_manager.instances:
+        visible_instances = _visible_instances(instance_manager)
+        if not visible_instances:
             print("[ERROR] No instances found!")
             return
-        instances_list = sorted(instance_manager.instances.values(), key=lambda inst: inst.name.lower())
+        instances_list = sorted(visible_instances, key=lambda inst: inst.name.lower())
         print("Available Instances:")
         for i, inst in enumerate(instances_list, 1):
             print(f"  {i}. {inst.name} (MC {inst.version}, {inst.mod_loader})")
@@ -5921,25 +7035,6 @@ def _register_mrpack_association():
     except Exception as e:
         print(f"[setup] mrpack association failed: {e}")
 
-try:
-    from PySide6 import QtCore, QtGui, QtWidgets
-    from PySide6.QtCore import Qt, Signal, QObject, QTimer, QSize, QPointF, QRect
-    QT_AVAILABLE = True
-except Exception:
-    QT_AVAILABLE = False
-    class _QtPlaceholder:
-        def __init__(self, *a, **k):
-            pass
-    class _QtNamespace:
-        def __getattr__(self, name):
-            return _QtPlaceholder
-    QtCore = QtGui = QtWidgets = _QtNamespace()
-    Qt = _QtNamespace()
-    QObject = _QtPlaceholder
-    QTimer = _QtPlaceholder
-    QSize = _QtPlaceholder
-    def Signal(*a, **k):
-        return None
 QT_ACTIVE = [False]
 _QT_MAIN_THREAD = [None]
 _QT_APP_REF = [None]
@@ -5951,10 +7046,8 @@ def _qt_is_main_thread():
 
 def _trim_memory():
     try:
-        import gc
         gc.collect()
         if platform.system() == "Linux":
-            import ctypes
             ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
         pass
@@ -6292,12 +7385,10 @@ def _ms_oauth_url():
 
 
 def _qt_webengine():
-    try:
-        from PySide6 import QtWebEngineWidgets, QtWebEngineCore
-        return QtWebEngineWidgets, QtWebEngineCore
-    except Exception as e:
-        print(f"[Accounts] embedded browser unavailable: {e}")
+    if QtWebEngineWidgets is None or QtWebEngineCore is None:
+        print("[Accounts] embedded browser unavailable: QtWebEngine not installed")
         return None, None
+    return QtWebEngineWidgets, QtWebEngineCore
 
 
 def _ms_device_code_start():
@@ -7109,16 +8200,46 @@ def _qt_icon(name, size=20, color=None):
     return icon
 
 
+def _theme_icon_color(theme, role):
+    if theme is None:
+        return None
+    if role == "accent":
+        return theme.c("selection_fg", "#ffffff")
+    if role == "secondary":
+        return theme.c("fg_secondary", theme.c("fg_primary", "#ffffff"))
+    return theme.c("fg_primary", "#ffffff")
+
+
+def _set_themed_button_icon(btn, icon, size, role, theme):
+    btn.setProperty("_orang_icon", icon)
+    btn.setProperty("_orang_icon_size", int(size))
+    btn.setProperty("_orang_icon_role", role)
+    fg = _theme_icon_color(theme, role)
+    btn.setIcon(_qt_icon(icon, int(size), fg))
+    btn.setIconSize(QSize(int(size), int(size)))
+
+
+def _refresh_themed_icons(root, theme):
+    if root is None or theme is None:
+        return
+    for btn in root.findChildren(QtWidgets.QAbstractButton):
+        icon = btn.property("_orang_icon")
+        if not icon:
+            continue
+        size = btn.property("_orang_icon_size") or 16
+        role = btn.property("_orang_icon_role") or "primary"
+        btn.setIcon(_qt_icon(str(icon), int(size), _theme_icon_color(theme, str(role))))
+
+
 def _qt_button(text, on_click=None, kind=None, icon=None, tooltip=None, launcher=None):
     btn = QtWidgets.QPushButton(text)
     if kind:
         btn.setObjectName(kind)
     if icon:
-        fg = launcher.theme.c("fg_primary") if launcher is not None else None
-        if kind == "accent" and launcher is not None:
-            fg = launcher.theme.c("selection_fg", "#ffffff")
-        btn.setIcon(_qt_icon(icon, 16, fg))
-        btn.setIconSize(QSize(16, 16))
+        app = launcher if launcher is not None else (_QT_APP_REF[0] if "_QT_APP_REF" in globals() and _QT_APP_REF else None)
+        theme = getattr(app, "theme", None)
+        role = "accent" if kind == "accent" else "primary"
+        _set_themed_button_icon(btn, icon, 16, role, theme)
     if tooltip:
         btn.setToolTip(tooltip)
     if on_click:
@@ -7214,6 +8335,205 @@ class _ToggleRow(QtWidgets.QWidget):
         self.check.blockSignals(True)
         self.check.setChecked(bool(self.var.get()))
         self.check.blockSignals(False)
+
+# it looks good
+class _RustPurpleToggle(QtWidgets.QAbstractButton):
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setChecked(bool(checked))
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(46, 24)
+        self._pos = 1.0 if checked else 0.0
+        self._hovered = False
+        self._anim = QtCore.QVariantAnimation(self)
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._anim.valueChanged.connect(self._on_anim)
+        self.toggled.connect(self._start_anim)
+
+    def _on_anim(self, val):
+        self._pos = float(val)
+        self.update()
+
+    def _start_anim(self, checked):
+        self._anim.stop()
+        self._anim.setStartValue(self._pos)
+        self._anim.setEndValue(1.0 if checked else 0.0)
+        self._anim.start()
+
+    def setCheckedSilent(self, checked):
+        self.blockSignals(True)
+        self.setChecked(bool(checked))
+        self._pos = 1.0 if checked else 0.0
+        self.blockSignals(False)
+        self.update()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    @staticmethod
+    def _lerp_color(c1, c2, f):
+        return QtGui.QColor(
+            int(c1.red() + (c2.red() - c1.red()) * f),
+            int(c1.green() + (c2.green() - c1.green()) * f),
+            int(c1.blue() + (c2.blue() - c1.blue()) * f),
+        )
+
+    def _theme_palette(self):
+        app = _QT_APP_REF[0] if "_QT_APP_REF" in globals() and _QT_APP_REF else None
+        theme = getattr(app, "theme", None)
+        if theme is not None:
+            bg = QtGui.QColor(theme.c("bg_primary", "#18181b"))
+            surface = QtGui.QColor(theme.c("button_bg", theme.c("bg_secondary", "#242429")))
+            border = QtGui.QColor(theme.c("border", "#3f3f46"))
+        else:
+            pal = self.palette()
+            bg = pal.color(QtGui.QPalette.Window)
+            surface = pal.color(QtGui.QPalette.Button)
+            border = pal.color(QtGui.QPalette.Mid)
+        is_dark = bg.lightness() < 128
+        if is_dark:
+            off_a = self._lerp_color(surface, QtGui.QColor("#2e1065"), 0.28)
+            off_b = self._lerp_color(surface, QtGui.QColor("#4c1d95"), 0.22)
+            on_a = QtGui.QColor("#5b21b6")
+            on_b = QtGui.QColor("#7c3aed")
+            border_off = self._lerp_color(border, QtGui.QColor("#7c3aed"), 0.35)
+            border_on = QtGui.QColor("#a855f7")
+            knob_off = self._lerp_color(bg, QtGui.QColor("#1e1633"), 0.45)
+            knob_on = QtGui.QColor("#140f24")
+            logo_off = QtGui.QColor("#a78bfa")
+            logo_on = QtGui.QColor("#e9d5ff")
+        else:
+            off_a = self._lerp_color(surface, QtGui.QColor("#ede9fe"), 0.45)
+            off_b = self._lerp_color(surface, QtGui.QColor("#ddd6fe"), 0.45)
+            on_a = QtGui.QColor("#6d28d9")
+            on_b = QtGui.QColor("#8b5cf6")
+            border_off = self._lerp_color(border, QtGui.QColor("#7c3aed"), 0.30)
+            border_on = QtGui.QColor("#6d28d9")
+            knob_off = QtGui.QColor("#ffffff")
+            knob_on = QtGui.QColor("#faf5ff")
+            logo_off = QtGui.QColor("#7c3aed")
+            logo_on = QtGui.QColor("#5b21b6")
+        return off_a, off_b, on_a, on_b, border_off, border_on, knob_off, knob_on, logo_off, logo_on, is_dark
+
+    def _draw_rust_gear(self, painter, cx, cy, radius, fg_color, bg_color, angle_deg):
+        painter.save()
+        painter.translate(cx, cy)
+        painter.rotate(angle_deg)
+        teeth = 10
+        outer_r = radius
+        inner_r = radius * 0.74
+        path = QtGui.QPainterPath()
+        for i in range(teeth * 2):
+            a = (i * math.pi) / teeth
+            r = outer_r if i % 2 == 0 else inner_r
+            px = math.cos(a) * r
+            py = math.sin(a) * r
+            if i == 0:
+                path.moveTo(px, py)
+            else:
+                path.lineTo(px, py)
+        path.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(fg_color)
+        painter.drawPath(path)
+        hole_r = radius * 0.56
+        painter.setBrush(bg_color)
+        painter.drawEllipse(QtCore.QPointF(0.0, 0.0), hole_r, hole_r)
+        painter.restore()
+        painter.save()
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setPixelSize(max(7, int(radius * 1.15)))
+        painter.setFont(font)
+        painter.setPen(fg_color)
+        rect = QtCore.QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+        painter.drawText(rect, Qt.AlignCenter, "R")
+        painter.restore()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        w = float(self.width())
+        h = float(self.height())
+        t = self._pos
+        off_a, off_b, on_a, on_b, border_off, border_on, knob_off, knob_on, logo_off, logo_on, is_dark = self._theme_palette()
+        track_rect = QtCore.QRectF(1.0, 1.0, w - 2.0, h - 2.0)
+        radius = track_rect.height() / 2.0
+        grad = QtGui.QLinearGradient(track_rect.topLeft(), track_rect.bottomRight())
+        c_left = self._lerp_color(off_a, on_a, t)
+        c_right = self._lerp_color(off_b, on_b, t)
+        if self._hovered:
+            c_left = c_left.lighter(112) if is_dark else c_left.darker(105)
+            c_right = c_right.lighter(112) if is_dark else c_right.darker(105)
+        grad.setColorAt(0.0, c_left)
+        grad.setColorAt(1.0, c_right)
+        border_col = self._lerp_color(border_off, border_on, t)
+        if self._hovered:
+            border_col = border_col.lighter(114) if is_dark else border_col.darker(108)
+        painter.setPen(QtGui.QPen(border_col, 1.2))
+        painter.setBrush(grad)
+        painter.drawRoundedRect(track_rect, radius, radius)
+        margin = 3.0
+        knob_d = h - margin * 2.0
+        kx = margin + t * (w - knob_d - margin * 2.0)
+        ky = margin
+        knob_rect = QtCore.QRectF(kx, ky, knob_d, knob_d)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QtGui.QColor(0, 0, 0, 85 if is_dark else 40))
+        painter.drawEllipse(knob_rect.translated(0.0, 0.8))
+        knob_bg = self._lerp_color(knob_off, knob_on, t)
+        painter.setPen(QtGui.QPen(border_col, 0.8))
+        painter.setBrush(knob_bg)
+        painter.drawEllipse(knob_rect)
+        logo_col = self._lerp_color(logo_off, logo_on, t)
+        self._draw_rust_gear(
+            painter,
+            knob_rect.center().x(),
+            knob_rect.center().y(),
+            knob_d * 0.42,
+            logo_col,
+            knob_bg,
+            t * 45.0,
+        )
+        painter.end()
+
+# row
+class _RustToggleRow(QtWidgets.QWidget):
+    def __init__(self, title, description, var, on_change=None, parent=None):
+        super().__init__(parent)
+        self.var = var
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 2, 0, 2)
+        lay.setSpacing(10)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(_qt_label(title, "h3"))
+        if description:
+            col.addWidget(_qt_label(description, "muted", wrap=True))
+        lay.addLayout(col, 1)
+        self.toggle = _RustPurpleToggle(bool(var.get()))
+
+        def changed(checked):
+            var.set(bool(checked))
+            if on_change:
+                try:
+                    on_change()
+                except Exception as e:
+                    print(f"[HorizonToggle] {e}")
+        self.toggle.toggled.connect(changed)
+        lay.addWidget(self.toggle, 0, Qt.AlignVCenter)
+
+    def refresh(self):
+        self.toggle.setCheckedSilent(bool(self.var.get()))
 
 
 def _qt_scroll(widget, horizontal=False):
@@ -7491,6 +8811,8 @@ class QtLogPage(QtWidgets.QWidget):
             bar.addWidget(cb)
         self.mclogs_btn = _qt_button(_tr(launcher, "LOGS_MCLOGS_BTN", "Upload to mclo.gs"), self.upload_mclogs, icon="update", launcher=launcher)
         bar.addWidget(self.mclogs_btn)
+        # idk how i forgot to add this....
+        bar.addWidget(_qt_button(_qt_t("QT_COPY", "Copy"), self.copy_log, icon="dublicate", launcher=launcher))
         bar.addWidget(_qt_button(_tr(launcher, "LOGS_SAVE_BTN", "Save log"), self.export_log, icon="file", launcher=launcher))
         bar.addWidget(_qt_button(_qt_t("QT_CLEAR", "Clear"), self.clear, icon="trash", launcher=launcher))
         lay.addLayout(bar)
@@ -7527,7 +8849,7 @@ class QtLogPage(QtWidgets.QWidget):
             return plain, "warning"
         if any(k in low for k in ("success", "done", "finished", "installed", "complete")):
             return plain, "success"
-        if any(k in low for k in ("[launcher]", "[forge]", "[fabric]", "[quilt]", "[install]", "[updater]", "[lwjgl]", "[java]", "[hook]")):
+        if any(k in low for k in ("[launcher]", "[horizon]", "[horizon/", "[forge]", "[fabric]", "[quilt]", "[install]", "[updater]", "[lwjgl]", "[java]", "[hook]")):
             return plain, "info"
         return plain, None
 
@@ -7570,6 +8892,14 @@ class QtLogPage(QtWidgets.QWidget):
     def clear(self):
         self.launcher._log_buffer.clear()
         self.text.clear()
+
+    def copy_log(self):
+        content = self.text.toPlainText()
+        if not content.strip():
+            messagebox.showinfo(_qt_t("QT_COPY", "Copy"), _tr(self.launcher, "LOGS_NO_ENTRIES", "No log entries."))
+            return
+        QtWidgets.QApplication.clipboard().setText(content)
+        self.launcher.set_status(_qt_t("QT_LOGS_COPIED", "Log copied to clipboard"))
 
     def export_log(self):
         if not self.launcher._log_buffer:
@@ -7848,7 +9178,12 @@ class QtInstanceCard(QtWidgets.QFrame):
         col.setSpacing(2)
         col.addWidget(_ElideLabel(instance.name, "h3"))
         loader = (instance.mod_loader or "vanilla").title()
-        col.addWidget(_ElideLabel(f"{instance.version}  ·  {loader}", "muted"))
+
+        if instance.is_horizon():
+            sub_txt = f"{instance.version}  ·  Horizon" + (f" ({instance.loader_version})" if instance.loader_version else "")
+        else:
+            sub_txt = f"{instance.version}  ·  {loader}"
+        col.addWidget(_ElideLabel(sub_txt, "muted"))
         top.addLayout(col, 1)
         lay.addLayout(top)
         meta = []
@@ -7924,21 +9259,29 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         card = _Card(_qt_t("QT_GAME", "Game"))
         form = QtWidgets.QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
+        self._game_form = form
         self.version = QtMcVersionCombo()
-        form.addRow(_tr(launcher, "GAME_PROFILES_VERSION", "Minecraft version"), self.version)
-        form.addRow("", self.version.filter_row())
+        self._ver_label = _qt_label(_tr(launcher, "GAME_PROFILES_VERSION", "Minecraft version"))
+        form.addRow(self._ver_label, self.version)
+        self._ver_filter_row = self.version.filter_row()
+        form.addRow("", self._ver_filter_row)
         self.loader = QtWidgets.QComboBox()
-        self.loader.addItems(["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"])
+        loaders = ["vanilla", "forge", "neoforge", "fabric", "quilt", "optifine"]
+        if _horizon_enabled(launcher):
+            loaders.append("horizon")
+        self.loader.addItems(loaders)
         form.addRow(_tr(launcher, "GAME_PROFILES_LOADER", _qt_t("QT_MOD_LOADER", "Mod loader")), self.loader)
         self.loader_version = QtWidgets.QComboBox()
         self.loader_version.setMaxVisibleItems(14)
         self.loader_version.setEnabled(False)
-        form.addRow(_tr(launcher, "GAME_PROFILES_LOADER_VERSION", _qt_t("QT_LOADER_VERSION", "Loader version")), self.loader_version)
+        self._lv_label = _qt_label(_tr(launcher, "GAME_PROFILES_LOADER_VERSION", _qt_t("QT_LOADER_VERSION", "Loader version")))
+        form.addRow(self._lv_label, self.loader_version)
         self.ram = QtWidgets.QSpinBox()
         self.ram.setRange(1, max(2, (_get_system_ram_mb() - 1024) // 1024))
         self.ram.setValue(min(4, self.ram.maximum()))
         self.ram.setSuffix(" GB")
-        form.addRow(_tr(launcher, "GAME_PROFILES_RAM", _qt_t("QT_MEMORY", "Memory")), self.ram)
+        self._ram_label = _qt_label(_tr(launcher, "GAME_PROFILES_RAM", _qt_t("QT_MEMORY", "Memory")))
+        form.addRow(self._ram_label, self.ram)
         card.add_layout(form)
         lay.addWidget(card)
         self.adv_toggle = QtWidgets.QCheckBox(_qt_t("QT_SHOW_ADVANCED", "Show advanced options"))
@@ -7949,10 +9292,12 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         self.java = QtWidgets.QComboBox()
         _qt_fill_java_combo(self.java)
         self.java.activated.connect(lambda *_: _qt_java_combo_activated(self.java))
-        aform.addRow(_qt_t("QT_JAVA_RUNTIME", "Java runtime"), self.java)
+        self._java_label = _qt_label(_qt_t("QT_JAVA_RUNTIME", "Java runtime"))
+        aform.addRow(self._java_label, self.java)
         self.jvm_args = QtWidgets.QLineEdit()
         self.jvm_args.setPlaceholderText("-XX:+UseG1GC")
-        aform.addRow(_qt_t("QT_JVM_ARGS", "Extra JVM arguments"), self.jvm_args)
+        self._jvm_label = _qt_label(_qt_t("QT_JVM_ARGS", "Extra JVM arguments"))
+        aform.addRow(self._jvm_label, self.jvm_args)
         res = QtWidgets.QHBoxLayout()
         self.res_w = QtWidgets.QSpinBox()
         self.res_h = QtWidgets.QSpinBox()
@@ -7978,9 +9323,30 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         lay.addLayout(btns)
         self._token = 0
         self.icon_path = ""
-        self.loader.currentTextChanged.connect(lambda *_: (self.refresh_loader_versions(), self._preview_icon()))
+        self._non_horizon_version = self.version.currentText().strip()
+        self.loader.currentTextChanged.connect(lambda *_: (self._sync_loader_mode(), self.refresh_loader_versions(), self._preview_icon()))
         self.version.currentTextChanged.connect(lambda *_: self.refresh_loader_versions())
         self._generate_icon()
+
+    def _sync_loader_mode(self):
+        is_horizon = self.loader.currentText().lower() == "horizon"
+        for w in (self.ram, self._ram_label, self.java, self._java_label, self.jvm_args, self._jvm_label, self._ver_filter_row):
+            w.setVisible(not is_horizon)
+        self.version.setEnabled(not is_horizon)
+        if is_horizon:
+            cur = self.version.currentText().strip()
+            if cur and cur != HORIZON_DEFAULT_MC:
+                self._non_horizon_version = cur
+            self.version.select(HORIZON_DEFAULT_MC)
+            self._lv_label.setText(_qt_t("QT_HORIZON_BUILD", "Horizon build"))
+        else:
+            if self.version.currentText().strip() == HORIZON_DEFAULT_MC:
+                restore = getattr(self, "_non_horizon_version", "") or ""
+                self.version.blockSignals(True)
+                self.version.clear()
+                self.version.blockSignals(False)
+                self.version.fill(restore if restore and restore != HORIZON_DEFAULT_MC else None)
+            self._lv_label.setText(_tr(self.launcher, "GAME_PROFILES_LOADER_VERSION", _qt_t("QT_LOADER_VERSION", "Loader version")))
 
     def _generate_icon(self):
         self.icon_path = _generated_icon_file()
@@ -8018,6 +9384,8 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
         token = self._token
 
         def work():
+            if loader == "horizon":
+                return get_horizon_manager().available_build_tags()
             return self.launcher.fetch_loader_versions(loader, mc)
 
         def done(versions):
@@ -8026,27 +9394,36 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
             self.loader_version.clear()
             if versions:
                 self.loader_version.addItems(versions)
-                self.status.setText("")
+                self.status.setText(_qt_t("QT_HORIZON_CREATE_NOTE", "Horizon runs Minecraft {mc} natively in Rust without Java runtime overhead.").format(mc=HORIZON_DEFAULT_MC) if loader == "horizon" else "")
             else:
                 self.loader_version.addItem(_tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version"))
                 self.status.setText(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=mc))
         def fail(e):
             if token == self._token:
                 self.loader_version.clear()
-                self.status.setText(_qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e))
+                if loader == "horizon":
+                    self.loader_version.addItem("nightly")
+                    self.status.setText("")
+                else:
+                    self.status.setText(_qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e))
         _qt_run_bg(work, done, fail)
 
     def submit(self):
         name = self.name.text().strip()
         version = self.version.currentText().strip()
         loader = self.loader.currentText().lower()
+        if loader == "horizon" and not version:
+            version = HORIZON_DEFAULT_MC
         if not name or not version:
             messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_INVALID_TITLE", "Invalid"), _tr(self.launcher, "GAME_PROFILES_INVALID_MSG", "Name and version are required."), parent=self)
             return
-        if not self.launcher.validate_version(version):
+        if loader != "horizon" and not self.launcher.validate_version(version):
             return
         lv = self.loader_version.currentText().strip()
-        if loader != "vanilla" and lv in ("", "Loading…", _qt_t("QT_LOADING", "Loading…"), _tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version")):
+        if loader == "horizon":
+            if lv in ("", "Loading…", _qt_t("QT_LOADING", "Loading…")):
+                lv = get_horizon_manager().default_build_tag()
+        elif loader != "vanilla" and lv in ("", "Loading…", _qt_t("QT_LOADING", "Loading…"), _tr(self.launcher, "LOADER_NOT_COMPATIBLE", "Not available for this version")):
             messagebox.showerror(_tr(self.launcher, "LOADER_NOT_COMPATIBLE_TITLE", "Loader not available"),
                                  _tr(self.launcher, "LOADER_NOT_COMPATIBLE_MSG", "{loader} has no build for Minecraft {version}.").format(loader=loader, version=version), parent=self)
             return
@@ -8058,9 +9435,13 @@ class QtInstanceFormDialog(QtWidgets.QDialog):
             messagebox.showerror(_tr(self.launcher, "GAME_PROFILES_CREATE_TITLE", "New instance"), str(e), parent=self)
             return
         if inst is not None:
-            java = self.java.currentData()
-            inst.java_path = "" if java in (None, "", QtInstanceEditor.JAVA_AUTO, QtInstanceEditor.JAVA_BROWSE) else str(java)
-            inst.set_opt("jvm_args", self.jvm_args.text().strip())
+            if loader != "horizon":
+                java = self.java.currentData()
+                inst.java_path = "" if java in (None, "", QtInstanceEditor.JAVA_AUTO, QtInstanceEditor.JAVA_BROWSE) else str(java)
+                inst.set_opt("jvm_args", self.jvm_args.text().strip())
+            else:
+                inst.java_path = ""
+                inst.java_args = ""
             if self.res_w.value() and self.res_h.value():
                 inst.set_opt("res_width", self.res_w.value())
                 inst.set_opt("res_height", self.res_h.value())
@@ -8157,10 +9538,11 @@ class QtInstancesPage(QtWidgets.QWidget):
 
     def refresh(self, force=False):
         q = self.search.text().strip().lower()
-        instances = [i for i in self.instance_manager.instances.values() if not q or q in i.name.lower()]
+        visible = _visible_instances(self.instance_manager, self.launcher)
+        instances = [i for i in visible if not q or q in i.name.lower()]
         instances.sort(key=lambda i: (i.last_played or "", i.name), reverse=True)
-        fp = (tuple((i.instance_id, i.name, i.version, i.mod_loader, i.play_time, i.last_played) for i in instances),
-              self.instance_manager.selected_instance_id, self._columns())
+        fp = (tuple((i.instance_id, i.name, i.version, i.mod_loader, i.loader_version, i.play_time, i.last_played) for i in instances),
+              self.instance_manager.selected_instance_id, self._columns(), _horizon_enabled(self.launcher))
         if fp == self._fingerprint and not force:
             return
         self._fingerprint = fp
@@ -8219,7 +9601,7 @@ class QtInstancesPage(QtWidgets.QWidget):
         self.launcher.set_status(_qt_t("QT_COPYING_FILES", "Copying files..."))
 
         def work():
-            for rel in ("mods", "config", "resourcepacks", "shaderpacks", "saves", "options.txt", "servers.dat"):
+            for rel in ("mods", "horizon-mods", "horizon-native-mods", "horizon-mods.txt", "horizon-graphics.txt", "horizon-extras.txt", "horizon-controller.txt", "config", "resourcepacks", "shaderpacks", "saves", "options.txt", "servers.dat"):
                 src = source.minecraft_dir / rel
                 dst = dup.minecraft_dir / rel
                 try:
@@ -8294,16 +9676,23 @@ class QtInstancesPage(QtWidgets.QWidget):
         self.refresh(force=True)
 
     def import_instance(self):
-        path = _pick_open_file(title=_qt_t("QT_IMPORT_INSTANCE_OR_PACK", "Import instance or pack"), filetypes=[(_qt_t("QT_FT_INSTANCES_PACKS", "Instances and packs"), "*.zip *.orangpack *.mrpack"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        patterns = "*.zip *.orangpack *.mrpack *.hpack" if _horizon_enabled(self.launcher) else "*.zip *.orangpack *.mrpack"
+        path = _pick_open_file(title=_qt_t("QT_IMPORT_INSTANCE_OR_PACK", "Import instance or pack"), filetypes=[(_qt_t("QT_FT_INSTANCES_PACKS", "Instances and packs"), patterns), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
         if not path:
             return
         low = path.lower()
+        if low.endswith(".hpack") and _horizon_enabled(self.launcher):
+            self.launcher._do_import_hpack_path(path)
+            return
         if low.endswith((ORANGPACK_EXT, ".mrpack")):
             self.launcher._do_import_mrpack_path(path)
             return
         try:
             with zipfile.ZipFile(path, "r") as zf:
                 names = set(zf.namelist())
+            if _horizon_enabled(self.launcher) and "horizon-modpack.toml" in names:
+                self.launcher._do_import_hpack_path(path)
+                return
             if "instance.json" not in names and ("modrinth.index.json" in names or ORANGPACK_INDEX in names):
                 self.launcher._do_import_mrpack_path(path)
                 return
@@ -8350,12 +9739,14 @@ class QtInstancesPage(QtWidgets.QWidget):
         _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), str(e))))
     def import_mrpack(self):
         L = self.launcher
-        kinds = (
+        kinds = [
             ("mrpack", "mrpack", _qt_t("QT_IMPORT_KIND_MRPACK", "Modrinth modpack"), _qt_t("QT_IMPORT_KIND_MRPACK_DESC", "A .mrpack file downloaded from Modrinth or exported by another launcher."), "*.mrpack", L._do_import_mrpack_path),
             ("orangpack", "mrpack", _qt_t("QT_IMPORT_KIND_ORANGPACK", "OrangLauncher pack"), _qt_t("QT_IMPORT_KIND_ORANGPACK_DESC", "A .orangpack exported from OrangLauncher, with its settings."), "*.orangpack", L._do_import_mrpack_path),
             ("curseforge", "modding", _qt_t("QT_IMPORT_KIND_CURSEFORGE", "CurseForge modpack"), _qt_t("QT_IMPORT_KIND_CURSEFORGE_DESC", "A CurseForge .zip with a manifest.json inside."), "*.zip", L._do_import_curseforge_path),
             ("instance", "instances", _qt_t("QT_IMPORT_KIND_INSTANCE", "OrangLauncher instance"), _qt_t("QT_IMPORT_KIND_INSTANCE_DESC", "A full instance .zip exported from OrangLauncher."), "*.zip", self._import_instance_zip),
-        )
+        ]
+        if _horizon_enabled(L):
+            kinds.insert(0, ("hpack", "modding", _qt_t("QT_HORIZON_IMPORT_HPACK", "Horizon modpack (.hpack)"), _qt_t("QT_HORIZON_IMPORT_HPACK_DESC", "A Horizon .hpack modpack installed from the Horizon registry."), "*.hpack", L._do_import_hpack_path))
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle(_tr(L, "MODS_IMPORT_TITLE", "Import modpack"))
         dlg.setMinimumWidth(460)
@@ -8384,7 +9775,6 @@ _MOD_META_CACHE = {}
 
 def _toml_loads_lenient(text):
     try:
-        import tomllib
         return tomllib.loads(text)
     except Exception:
         pass
@@ -8426,6 +9816,8 @@ def _manifest_value(zf, key):
 
 def read_mod_metadata(path):
     path = Path(path)
+    if path.is_dir():
+        return horizon_read_mod_manifest(path)
     try:
         st = path.stat()
     except OSError:
@@ -8434,6 +9826,10 @@ def read_mod_metadata(path):
     cached = _MOD_META_CACHE.get(key)
     if cached is not None:
         return cached
+    if path.suffix.lower() == ".hmod":
+        meta = horizon_read_mod_manifest(path)
+        _MOD_META_CACHE[key] = meta
+        return meta
     meta = {}
     try:
         with zipfile.ZipFile(path) as zf:
@@ -8534,25 +9930,82 @@ class QtModsPanel(QtWidgets.QWidget):
         bar.addWidget(_qt_button(_tr(L, "MODS_UPDATE_BTN", "Update mods"), self.update_mods, icon="update", launcher=L))
         bar.addWidget(_qt_button(_tr(L, "MODS_RESTORE_BACKUPS", "Restore backups"), self.restore_backups, icon="refresh", launcher=L))
         bar.addWidget(_qt_button(_tr(L, "MODS_OPEN_FOLDER_BTN", "Open folder"), self.open_folder, icon="folder", launcher=L))
-        bar.addWidget(_qt_button(_qt_t("QT_GET_MODS", "Get mods (Modrinth)"), self.go_content, icon="file", launcher=L))
+        self.get_mods_btn = _qt_button(_qt_t("QT_GET_MODS", "Get mods (Modrinth)"), self.go_content, icon="file", launcher=L)
+        bar.addWidget(self.get_mods_btn)
         bar.addStretch(1)
         lay.addLayout(bar)
-
-# btw the QT is new like addon from where it got to pyside, don't trust it fully
 
     def load(self, instance):
         self.instance = instance
         self.refresh()
 
+    def _is_horizon(self):
+        return bool(self.instance is not None and self.instance.is_horizon())
+
     def _mods_dir(self):
+        if self._is_horizon():
+            d = self.instance.horizon_mods_dir
+            return d.resolve() if d.is_symlink() else d
         d = self.instance.mods_dir
         return d.resolve() if d.is_symlink() else d
+
+    # hmod
+    def _horizon_mod_entries(self):
+        entries = []
+        for d in (self.instance.horizon_mods_dir, self.instance.horizon_native_mods_dir):
+            rd = d.resolve() if d.is_symlink() else d
+            if not rd.exists():
+                continue
+            for f in sorted(rd.iterdir(), key=lambda p: p.name.lower()):
+                if f.is_file() and f.suffix.lower() == ".hmod":
+                    entries.append(f)
+                elif f.is_dir() and (f / "horizon-mod.toml").exists():
+                    entries.append(f)
+        return entries
 
     def refresh(self):
         self.list.clear()
         if self.instance is None:
             return
         inst = self.instance
+        is_horizon = self._is_horizon()
+        self.get_mods_btn.setText(_qt_t("QT_HORIZON_GET_MODS", "Get mods (Horizon)") if is_horizon else _qt_t("QT_GET_MODS", "Get mods (Modrinth)"))
+        if is_horizon:
+            self.info.setText(f"{inst.name}  ·  {inst.version}  ·  Horizon")
+            self.warning.setVisible(False)
+            mods = self._horizon_mod_entries()
+            mod_states, _ = horizon_read_mods_state(inst.minecraft_dir)
+            q = self.search.text().strip().lower()
+            disabled_color = QtGui.QColor(self.launcher.theme.c("fg_disabled"))
+            disabled_tip = _qt_t("QT_HORIZON_MOD_DISABLED_TIP", "Disabled in horizon-mods.txt")
+            for f in mods:
+                meta = read_mod_metadata(f)
+                mid = meta.get("id") or f.stem
+                name = meta.get("name") or f.name
+                kind = meta.get("kind") or "mod"
+                if kind == "native-mod":
+                    name = f"{name} [Native]"
+                elif kind == "wasm":
+                    name = f"{name} [WASM]"
+                version = meta.get("version") or ""
+                if q and q not in f.name.lower() and q not in name.lower() and q not in mid.lower():
+                    continue
+                enabled = bool(mod_states.get(mid, False))
+                item = QtWidgets.QTreeWidgetItem([name, version, f.name])
+                item.setData(0, Qt.UserRole, str(f))
+                item.setData(0, Qt.UserRole + 1, mid)
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+                if not enabled:
+                    for c in range(3):
+                        item.setForeground(c, disabled_color)
+                    item.setToolTip(0, disabled_tip)
+                elif meta.get("description"):
+                    item.setToolTip(0, meta["description"][:400])
+                self.list.addTopLevelItem(item)
+            self.count.setText(_tr(self.launcher, "MODS_COUNT", "{n} mods").format(n=len(mods)) if len(mods) else _tr(self.launcher, "MODS_NONE_INSTALLED", "No mods installed"))
+            return
         self.info.setText(f"{inst.name}  ·  {inst.version}  ·  {(inst.mod_loader or 'vanilla').title()}")
         self.warning.setVisible((inst.mod_loader or "vanilla").lower() in ("vanilla", "none", ""))
         d = self._mods_dir()
@@ -8636,11 +10089,14 @@ class QtModsPanel(QtWidgets.QWidget):
                 parts.append("v" + meta["version"])
             if meta.get("id"):
                 parts.append(meta["id"])
-            if meta.get("loader"):
+            if meta.get("kind"):
+                parts.append(meta["kind"])
+            elif meta.get("loader"):
                 parts.append(meta["loader"])
             parts.append(p.name)
             try:
-                parts.append(_human_size(p.stat().st_size))
+                if p.is_file():
+                    parts.append(_human_size(p.stat().st_size))
             except Exception:
                 pass
             text = "  ·  ".join(parts)
@@ -8650,8 +10106,28 @@ class QtModsPanel(QtWidgets.QWidget):
         else:
             self.selected_info.setText(_qt_t("QT_MODS_SELECTED", "{n} mods selected").format(n=len(paths)))
 
-    # picker
     def add_mods(self):
+        if self._is_horizon():
+            files = _pick_open_files(title=_tr(self.launcher, "MODS_FILE_SELECT_TITLE", "Select mods"), filetypes=[(_qt_t("QT_HORIZON_FT_MODS", "Horizon mods"), "*.hmod"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+            if not files:
+                return
+            added = 0
+            for f in files:
+                try:
+                    fp = Path(f)
+                    meta = horizon_read_mod_manifest(fp)
+                    target_dir = self.instance.horizon_native_mods_dir if meta.get("kind") == "native-mod" else self.instance.horizon_mods_dir
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    mid = meta.get("id") or fp.stem
+                    dest = target_dir / (f"{mid}.hmod" if fp.suffix.lower() == ".hmod" else fp.name)
+                    shutil.copy2(f, dest)
+                    horizon_set_mod_enabled(self.instance.minecraft_dir, mid, True)
+                    added += 1
+                except Exception as e:
+                    print(f"[Horizon/Mods] add {f}: {e}")
+            self.refresh()
+            self.launcher.set_status(_qt_t("QT_MODS_ADDED", "Added {n} mod(s)").format(n=added))
+            return
         if (self.instance.mod_loader or "vanilla").lower() in ("vanilla", "none", ""):
             if not messagebox.askyesno(_tr(self.launcher, "MODS_NO_LOADER_TITLE", "No mod loader"), _tr(self.launcher, "MODS_NO_LOADER_MSG", "This instance has no mod loader, mods will not load. Add them anyway?")):
                 return
@@ -8678,14 +10154,49 @@ class QtModsPanel(QtWidgets.QWidget):
         msg = _tr(self.launcher, "MODS_REMOVE_CONFIRM_SINGLE", "Remove {name}?").format(name=paths[0].name) if len(paths) == 1 else _tr(self.launcher, "MODS_REMOVE_CONFIRM_MULTI", "Remove {count} mods?").format(count=len(paths))
         if not messagebox.askyesno(_tr(self.launcher, "MODS_REMOVE_CONFIRM_TITLE", "Remove"), msg):
             return
+        is_horizon = self._is_horizon()
         for p in paths:
             try:
-                p.unlink()
+                if is_horizon:
+                    meta = read_mod_metadata(p)
+                    horizon_remove_mod_state(self.instance.minecraft_dir, meta.get("id") or p.stem)
+                if p.is_dir():
+                    shutil.rmtree(p)
+                else:
+                    p.unlink()
             except Exception as e:
                 print(f"[Mods] remove {p}: {e}")
         self.refresh()
 
     def toggle_selected(self):
+        if self._is_horizon():
+            items = [i for i in self.list.selectedItems() if not i.isHidden()]
+
+            if not items:
+                return
+            states, _ = horizon_read_mods_state(self.instance.minecraft_dir)
+            for item in items:
+                mid = item.data(0, Qt.UserRole + 1)
+                if mid:
+                    horizon_set_mod_enabled(self.instance.minecraft_dir, mid, not bool(states.get(mid, False)))
+            self.refresh()
+
+
+
+
+
+
+
+    # shit toggle, i hate it but love it
+
+
+
+
+
+
+
+
+            return
         paths = self._selected_paths()
         if not paths:
             return
@@ -8710,7 +10221,8 @@ class QtModsPanel(QtWidgets.QWidget):
 
     def restore_backups(self):
         d = self._mods_dir()
-        baks = list(d.glob("*.jar.bak")) if d.exists() else []
+        pattern = "*.hmod.bak" if self._is_horizon() else "*.jar.bak"
+        baks = list(d.glob(pattern)) if d.exists() else []
         if not baks:
             messagebox.showinfo(_tr(self.launcher, "MODS_BACKUP_NONE", "No backups"), _tr(self.launcher, "MODS_BACKUP_NONE_MSG", "No .bak backup files found."))
             return
@@ -8731,6 +10243,50 @@ class QtModsPanel(QtWidgets.QWidget):
 
     def update_mods(self):
         inst = self.instance
+        if self._is_horizon():
+            mods = self._horizon_mod_entries()
+            if not mods:
+                messagebox.showinfo(_tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), _qt_t("QT_NO_MODS_TO_UPDATE", "No mods to update."))
+                return
+            self.launcher.set_status(_qt_t("QT_HORIZON_UPDATING_MODS", "Checking Horizon mod updates..."))
+
+            def work():
+                hm = get_horizon_manager()
+                idx = hm.fetch_registry_index(force=True)
+                by_id = {p.get("id"): p for p in (idx.get("projects") or []) if isinstance(p, dict)}
+                updated = 0
+                skipped = 0
+                for p in mods:
+                    if not p.is_file():
+                        continue
+                    meta = read_mod_metadata(p)
+                    mid = meta.get("id") or p.stem
+                    cur_ver = meta.get("version") or ""
+                    proj = by_id.get(mid)
+                    if not proj or not proj.get("versions"):
+                        skipped += 1
+                        continue
+                    latest = proj["versions"][0]
+                    if str(latest.get("version") or "") == cur_ver:
+                        skipped += 1
+                        continue
+                    bak = p.with_name(p.name + ".bak")
+                    try:
+                        shutil.copy2(p, bak)
+                    except Exception:
+                        pass
+                    hm.download_and_verify_content(proj, latest, inst, index_data=idx)
+                    updated += 1
+                return updated, skipped
+
+            def done(res):
+                updated, skipped = res
+                self.launcher.set_status(_qt_t("QT_READY", "Ready"))
+                self.refresh()
+                messagebox.showinfo(_tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), _qt_t("QT_HORIZON_MODS_UPDATED", "Updated {updated} Horizon mod(s), {skipped} already up to date.").format(updated=updated, skipped=skipped))
+
+            _qt_run_bg(work, done, lambda e: (self.launcher.set_status(_qt_t("QT_READY", "Ready")), messagebox.showerror(_tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), str(e))))
+            return
         d = self._mods_dir()
         if not d.exists() or not any(d.glob("*.jar")):
             messagebox.showinfo(_tr(self.launcher, "MODS_UPDATE_TITLE", "Update mods"), _qt_t("QT_NO_MODS_TO_UPDATE", "No mods to update."))
@@ -9195,11 +10751,13 @@ class QtPacksPanel(QtWidgets.QWidget):
         b1.addStretch(1)
         lay.addLayout(b1)
         b2 = QtWidgets.QHBoxLayout()
-        b2.addWidget(_qt_button(_qt_t("QT_UPDATE_MODRINTH", "Update (Modrinth)"), lambda: self.update(kind), icon="update", launcher=L))
-        b2.addWidget(_qt_button(_qt_t("QT_BROWSE_MODRINTH", "Browse Modrinth"), lambda: self.browse(kind), icon="file", launcher=L))
+        upd_btn = _qt_button(_qt_t("QT_UPDATE_MODRINTH", "Update (Modrinth)"), lambda: self.update(kind), icon="update", launcher=L)
+        brw_btn = _qt_button(_qt_t("QT_BROWSE_MODRINTH", "Browse Modrinth"), lambda: self.browse(kind), icon="file", launcher=L)
+        b2.addWidget(upd_btn)
+        b2.addWidget(brw_btn)
         b2.addStretch(1)
         lay.addLayout(b2)
-        col = {"box": box, "list": lst, "count": count, "info": info, "kind": kind}
+        col = {"box": box, "list": lst, "count": count, "info": info, "kind": kind, "upd_btn": upd_btn, "brw_btn": brw_btn}
         lst.itemSelectionChanged.connect(lambda c=col: self._on_select(c))
         return col
 
@@ -9212,15 +10770,19 @@ class QtPacksPanel(QtWidgets.QWidget):
         self.refresh()
 
     def refresh(self):
+        is_horizon = bool(self.instance is not None and self.instance.is_horizon())
         for col in (self.rp, self.sp):
             col["list"].clear()
+            col["upd_btn"].setVisible(not is_horizon)
+            col["brw_btn"].setText(_qt_t("QT_HORIZON_BROWSE", "Browse Horizon") if is_horizon else _qt_t("QT_BROWSE_MODRINTH", "Browse Modrinth"))
             if self.instance is None:
                 continue
             d = self._dir(col["kind"])
             names = []
+            allowed_exts = (".zip", ".hshader") if (is_horizon and col["kind"] == "shaderpacks") else (".zip",)
             if d.exists():
                 for item in sorted(d.iterdir(), key=lambda p: p.name.lower()):
-                    if item.is_file() and item.suffix.lower() == ".zip":
+                    if item.is_file() and item.suffix.lower() in allowed_exts:
                         names.append(item.name)
                     elif item.is_dir() and not item.name.startswith("."):
                         names.append(item.name)
@@ -9243,7 +10805,9 @@ class QtPacksPanel(QtWidgets.QWidget):
             col["info"].setText("")
 
     def add(self, kind):
-        files = _pick_open_files(title=_qt_t("QT_SELECT_PACKS", "Select packs"), filetypes=[(_qt_t("QT_FT_PACKS", "Packs"), "*.zip"), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
+        is_horizon = bool(self.instance is not None and self.instance.is_horizon())
+        pattern = "*.hshader *.zip" if (is_horizon and kind == "shaderpacks") else "*.zip"
+        files = _pick_open_files(title=_qt_t("QT_SELECT_PACKS", "Select packs"), filetypes=[(_qt_t("QT_FT_PACKS", "Packs"), pattern), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
         if not files:
             return
         d = self._dir(kind)
@@ -9358,8 +10922,34 @@ class QtInstanceEditor(QtWidgets.QWidget):
     def open(self, instance):
         self.instance = instance
         self._loaded = set()
+        self._apply_instance_mode()
         self.refresh_header()
         self._load_tab(self.TABS[self.tabs.currentIndex()])
+
+    # controler of instance settings
+    def _apply_instance_mode(self):
+        inst = self.instance
+        is_horizon = bool(inst is not None and inst.is_horizon())
+        mv_idx = self.TABS.index("Mem and Video")
+        self.tabs.setTabText(mv_idx, _qt_t("QT_HORIZON_TAB_VIDEO", "Horizon & Video") if is_horizon else _qt_t("QT_TAB_MEM_VIDEO", "Mem and Video"))
+        vr_idx = self.TABS.index("Versions")
+        self.tabs.setTabText(vr_idx, _qt_t("QT_HORIZON_TAB_BUILD", "Horizon Build") if is_horizon else _qt_t("QT_TAB_VERSIONS", "Versions"))
+        if hasattr(self, "mv_memory_card"):
+            self.mv_memory_card.setVisible(not is_horizon)
+            self.mv_zink_row.setVisible(not is_horizon)
+            self.mv_jvm_row.setVisible(not is_horizon)
+            self.mv_horizon_gfx_card.setVisible(is_horizon)
+            self.mv_horizon_extras_card.setVisible(is_horizon)
+        if hasattr(self, "ot_java_compat_card"):
+            self.ot_java_compat_card.setVisible(not is_horizon)
+            self.ot_horizon_card.setVisible(is_horizon)
+        if hasattr(self, "vr_java_card"):
+            self.vr_java_card.setVisible(not is_horizon)
+            self.vr_lwjgl_card.setVisible(not is_horizon)
+            self.vr_java_btns_box.setVisible(not is_horizon)
+            self.vr_installed_header.setVisible(not is_horizon)
+            self.vr_installed.setVisible(not is_horizon)
+            self.vr_horizon_card.setVisible(is_horizon)
 
     def close_editor(self):
         self.page.show_list()
@@ -9370,6 +10960,10 @@ class QtInstanceEditor(QtWidgets.QWidget):
             return
         self.icon.setPixmap(_instance_icon_pixmap(self.launcher, inst, 56))
         self.title.setText(inst.name)
+        if inst.is_horizon():
+            build = inst.loader_version or "nightly"
+            self.subtitle.setText(f"Horizon  ·  Minecraft {inst.version}  ·  {build}")
+            return
         ram_mb = self._ram_to_mb(inst.ram)
         ram_text = f"{ram_mb // 1024} GB" if ram_mb % 1024 == 0 else f"{ram_mb / 1024:.1f} GB"
         self.subtitle.setText(f"Minecraft {inst.version}  ·  {(inst.mod_loader or 'vanilla').title()}" + (f" {inst.loader_version}" if inst.loader_version else "") + f"  ·  {ram_text} " + _qt_t("QT_RAM", "RAM"))
@@ -9513,7 +11107,15 @@ class QtInstanceEditor(QtWidgets.QWidget):
             except Exception:
                 path = ""
         self.cust_icon_path = path
+        self.cust_icon_choice.blockSignals(True)
+        self.cust_icon_choice.clear()
+        icon_items = [self.ICON_DEFAULT, "vanilla", "forge", "fabric", "quilt", "neoforge", "optifine"]
+        if _horizon_enabled(self.launcher):
+            icon_items.append("horizon")
+        icon_items.append(self.ICON_CUSTOM)
+        self.cust_icon_choice.addItems(icon_items)
         self.cust_icon_choice.setCurrentText(self.ICON_CUSTOM if path else self.ICON_DEFAULT)
+        self.cust_icon_choice.blockSignals(False)
         self._preview_icon()
 
     def _save_customization(self):
@@ -9592,6 +11194,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         box.set = lambda v: slider.setValue(int(max(lo, min(hi, v)) // step))
         return box
 
+    # this will have a lot of settings for fun.
     def _build_mem_video(self):
         page, lay = self._page()
         card = _Card(_qt_t("QT_WINDOW", "Window"))
@@ -9611,7 +11214,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         res.addStretch(1)
         card.add(_qt_form_row(_qt_t("QT_RESOLUTION", "Custom resolution"), res))
         lay.addWidget(card)
-        card = _Card(_qt_t("QT_MEMORY", "Memory"))
+        self.mv_memory_card = card = _Card(_qt_t("QT_MEMORY", "Memory"))
         total_mb = _get_system_ram_mb()
         usable = max(total_mb - 1024, 1024)
         self.mv_min = card.add(self._slider_row(_qt_t("QT_MEM_MIN", "Minimum memory (Xms)"), 256, usable, 128, "MB"))
@@ -9619,23 +11222,104 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.mv_perm = card.add(self._slider_row(_qt_t("QT_MEM_PERM", "PermGen / Metaspace"), 0, 2048, 64, "MB", zero_text=_qt_t("QT_DEFAULT", "default")))
         card.add(_qt_label(_qt_t("QT_MEM_HINT", "Detected system memory: {gb} GB. Sliders stop 1 GB below that so the desktop keeps breathing.").format(gb=total_mb // 1024), "hint", wrap=True))
         lay.addWidget(card)
+        self.mv_horizon_gfx_card = hcard = _Card(_qt_t("QT_HORIZON_GFX_CARD", "Horizon Graphics (horizon-graphics.txt)"))
+        hform = QtWidgets.QFormLayout()
+        hform.setLabelAlignment(Qt.AlignRight)
+        self.hz_preset = QtWidgets.QComboBox()
+        for val, key, default in (
+            ("custom", "QT_HORIZON_PRESET_CUSTOM", "Custom"),
+            ("full_performance", "QT_HORIZON_PRESET_FULL_PERF", "Full Performance"),
+            ("performance", "QT_HORIZON_PRESET_PERF", "Performance"),
+            ("balanced", "QT_HORIZON_PRESET_BALANCED", "Balanced"),
+            ("quality", "QT_HORIZON_PRESET_QUALITY", "Quality"),
+            ("ultra", "QT_HORIZON_PRESET_ULTRA", "Ultra"),
+        ):
+            self.hz_preset.addItem(_qt_t(key, default), val)
+        hform.addRow(_qt_t("QT_HORIZON_PRESET", "Graphics preset"), self.hz_preset)
+        self.hz_api = QtWidgets.QComboBox()
+        api_labels = {"auto": _qt_t("QT_HORIZON_AUTO", "Auto"), "vulkan": "Vulkan", "dx12": "DirectX 12", "opengl": "OpenGL"}
+        for val in HORIZON_GRAPHICS_APIS:
+            self.hz_api.addItem(api_labels.get(val, val), val)
+        hform.addRow(_qt_t("QT_HORIZON_GFX_API", "Graphics API"), self.hz_api)
+        self.hz_present = QtWidgets.QComboBox()
+        for val, label in (("auto", _qt_t("QT_HORIZON_PRESENT_AUTO", "Auto (VSync)")), ("fifo", "FIFO"), ("mailbox", "Mailbox"), ("immediate", "Immediate")):
+            self.hz_present.addItem(label, val)
+        hform.addRow(_qt_t("QT_HORIZON_PRESENT_MODE", "Present mode"), self.hz_present)
+        self.hz_hdr = QtWidgets.QComboBox()
+        for val, label in (("false", _qt_t("QT_HORIZON_OFF", "Off")), ("true", _qt_t("QT_HORIZON_ON", "On")), ("auto", _qt_t("QT_HORIZON_AUTO", "Auto"))):
+            self.hz_hdr.addItem(label, val)
+        hform.addRow(_qt_t("QT_HORIZON_HDR", "HDR"), self.hz_hdr)
+        self.hz_gpu_cull = QtWidgets.QComboBox()
+        for val, label in (("false", _qt_t("QT_HORIZON_OFF", "Off")), ("true", _qt_t("QT_HORIZON_ON", "On")), ("auto", _qt_t("QT_HORIZON_AUTO", "Auto"))):
+            self.hz_gpu_cull.addItem(label, val)
+        hform.addRow(_qt_t("QT_HORIZON_GPU_CULL", "GPU culling"), self.hz_gpu_cull)
+        self.hz_entity_cull = QtWidgets.QComboBox()
+        for val, label in (("off", _qt_t("QT_HORIZON_OFF", "Off")), ("sync", _qt_t("QT_HORIZON_SYNC", "Synchronous")), ("async", _qt_t("QT_HORIZON_ASYNC", "Asynchronous"))):
+            self.hz_entity_cull.addItem(label, val)
+        hform.addRow(_qt_t("QT_HORIZON_ENTITY_CULL", "Entity culling"), self.hz_entity_cull)
+        self.hz_particle_cull = QtWidgets.QComboBox()
+        for val, label in (("off", _qt_t("QT_HORIZON_OFF", "Off")), ("sync", _qt_t("QT_HORIZON_SYNC", "Synchronous")), ("async", _qt_t("QT_HORIZON_ASYNC", "Asynchronous"))):
+            self.hz_particle_cull.addItem(label, val)
+        hform.addRow(_qt_t("QT_HORIZON_PARTICLE_CULL", "Particle culling"), self.hz_particle_cull)
+        self.hz_lod = QtWidgets.QSpinBox()
+        self.hz_lod.setRange(0, 1024)
+        self.hz_lod.setSingleStep(16)
+        self.hz_lod.setSpecialValueText(_qt_t("QT_HORIZON_OFF", "Off"))
+        self.hz_lod.setSuffix(" chunks")
+        hform.addRow(_qt_t("QT_HORIZON_LOD_DIST", "LOD distance"), self.hz_lod)
+        self.hz_workers = QtWidgets.QSpinBox()
+        self.hz_workers.setRange(0, max(1, os.cpu_count() or 16))
+        self.hz_workers.setSpecialValueText(_qt_t("QT_HORIZON_AUTO", "Auto"))
+        hform.addRow(_qt_t("QT_HORIZON_WORKERS", "Worker threads"), self.hz_workers)
+        hcard.add_layout(hform)
+        self.hz_parallel_tick = _Var(False)
+        self.hz_battery = _Var(False)
+        self.hz_overlay = _Var(False)
+        hcard.add(_ToggleRow(_qt_t("QT_HORIZON_PARALLEL_TICK", "Parallel tick"), _qt_t("QT_HORIZON_PARALLEL_TICK_DESC", "Spread chunk ticking across worker threads."), self.hz_parallel_tick))
+        hcard.add(_ToggleRow(_qt_t("QT_HORIZON_BATTERY_MODE", "Battery mode"), _qt_t("QT_HORIZON_BATTERY_MODE_DESC", "Halves background thread pools and caps frame rate to save power."), self.hz_battery))
+        hcard.add(_ToggleRow(_qt_t("QT_HORIZON_PERF_OVERLAY", "Performance overlay"), _qt_t("QT_HORIZON_PERF_OVERLAY_DESC", "Shows FPS, frame/CPU/GPU times, and frame-time graph."), self.hz_overlay))
+        hcard.setVisible(False)
+        lay.addWidget(hcard)
+        self.mv_horizon_extras_card = ecard = _Card(_qt_t("QT_HORIZON_EXTRAS_CARD", "Horizon Extras (horizon-extras.txt)"))
+        self.hz_dynamic_lights = _Var(False)
+        self.hz_fullbright = _Var(False)
+        self.hz_auto_reconnect = _Var(False)
+        self.hz_mouse_tweaks = _Var(False)
+        self.hz_sort = _Var(False)
+        self.hz_chat_anim = _Var(False)
+        self.hz_pregen = _Var(False)
+        self.hz_splitscreen = _Var(False)
+        self.hz_own_nametag = _Var(False)
+        self.hz_hide_break = _Var(False)
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_DYNAMIC_LIGHTS", "Dynamic lights"), _qt_t("QT_HORIZON_DYNAMIC_LIGHTS_DESC", "Held torches, glowing items, and burning entities light up nearby blocks."), self.hz_dynamic_lights))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_FULLBRIGHT", "Fullbright"), _qt_t("QT_HORIZON_FULLBRIGHT_DESC", "Maximum lightmap brightness in singleplayer and hosted worlds."), self.hz_fullbright))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_AUTO_RECONNECT", "Auto-reconnect"), _qt_t("QT_HORIZON_AUTO_RECONNECT_DESC", "Automatically retry after unexpected multiplayer disconnects."), self.hz_auto_reconnect))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_MOUSE_TWEAKS", "Mouse Tweaks controls"), _qt_t("QT_HORIZON_MOUSE_TWEAKS_DESC", "Drag and scroll-wheel item movement in inventories and chests."), self.hz_mouse_tweaks))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_INV_SORT", "Inventory sorting"), _qt_t("QT_HORIZON_INV_SORT_DESC", "Adds sort buttons to chests and inventories."), self.hz_sort))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_CHAT_ANIM", "Smooth chat"), _qt_t("QT_HORIZON_CHAT_ANIM_DESC", "Slide and fade in new chat lines."), self.hz_chat_anim))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_PREGEN", "Chunk pregeneration (/pregen)"), _qt_t("QT_HORIZON_PREGEN_DESC", "Enables the /pregen command in singleplayer and LAN worlds."), self.hz_pregen))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_SPLITSCREEN", "Splitscreen"), _qt_t("QT_HORIZON_SPLITSCREEN_DESC", "Allow local controllers to join singleplayer and LAN sessions."), self.hz_splitscreen))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_OWN_NAMETAG", "Own name tag"), _qt_t("QT_HORIZON_OWN_NAMETAG_DESC", "Show your own name tag above your head in third person."), self.hz_own_nametag))
+        ecard.add(_ToggleRow(_qt_t("QT_HORIZON_HIDE_BREAK", "Hide block-break particles"), _qt_t("QT_HORIZON_HIDE_BREAK_DESC", "Hides debris particles when mining blocks."), self.hz_hide_break))
+        ecard.setVisible(False)
+        lay.addWidget(ecard)
         card = _Card(_qt_t("QT_GRAPHICS", "Graphics"))
         self.mv_zink = _Var(False)
         self.mv_prime = _Var(False)
-        card.add(_ToggleRow(_qt_t("QT_ZINK", "Use Zink (OpenGL over Vulkan)"), _qt_t("QT_ZINK_DESC", "MESA_LOADER_DRIVER_OVERRIDE=zink. Helps on GPUs with weak OpenGL drivers, hurts on good ones."), self.mv_zink))
+        self.mv_zink_row = card.add(_ToggleRow(_qt_t("QT_ZINK", "Use Zink (OpenGL over Vulkan)"), _qt_t("QT_ZINK_DESC", "MESA_LOADER_DRIVER_OVERRIDE=zink. Helps on GPUs with weak OpenGL drivers, hurts on good ones."), self.mv_zink))
         card.add(_ToggleRow(_qt_t("QT_PRIME", "Run on the discrete GPU (PRIME offload)"), _qt_t("QT_PRIME_DESC", "DRI_PRIME=1, plus NVIDIA offload variables when the proprietary driver is present. For laptops with two GPUs."), self.mv_prime))
         lay.addWidget(card)
         card = _Card(_qt_t("QT_VARIABLES", "Variables"))
         self.mv_jvm = QtWidgets.QPlainTextEdit()
         self.mv_jvm.setFixedHeight(70)
-        card.add(_qt_form_row(_qt_t("QT_JVM_ARGS", "Java (JVM) arguments"), self.mv_jvm, _qt_t("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1")))
+        self.mv_jvm_row = card.add(_qt_form_row(_qt_t("QT_JVM_ARGS", "Java (JVM) arguments"), self.mv_jvm, _qt_t("QT_JVM_ARGS_HINT", "Appended after the memory flags. One line or space separated, e.g. -XX:+UseG1GC -Dsome.prop=1")))
         self.mv_env = QtWidgets.QPlainTextEdit()
         self.mv_env.setFixedHeight(70)
         card.add(_qt_form_row(_qt_t("QT_ENV_VARS", "Environment variables"), self.mv_env, _qt_t("QT_ENV_VARS_HINT", "One KEY=VALUE per line, lines starting with # are ignored.")))
         self.mv_pre = QtWidgets.QLineEdit()
         card.add(_qt_form_row(_qt_t("QT_PRE_LAUNCH", "Pre-launch command"), self.mv_pre, _qt_t("QT_PRE_LAUNCH_HINT", "Runs in the .minecraft folder before the game starts; a non-zero exit aborts the launch. $INST_NAME, $INST_DIR, $INST_MC_DIR, $INST_JAVA, $INST_MC_VER are set.")))
         self.mv_wrap = QtWidgets.QLineEdit()
-        card.add(_qt_form_row(_qt_t("QT_WRAPPER", "Wrapper command"), self.mv_wrap, _qt_t("QT_WRAPPER_HINT", "Prepended to the java command line, e.g. gamemoderun, mangohud, prime-run")))
+        card.add(_qt_form_row(_qt_t("QT_WRAPPER", "Wrapper command"), self.mv_wrap, _qt_t("QT_WRAPPER_HINT", "Prepended to the game command line, e.g. gamemoderun, mangohud, prime-run")))
         self.mv_post = QtWidgets.QLineEdit()
         card.add(_qt_form_row(_qt_t("QT_POST_EXIT", "Post-exit command"), self.mv_post, _qt_t("QT_POST_EXIT_HINT", "Runs after Minecraft closes. $INST_EXIT_CODE holds the exit code.")))
         lay.addWidget(card)
@@ -9662,6 +11346,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         except Exception:
             return 4096
 
+    # this may also
     def _load_mem_video(self):
         inst = self.instance
         self.mv_fullscreen.set(bool(inst.opt("fullscreen", False)))
@@ -9677,9 +11362,49 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.mv_pre.setText(inst.opt("pre_launch_cmd", "") or "")
         self.mv_wrap.setText(inst.opt("wrapper_cmd", "") or "")
         self.mv_post.setText(inst.opt("post_exit_cmd", "") or "")
+        if inst.is_horizon():
+            gfx = _horizon_kv_read(inst.minecraft_dir / "horizon-graphics.txt")
+            ext = _horizon_kv_read(inst.minecraft_dir / "horizon-extras.txt")
+            def set_combo(cb, val, fallback):
+                idx = cb.findData(val or fallback)
+                cb.setCurrentIndex(idx if idx >= 0 else 0)
+            set_combo(self.hz_preset, gfx.get("preset"), "custom")
+            set_combo(self.hz_api, gfx.get("graphicsApi"), "auto")
+            set_combo(self.hz_present, gfx.get("presentMode"), "auto")
+            set_combo(self.hz_hdr, gfx.get("hdr"), "false")
+            set_combo(self.hz_gpu_cull, gfx.get("gpuCulling"), "false")
+            ec = gfx.get("entityCulling", "off")
+            if ec == "true":
+                ec = "sync"
+            elif ec == "false":
+                ec = "off"
+            set_combo(self.hz_entity_cull, ec, "off")
+            set_combo(self.hz_particle_cull, gfx.get("particleCulling"), "off")
+            try:
+                self.hz_lod.setValue(int(gfx.get("lodDistance", "0") or 0))
+            except Exception:
+                self.hz_lod.setValue(0)
+            try:
+                self.hz_workers.setValue(int(gfx.get("workers", "0") or 0))
+            except Exception:
+                self.hz_workers.setValue(0)
+            self.hz_parallel_tick.set(gfx.get("parallelTick", "false").lower() == "true")
+            self.hz_battery.set(gfx.get("batteryMode", "false").lower() == "true")
+            self.hz_overlay.set(gfx.get("overlay", "false").lower() == "true")
+            self.hz_dynamic_lights.set(ext.get("dynamicLights", "false").lower() == "true")
+            self.hz_fullbright.set(ext.get("fullbright", "false").lower() == "true")
+            self.hz_auto_reconnect.set(ext.get("autoReconnect", "false").lower() == "true")
+            self.hz_mouse_tweaks.set(ext.get("mouseTweaks", "false").lower() == "true")
+            self.hz_sort.set(ext.get("sort", "false").lower() == "true")
+            self.hz_chat_anim.set(ext.get("chatAnimation", "false").lower() == "true")
+            self.hz_pregen.set(ext.get("pregen", "false").lower() == "true")
+            self.hz_splitscreen.set(ext.get("splitscreen", "false").lower() == "true")
+            self.hz_own_nametag.set(ext.get("ownNameTag", "false").lower() == "true")
+            self.hz_hide_break.set(ext.get("hideBlockParticles", "false").lower() == "true")
         for w in self.pages["Mem and Video"].findChildren(_ToggleRow):
             w.refresh()
 
+    # this some
     def _save_mem_video(self):
         inst = self.instance
         inst.set_opt("fullscreen", bool(self.mv_fullscreen.get()))
@@ -9689,6 +11414,46 @@ class QtInstanceEditor(QtWidgets.QWidget):
             return
         inst.set_opt("res_width", int(w) if w else None)
         inst.set_opt("res_height", int(h) if h else None)
+        inst.set_opt("use_prime", bool(self.mv_prime.get()))
+        inst.env_vars = self.mv_env.toPlainText().strip()
+        inst.set_opt("pre_launch_cmd", self.mv_pre.text().strip())
+        inst.set_opt("wrapper_cmd", self.mv_wrap.text().strip())
+        inst.set_opt("post_exit_cmd", self.mv_post.text().strip())
+        if inst.is_horizon():
+            gfx_updates = {
+                "preset": self.hz_preset.currentData() or "custom",
+                "graphicsApi": self.hz_api.currentData() or "auto",
+                "presentMode": self.hz_present.currentData() or "auto",
+                "hdr": self.hz_hdr.currentData() or "false",
+                "gpuCulling": self.hz_gpu_cull.currentData() or "false",
+                "entityCulling": self.hz_entity_cull.currentData() or "off",
+                "particleCulling": self.hz_particle_cull.currentData() or "off",
+                "lodDistance": str(int(self.hz_lod.value())),
+                "workers": str(int(self.hz_workers.value())),
+                "parallelTick": bool(self.hz_parallel_tick.get()),
+                "batteryMode": bool(self.hz_battery.get()),
+                "overlay": bool(self.hz_overlay.get()),
+            }
+            ext_updates = {
+                "dynamicLights": bool(self.hz_dynamic_lights.get()),
+                "fullbright": bool(self.hz_fullbright.get()),
+                "autoReconnect": bool(self.hz_auto_reconnect.get()),
+                "mouseTweaks": bool(self.hz_mouse_tweaks.get()),
+                "sort": bool(self.hz_sort.get()),
+                "chatAnimation": bool(self.hz_chat_anim.get()),
+                "pregen": bool(self.hz_pregen.get()),
+                "splitscreen": bool(self.hz_splitscreen.get()),
+                "ownNameTag": bool(self.hz_own_nametag.get()),
+                "hideBlockParticles": bool(self.hz_hide_break.get()),
+            }
+            _horizon_kv_write(inst.minecraft_dir / "horizon-graphics.txt", gfx_updates)
+            _horizon_kv_write(inst.minecraft_dir / "horizon-extras.txt", ext_updates)
+            if self.save(_qt_t("QT_HORIZON_SETTINGS_SAVED", "Horizon settings saved")):
+                try:
+                    apply_video_options(inst)
+                except Exception as e:
+                    print(f"[Editor] options.txt apply failed: {e}")
+            return
         max_mb = int(self.mv_max.get())
         min_mb = min(int(self.mv_min.get()), max_mb)
         inst.ram = f"{max_mb // 1024}G" if max_mb % 1024 == 0 else f"{max_mb}M"
@@ -9696,12 +11461,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         inst.set_opt("min_ram_mb", min_mb)
         inst.set_opt("permgen_mb", int(self.mv_perm.get()))
         inst.set_opt("use_zink", bool(self.mv_zink.get()))
-        inst.set_opt("use_prime", bool(self.mv_prime.get()))
         inst.set_opt("jvm_args", self.mv_jvm.toPlainText().strip())
-        inst.env_vars = self.mv_env.toPlainText().strip()
-        inst.set_opt("pre_launch_cmd", self.mv_pre.text().strip())
-        inst.set_opt("wrapper_cmd", self.mv_wrap.text().strip())
-        inst.set_opt("post_exit_cmd", self.mv_post.text().strip())
         if self.save(_qt_t("QT_MEM_VIDEO_SAVED", "Memory & video settings saved")):
             try:
                 apply_video_options(inst)
@@ -10182,7 +11942,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
 
     def _build_other(self):
         page, lay = self._page()
-        card = _Card(_qt_t("QT_COMPAT", "Compatibility"))
+        self.ot_java_compat_card = card = _Card(_qt_t("QT_COMPAT", "Compatibility"))
         self.ot_legacy = _Var(False)
         card.add(_ToggleRow(_qt_t("QT_LEGACY_FIXES", "Legacy client fixes (old Minecraft versions)"),
                             _qt_t("QT_LEGACY_FIXES_DESC", "Adds the JVM flags old clients need (legacy merge sort, xrandr guard, macOS first-thread) and keeps Mojang's session endpoints reachable for skins on 1.7-1.16. Only affects versions below 1.13."), self.ot_legacy))
@@ -10198,6 +11958,24 @@ class QtInstanceEditor(QtWidgets.QWidget):
             self.ot_backend.addItem(_qt_t("QT_BACKEND_WAYLAND", "Wayland (native, needs LWJGL 3.3.3+)"), "wayland")
             card.add(_qt_form_row(_qt_t("QT_DISPLAY_BACKEND", "Display backend"), self.ot_backend, _qt_t("QT_DISPLAY_BACKEND_HINT", "Native Wayland needs LWJGL 3.3.3+ and a client that tolerates GLFW's missing window-icon support (recent versions, or a Wayland-fix mod on 1.20.1 and older); XWayland is the safe default.")))
         lay.addWidget(card)
+        self.ot_horizon_card = hcard = _Card(_qt_t("QT_HORIZON_RUNTIME_CARD", "Horizon Runtime"))
+        self.ot_hz_client = QtWidgets.QLineEdit()
+        hcard.add(_qt_form_row(_qt_t("QT_HORIZON_CUSTOM_CLIENT", "Custom horizon-client binary (optional)"), _qt_line_with_browse(self.ot_hz_client, lambda: self.ot_hz_client.setText(_pick_open_file(title=_qt_t("QT_HORIZON_PICK_CLIENT", "Select horizon-client executable")) or self.ot_hz_client.text()), text=_qt_t("QT_BROWSE", "Browse")), _qt_t("QT_HORIZON_CUSTOM_CLIENT_HINT", "Leave empty to use the managed Horizon build.")))
+        self.ot_hz_prepare = QtWidgets.QLineEdit()
+        hcard.add(_qt_form_row(_qt_t("QT_HORIZON_CUSTOM_PREPARE", "Custom horizon-prepare binary (optional)"), _qt_line_with_browse(self.ot_hz_prepare, lambda: self.ot_hz_prepare.setText(_pick_open_file(title=_qt_t("QT_HORIZON_PICK_PREPARE", "Select horizon-prepare executable")) or self.ot_hz_prepare.text()), text=_qt_t("QT_BROWSE", "Browse")), _qt_t("QT_HORIZON_CUSTOM_PREPARE_HINT", "Leave empty to use the managed build's horizon-prepare.")))
+        self.ot_hz_wasm_cap = QtWidgets.QSpinBox()
+        self.ot_hz_wasm_cap.setRange(64, 4096)
+        self.ot_hz_wasm_cap.setSingleStep(128)
+        self.ot_hz_wasm_cap.setValue(4096)
+        self.ot_hz_wasm_cap.setSuffix(" MiB")
+        hcard.add(_qt_form_row(_qt_t("QT_HORIZON_WASM_CAP", "WASM mod memory cap"), self.ot_hz_wasm_cap, _qt_t("QT_HORIZON_WASM_CAP_HINT", "Writes wasm.memory_cap_mib in horizon-mods.txt (max 4096 MiB).")))
+        self.ot_hz_quick_world = QtWidgets.QLineEdit()
+        self.ot_hz_quick_world.setPlaceholderText("MyWorld")
+        hcard.add(_qt_form_row(_qt_t("QT_HORIZON_QUICK_WORLD", "Quick Play singleplayer world (optional)"), self.ot_hz_quick_world, _qt_t("QT_HORIZON_QUICK_WORLD_HINT", "Folder name inside saves/ to open directly on start (--quickPlaySingleplayer).")))
+        self.ot_hz_dev_sp = _Var(False)
+        hcard.add(_ToggleRow(_qt_t("QT_HORIZON_DEV_SP", "Developer single-player mode"), _qt_t("QT_HORIZON_DEV_SP_DESC", "Passes --developer-single-player when supported by an unsigned developer build."), self.ot_hz_dev_sp))
+        hcard.setVisible(False)
+        lay.addWidget(hcard)
         card2 = _Card(_qt_t("QT_DANGER", "Danger zone"))
         row = QtWidgets.QHBoxLayout()
         row.addWidget(_qt_button(_qt_t("QT_DELETE_INSTANCE", "Delete this instance"), self._delete_instance, kind="danger"))
@@ -10220,11 +11998,26 @@ class QtInstanceEditor(QtWidgets.QWidget):
         if hasattr(self, "ot_backend"):
             idx = self.ot_backend.findData(inst.opt("display_backend", "") or "x11")
             self.ot_backend.setCurrentIndex(max(0, idx))
+        if inst.is_horizon():
+            self.ot_hz_client.setText(str(inst.opt("horizon_client_path", "") or ""))
+            self.ot_hz_prepare.setText(str(inst.opt("horizon_prepare_path", "") or ""))
+            _, cap = horizon_read_mods_state(inst.minecraft_dir)
+            self.ot_hz_wasm_cap.setValue(cap)
+            self.ot_hz_quick_world.setText(str(inst.opt("horizon_quick_world", "") or ""))
+            self.ot_hz_dev_sp.set(bool(inst.opt("horizon_dev_sp", False)))
         for w in self.pages["Other settings"].findChildren(_ToggleRow):
             w.refresh()
 
     def _save_other(self):
         inst = self.instance
+        if inst.is_horizon():
+            inst.set_opt("horizon_client_path", self.ot_hz_client.text().strip())
+            inst.set_opt("horizon_prepare_path", self.ot_hz_prepare.text().strip())
+            inst.set_opt("horizon_quick_world", self.ot_hz_quick_world.text().strip())
+            inst.set_opt("horizon_dev_sp", bool(self.ot_hz_dev_sp.get()))
+            horizon_set_wasm_memory_cap(inst.minecraft_dir, int(self.ot_hz_wasm_cap.value()))
+            self.save(_qt_t("QT_OTHER_SAVED", "Other settings saved"))
+            return
         inst.set_opt("legacy_fixes", bool(self.ot_legacy.get()))
         inst.opts["anti_ban"] = bool(self.ot_anti.get())
         inst.set_opt("demo", bool(self.ot_demo.get()))
@@ -10245,7 +12038,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
 
     def _build_versions(self):
         page, lay = self._page()
-        card = _Card(_qt_t("QT_COMPONENTS", "Components"))
+        self.vr_java_card = card = _Card(_qt_t("QT_COMPONENTS", "Components"))
         form = QtWidgets.QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
         self.vr_mc = QtMcVersionCombo()
@@ -10274,7 +12067,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         card.add_layout(form)
         card.add(_qt_label(_qt_t("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17 or 21) and downloads it when missing."), "hint", wrap=True))
         lay.addWidget(card)
-        card = _Card(_qt_t("QT_NATIVE_LIBS", "Native libraries (LWJGL)"))
+        self.vr_lwjgl_card = card = _Card(_qt_t("QT_NATIVE_LIBS", "Native libraries (LWJGL)"))
         card.add(_qt_label(_qt_t("QT_LWJGL_EXPLAIN", "LWJGL is the library Minecraft uses to open its window, talk to the GPU and play sound. Minecraft ships its own copy; the old one bundled with 1.20.1 and earlier crashes on modern Linux desktops, so Automatic swaps in a newer one when needed."), "muted", wrap=True))
         self.vr_lwjgl_mode = QtWidgets.QComboBox()
         self.vr_lwjgl_mode.setMaximumWidth(460)
@@ -10306,14 +12099,39 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.vr_adv_box.setVisible(False)
         card.add(self.vr_adv_box)
         lay.addWidget(card)
-        btns = QtWidgets.QHBoxLayout()
+        self.vr_horizon_card = hcard = _Card(_qt_t("QT_HORIZON_BUILD_CARD", "Horizon Engine (Rust)"))
+        hcard.add(_qt_label(_qt_t("QT_HORIZON_BUILD_DESC", "Horizon runs Minecraft natively in Rust. Choose a Horizon build tag, install or update it, and prepare resources from your copy of Minecraft."), "muted", wrap=True))
+        hform = QtWidgets.QFormLayout()
+        hform.setLabelAlignment(Qt.AlignRight)
+        self.vr_hz_build = QtWidgets.QComboBox()
+        self.vr_hz_build.setMaximumWidth(360)
+        self.vr_hz_build.setEditable(True)
+        hform.addRow(_qt_t("QT_HORIZON_BUILD", "Horizon build"), self.vr_hz_build)
+        self.vr_hz_mc_lbl = _qt_label(HORIZON_DEFAULT_MC, "muted")
+        hform.addRow(_qt_t("QT_HORIZON_PINNED_MC", "Pinned Minecraft version"), self.vr_hz_mc_lbl)
+        hcard.add_layout(hform)
+        self.vr_hz_status = _qt_label("", "hint", wrap=True)
+        hcard.add(self.vr_hz_status)
+        hbtns = QtWidgets.QHBoxLayout()
         L = self.launcher
+        hbtns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_horizon_version, kind="accent"))
+        hbtns.addWidget(_qt_button(_qt_t("QT_HORIZON_INSTALL_BUILD", "Install / Update build"), self._hz_install_build, icon="update", launcher=L))
+        hbtns.addWidget(_qt_button(_qt_t("QT_HORIZON_PREPARE_BTN", "Prepare resources"), self._hz_prepare_resources, icon="refresh", launcher=L))
+        hbtns.addWidget(_qt_button(_qt_t("QT_HORIZON_OPEN_DIR", "Open Horizon folder"), lambda: (get_horizon_manager().root_dir.mkdir(parents=True, exist_ok=True), open_path_native(get_horizon_manager().root_dir)), icon="folder", launcher=L))
+        hbtns.addStretch(1)
+        hcard.add_layout(hbtns)
+        hcard.setVisible(False)
+        lay.addWidget(hcard)
+        self.vr_java_btns_box = QtWidgets.QWidget()
+        btns = QtWidgets.QHBoxLayout(self.vr_java_btns_box)
+        btns.setContentsMargins(0, 0, 0, 0)
         btns.addWidget(_qt_button(_qt_t("QT_SAVE", "Save"), self._save_versions, kind="accent"))
         btns.addWidget(_qt_button(_qt_t("QT_REINSTALL", "Reinstall game files"), self._vr_reinstall, icon="refresh", launcher=L))
         btns.addWidget(_qt_button(_qt_t("QT_OPEN_VERSIONS", "Open versions folder"), lambda: self.instance and open_path_native(self.instance.minecraft_dir / "versions"), icon="folder", launcher=L))
         btns.addStretch(1)
-        lay.addLayout(btns)
-        lay.addWidget(_qt_label(_qt_t("QT_INSTALLED", "Installed"), "h3"))
+        lay.addWidget(self.vr_java_btns_box)
+        self.vr_installed_header = _qt_label(_qt_t("QT_INSTALLED", "Installed"), "h3")
+        lay.addWidget(self.vr_installed_header)
         self.vr_installed = _qt_label("", "muted", wrap=True)
         lay.addWidget(self.vr_installed)
         lay.addStretch(1)
@@ -10397,6 +12215,9 @@ class QtInstanceEditor(QtWidgets.QWidget):
 
     def _load_versions(self):
         inst = self.instance
+        if inst.is_horizon():
+            self._load_horizon_version()
+            return
         self._vr_loading = True
         try:
             self.vr_mc.select(inst.version)
@@ -10470,6 +12291,155 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.save(_qt_t("QT_REINSTALL_DONE", "Version files removed, they will be reinstalled on launch"))
         self._load_versions()
 
+    # ver loader
+    def _load_horizon_version(self):
+        inst = self.instance
+        hm = get_horizon_manager()
+        build = inst.loader_version or hm.default_build_tag()
+        self.vr_hz_build.blockSignals(True)
+        self.vr_hz_build.clear()
+        local_builds = hm.list_installed_builds()
+        items = [build] + [b for b in local_builds if b != build]
+        if "nightly" not in items:
+            items.append("nightly")
+        self.vr_hz_build.addItems(items)
+        self.vr_hz_build.setCurrentText(build)
+        self.vr_hz_build.blockSignals(False)
+        self._update_horizon_status_label()
+
+        def work():
+            return hm.available_build_tags()
+
+        def done(tags):
+            if self.instance is not inst:
+                return
+            cur = self.vr_hz_build.currentText().strip() or build
+            self.vr_hz_build.blockSignals(True)
+            self.vr_hz_build.clear()
+            merged = list(tags)
+            if cur and cur not in merged:
+                merged.insert(0, cur)
+            self.vr_hz_build.addItems(merged)
+            self.vr_hz_build.setCurrentText(cur)
+            self.vr_hz_build.blockSignals(False)
+        _qt_run_bg(work, done, lambda e: None)
+
+    def _update_horizon_status_label(self):
+        inst = self.instance
+        if inst is None or not inst.is_horizon():
+            return
+        hm = get_horizon_manager()
+        build = self.vr_hz_build.currentText().strip() or inst.loader_version or "nightly"
+        custom_client = str(inst.opt("horizon_client_path", "") or "")
+        custom_prep = str(inst.opt("horizon_prepare_path", "") or "")
+        client_exe = hm.client_executable(build, custom_client)
+        prep_exe = hm.prepare_executable(build, custom_prep)
+        lines = []
+        mc_ver = inst.version or HORIZON_DEFAULT_MC
+        if client_exe:
+            api = hm.probe_launch_api(client_exe)
+            mc_ver = str(api.get("minecraft") or mc_ver)
+            lapi = str(api.get("launch_api") or "?")
+            hver = str(api.get("horizon") or build)
+            lines.append(_qt_t("QT_HORIZON_BUILD_INSTALLED", "Build installed: {ver} (Launch API {api})").format(ver=hver, api=lapi))
+        else:
+            lines.append(_qt_t("QT_HORIZON_BUILD_NOT_INSTALLED", "Build '{tag}' is not installed yet (downloads automatically on launch).").format(tag=build))
+        self.vr_hz_mc_lbl.setText(mc_ver)
+        if prep_exe:
+            prep_api = hm.probe_launch_api(prep_exe)
+            out_dir = hm.prepared_output_dir(mc_ver, build) if prep_api.get("has_launch_api") else (prep_exe.parent / ".local" / "horizon-client" / mc_ver)
+            ok, _ = hm.check_prepared(prep_exe, out_dir)
+            lines.append(_qt_t("QT_HORIZON_PREP_READY", "Resources: ready ({path})").format(path=out_dir) if ok else _qt_t("QT_HORIZON_PREP_NEEDED", "Resources: not prepared yet"))
+        self.vr_hz_status.setText("\n".join(lines))
+
+    def _save_horizon_version(self):
+        inst = self.instance
+        if inst is None or not inst.is_horizon():
+            return
+        build = self.vr_hz_build.currentText().strip() or "nightly"
+        inst.loader_version = build
+        hm = get_horizon_manager()
+        client_exe = hm.client_executable(build, str(inst.opt("horizon_client_path", "") or ""))
+        if client_exe:
+            api = hm.probe_launch_api(client_exe)
+            if api.get("minecraft"):
+                inst.version = str(api["minecraft"])
+        self.save(_qt_t("QT_HORIZON_SETTINGS_SAVED", "Horizon settings saved"))
+        self._update_horizon_status_label()
+
+    def _hz_install_build(self):
+        inst = self.instance
+        if inst is None or not inst.is_horizon():
+            return
+        build = self.vr_hz_build.currentText().strip() or "nightly"
+        inst.loader_version = build
+        self.instance_manager.save_instances()
+        self.vr_hz_status.setText(_qt_t("QT_HORIZON_DOWNLOADING", "Downloading Horizon {tag}...").format(tag=build))
+
+        def work():
+            hm = get_horizon_manager()
+            dest_dir = hm.install_build(build, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+            resolved_tag = dest_dir.name
+            if resolved_tag != inst.loader_version:
+                inst.loader_version = resolved_tag
+                self.instance_manager.save_instances()
+            exe = hm.client_executable(resolved_tag)
+            if exe:
+                api = hm.probe_launch_api(exe)
+                if api.get("minecraft"):
+                    inst.version = str(api["minecraft"])
+                    self.instance_manager.save_instances()
+            return resolved_tag
+
+        def done(tag):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self.refresh_header()
+            self._update_horizon_status_label()
+            messagebox.showinfo(_qt_t("QT_HORIZON_BUILD_CARD", "Horizon Engine (Rust)"), _qt_t("QT_HORIZON_INSTALL_DONE", "Installed Horizon build: {tag}").format(tag=tag))
+
+        def fail(err):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self._update_horizon_status_label()
+            messagebox.showerror(_qt_t("QT_HORIZON_BUILD_CARD", "Horizon Engine (Rust)"), str(err))
+
+        _qt_run_bg(work, done, fail)
+
+    def _hz_prepare_resources(self):
+        inst = self.instance
+        if inst is None or not inst.is_horizon():
+            return
+        build = self.vr_hz_build.currentText().strip() or inst.loader_version or "nightly"
+        self.vr_hz_status.setText(_qt_t("QT_HORIZON_PREPARING", "Preparing Horizon resources..."))
+
+        def work():
+            hm = get_horizon_manager()
+            custom_prep = str(inst.opt("horizon_prepare_path", "") or "")
+            resolved_build = build
+            if hm.prepare_executable(resolved_build, custom_prep) is None:
+                dest_dir = hm.install_build(resolved_build, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+                resolved_build = dest_dir.name
+                if resolved_build != inst.loader_version:
+                    inst.loader_version = resolved_build
+                    self.instance_manager.save_instances()
+            out_dir, api = hm.ensure_prepared(resolved_build, custom_prepare=custom_prep, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m), force=False)
+            if api.get("minecraft"):
+                inst.version = str(api["minecraft"])
+                self.instance_manager.save_instances()
+            return str(out_dir)
+
+        def done(out_dir):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self.refresh_header()
+            self._update_horizon_status_label()
+            messagebox.showinfo(_qt_t("QT_HORIZON_BUILD_CARD", "Horizon Engine (Rust)"), _qt_t("QT_HORIZON_PREP_DONE", "Horizon resources ready at:\n{path}").format(path=out_dir))
+
+        def fail(err):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self._update_horizon_status_label()
+            messagebox.showerror(_qt_t("QT_HORIZON_BUILD_CARD", "Horizon Engine (Rust)"), str(err))
+
+        _qt_run_bg(work, done, fail)
+
 
 class QtContentPage(QtWidgets.QWidget):
     PAGE_SIZE = 20
@@ -10479,10 +12449,12 @@ class QtContentPage(QtWidgets.QWidget):
         self.launcher = launcher
         self.instance_manager = launcher.instance_manager
         self.content_type = "mod"
+        self.source = "modrinth"
         self.offset = 0
         self.total_hits = 0
         self.instances = []
         self._search_token = 0
+        self._horizon_index = None
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(18, 12, 18, 10)
         lay.setSpacing(8)
@@ -10500,6 +12472,27 @@ class QtContentPage(QtWidgets.QWidget):
             top.addWidget(b)
         self.type_buttons["mod"].setChecked(True)
         top.addStretch(1)
+        self.source_box = QtWidgets.QWidget()
+        sbl = QtWidgets.QHBoxLayout(self.source_box)
+        sbl.setContentsMargins(0, 0, 8, 0)
+        sbl.setSpacing(4)
+        self.source_group = QtWidgets.QButtonGroup(self)
+        self.src_modrinth_btn = QtWidgets.QPushButton("Modrinth")
+        self.src_modrinth_btn.setObjectName("topnav")
+        self.src_modrinth_btn.setCheckable(True)
+        self.src_modrinth_btn.setChecked(True)
+        self.src_modrinth_btn.setCursor(Qt.PointingHandCursor)
+        self.src_modrinth_btn.clicked.connect(lambda *_: self.set_source("modrinth"))
+        self.src_horizon_btn = QtWidgets.QPushButton(_qt_t("QT_HORIZON_STORE_BTN", "Horizon"))
+        self.src_horizon_btn.setObjectName("topnav")
+        self.src_horizon_btn.setCheckable(True)
+        self.src_horizon_btn.setCursor(Qt.PointingHandCursor)
+        self.src_horizon_btn.clicked.connect(lambda *_: self.set_source("horizon"))
+        self.source_group.addButton(self.src_modrinth_btn)
+        self.source_group.addButton(self.src_horizon_btn)
+        sbl.addWidget(self.src_modrinth_btn)
+        sbl.addWidget(self.src_horizon_btn)
+        top.addWidget(self.source_box)
         top.addWidget(_qt_label(_qt_t("QT_INSTANCE", "Instance") + ":", "muted"))
         self.instance_combo = QtWidgets.QComboBox()
         self.instance_combo.setMinimumWidth(220)
@@ -10520,7 +12513,8 @@ class QtContentPage(QtWidgets.QWidget):
         srow.addWidget(_qt_button(_tr(launcher, "CONTENT_SEARCH", "Search"), self.on_search, kind="accent"))
         lay.addLayout(srow)
         frow = QtWidgets.QHBoxLayout()
-        frow.addWidget(_qt_label(_qt_t("QT_FILTER_VERSION", "Game version") + ":", "muted"))
+        self.version_label = _qt_label(_qt_t("QT_FILTER_VERSION", "Game version") + ":", "muted")
+        frow.addWidget(self.version_label)
         self.version_filter = QtWidgets.QComboBox()
         self.version_filter.setMinimumWidth(150)
         frow.addWidget(self.version_filter)
@@ -10529,6 +12523,14 @@ class QtContentPage(QtWidgets.QWidget):
         self.loader_filter = QtWidgets.QComboBox()
         self.loader_filter.setMinimumWidth(130)
         frow.addWidget(self.loader_filter)
+        self.hz_kind_label = _qt_label(_qt_t("QT_HORIZON_KIND_FILTER", "Mod type") + ":", "muted")
+        frow.addWidget(self.hz_kind_label)
+        self.hz_kind_filter = QtWidgets.QComboBox()
+        self.hz_kind_filter.setMinimumWidth(140)
+        self.hz_kind_filter.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
+        self.hz_kind_filter.addItem(_qt_t("QT_HORIZON_KIND_CONTENT", "Content & WASM"), "mod")
+        self.hz_kind_filter.addItem(_qt_t("QT_HORIZON_KIND_NATIVE", "Native"), "native-mod")
+        frow.addWidget(self.hz_kind_filter)
         frow.addWidget(_qt_label(_qt_t("QT_FILTER_CATEGORY", "Category") + ":", "muted"))
         self.category_filter = QtWidgets.QComboBox()
         self.category_filter.setMinimumWidth(150)
@@ -10540,7 +12542,7 @@ class QtContentPage(QtWidgets.QWidget):
         self._fill_version_filter()
         self._fill_loader_filter()
         self._apply_type_filter_defaults()
-        for combo in (self.version_filter, self.loader_filter, self.category_filter):
+        for combo in (self.version_filter, self.loader_filter, self.category_filter, self.hz_kind_filter):
             combo.currentIndexChanged.connect(lambda *_: self._on_filter_changed())
         _qt_run_bg(self._load_categories, self._on_categories_loaded, lambda e: None)
         self.status = _qt_label("", "muted", wrap=True)
@@ -10565,10 +12567,37 @@ class QtContentPage(QtWidgets.QWidget):
         self.refresh_instances()
         self.instance_manager.register_callback(lambda: _qt_later(self.refresh_instances))
 
+    def set_source(self, source):
+        if source == "horizon" and not _horizon_enabled(self.launcher):
+            source = "modrinth"
+        self.source = source
+        self.src_modrinth_btn.setChecked(source == "modrinth")
+        self.src_horizon_btn.setChecked(source == "horizon")
+        self._sync_source_ui()
+        self.offset = 0
+        if self._searched:
+            self.on_search()
+
+    def _sync_source_ui(self):
+        hz_enabled = _horizon_enabled(self.launcher)
+        self.source_box.setVisible(hz_enabled)
+        if not hz_enabled and self.source == "horizon":
+            self.source = "modrinth"
+            self.src_modrinth_btn.setChecked(True)
+        is_hz = self.source == "horizon"
+        self.search.setPlaceholderText(_qt_t("QT_HORIZON_SEARCH", "Search Horizon registry...") if is_hz else _tr(self.launcher, "CONTENT_SEARCH", "Search Modrinth..."))
+        self.version_label.setVisible(not is_hz)
+        self.version_filter.setVisible(not is_hz)
+        self.loader_label.setVisible((not is_hz) and self.content_type in ("mod", "modpack"))
+        self.loader_filter.setVisible((not is_hz) and self.content_type in ("mod", "modpack"))
+        self.hz_kind_label.setVisible(is_hz and self.content_type == "mod")
+        self.hz_kind_filter.setVisible(is_hz and self.content_type == "mod")
+        self._fill_category_filter()
+
     def refresh_instances(self):
         self.instance_combo.blockSignals(True)
         self.instance_combo.clear()
-        self.instances = list(self.instance_manager.instances.values())
+        self.instances = _visible_instances(self.instance_manager, self.launcher)
         for inst in self.instances:
             self.instance_combo.addItem(f"{inst.name}  ({inst.version}, {inst.mod_loader})")
         sel = self.instance_manager.selected_instance_id
@@ -10577,9 +12606,25 @@ class QtContentPage(QtWidgets.QWidget):
                 self.instance_combo.setCurrentIndex(i)
                 break
         self.instance_combo.blockSignals(False)
+        inst = self.target_instance()
+        if _horizon_enabled(self.launcher) and inst is not None and inst.is_horizon():
+            self.source = "horizon"
+            self.src_horizon_btn.setChecked(True)
+        elif not _horizon_enabled(self.launcher) or (inst is not None and not inst.is_horizon()):
+            self.source = "modrinth"
+            self.src_modrinth_btn.setChecked(True)
+        self._sync_source_ui()
         self._refresh_instance_filter_labels()
 
     def _on_instance_pick(self):
+        inst = self.target_instance()
+        if _horizon_enabled(self.launcher) and inst is not None and inst.is_horizon():
+            self.source = "horizon"
+            self.src_horizon_btn.setChecked(True)
+        elif inst is not None and not inst.is_horizon():
+            self.source = "modrinth"
+            self.src_modrinth_btn.setChecked(True)
+        self._sync_source_ui()
         self._refresh_instance_filter_labels()
         if self._searched:
             self.on_search()
@@ -10614,7 +12659,7 @@ class QtContentPage(QtWidgets.QWidget):
     def _refresh_instance_filter_labels(self):
         inst = self.target_instance()
         ver = inst.version if inst else "-"
-        loader = (self._normalized_loader(inst) or "vanilla") if inst else "-"
+        loader = (self._normalized_loader(inst) or ("horizon" if inst and inst.is_horizon() else "vanilla")) if inst else "-"
         for combo, value in ((self.version_filter, ver), (self.loader_filter, loader)):
             idx = combo.findData(self.INSTANCE_FILTER)
             if idx >= 0:
@@ -10622,14 +12667,11 @@ class QtContentPage(QtWidgets.QWidget):
 
     def _apply_type_filter_defaults(self):
         is_modpack = self.content_type == "modpack"
-        shows_loader = self.content_type in ("mod", "modpack")
-        self.loader_label.setVisible(shows_loader)
-        self.loader_filter.setVisible(shows_loader)
         for combo in (self.version_filter, self.loader_filter):
             combo.blockSignals(True)
             combo.setCurrentIndex(combo.findData("" if is_modpack else self.INSTANCE_FILTER))
             combo.blockSignals(False)
-        self._fill_category_filter()
+        self._sync_source_ui()
 
     def _on_filter_changed(self):
         if self._searched:
@@ -10644,15 +12686,29 @@ class QtContentPage(QtWidgets.QWidget):
         self._categories = [c for c in cats if c.get("header") == "categories"]
         self._fill_category_filter()
 
+    # there are two types
+    def _horizon_kinds_for_type(self):
+        if self.content_type == "mod":
+            pick = self.hz_kind_filter.currentData() or ""
+            return {pick} if pick else {"mod", "native-mod"}
+        if self.content_type == "shader":
+            return {"shader", "shaderpack"}
+        return {self.content_type}
+
     def _fill_category_filter(self):
         combo = self.category_filter
         current = combo.currentData() or ""
         combo.blockSignals(True)
         combo.clear()
         combo.addItem(_qt_t("QT_FILTER_ANY", "Any"), "")
-        names = sorted({c.get("name") for c in self._categories if c.get("project_type") == self.content_type and c.get("name")})
+        if self.source == "horizon":
+            kinds = self._horizon_kinds_for_type()
+            idx_data = self._horizon_index or {}
+            names = sorted({str(c) for p in (idx_data.get("projects") or []) if isinstance(p, dict) and p.get("kind") in kinds for c in (p.get("categories") or []) if c})
+        else:
+            names = sorted({c.get("name") for c in self._categories if c.get("project_type") == self.content_type and c.get("name")})
         for name in names:
-            combo.addItem(name.replace("-", " ").capitalize(), name)
+            combo.addItem(name.replace("-", " ").replace("_", " ").capitalize(), name)
         idx = combo.findData(current)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         combo.blockSignals(False)
@@ -10733,6 +12789,9 @@ class QtContentPage(QtWidgets.QWidget):
     def run_search(self):
         self._searched = True
         self._clear_results()
+        if self.source == "horizon":
+            self._run_horizon_search()
+            return
         instance = self.target_instance()
         if self.content_type == "mod" and instance is not None and self._is_vanilla(instance):
             self.status.setText(_tr(self.launcher, "CONTENT_VANILLA_WARNING", "The selected instance is vanilla; pick a modded instance to browse mods."))
@@ -10778,6 +12837,216 @@ class QtContentPage(QtWidgets.QWidget):
             self.scroll.verticalScrollBar().setValue(0)
             self._update_paging()
         _qt_run_bg(work, done, lambda e: self.status.setText(_qt_t("QT_SEARCH_FAILED", "Search failed: {error}").format(error=e)))
+
+    # searcher
+    def _run_horizon_search(self):
+        query = self.search.text().strip().lower()
+        sort = self.sort.currentData() or "relevance"
+        category = self.filter_category()
+        kinds = self._horizon_kinds_for_type()
+        self.status.setText(_tr(self.launcher, "CONTENT_SEARCHING", "Searching..."))
+        self._search_token += 1
+        token = self._search_token
+        offset = self.offset
+
+        def work():
+            idx = get_horizon_manager().fetch_registry_index(force=False)
+            projects = []
+            for p in (idx.get("projects") or []):
+                if not isinstance(p, dict) or p.get("kind") not in kinds:
+                    continue
+                if _horizon_is_revoked(idx, str(p.get("id") or "")):
+                    continue
+                if category and category not in (p.get("categories") or []):
+                    continue
+                if query:
+                    hay = " ".join([
+                        str(p.get("id") or ""),
+                        str(p.get("name") or ""),
+                        str(p.get("summary") or ""),
+                        " ".join(p.get("tags") or []),
+                        " ".join(p.get("authors") or []),
+                    ]).lower()
+                    if query not in hay:
+                        continue
+                projects.append(p)
+            if sort == "downloads":
+                projects.sort(key=lambda x: int(x.get("downloads") or 0), reverse=True)
+            elif sort == "follows":
+                projects.sort(key=lambda x: int(x.get("stars") or 0), reverse=True)
+            elif sort in ("newest", "updated"):
+                projects.sort(key=lambda x: str(x.get("updated") or ""), reverse=True)
+            else:
+                projects.sort(key=lambda x: (0 if query and query in str(x.get("name") or "").lower() else 1, -int(x.get("downloads") or 0), str(x.get("name") or "").lower()))
+            total = len(projects)
+            page_items = projects[offset:offset + self.PAGE_SIZE]
+            return idx, page_items, total
+
+        def done(res):
+            if token != self._search_token:
+                return
+            idx, items, total = res
+            had_idx = self._horizon_index is not None
+            self._horizon_index = idx
+            if not had_idx:
+                self._fill_category_filter()
+            self.total_hits = total
+            for proj in items:
+                self.results.insertWidget(self.results.count() - 1, self._make_horizon_row(proj))
+            if total == 0:
+                self.status.setText(_tr(self.launcher, "CONTENT_NO_RESULTS", "No results."))
+            else:
+                self.status.setText(_tr(self.launcher, "CONTENT_RESULTS_COUNT", "{count} results").format(count=f"{total:,}") + "  ·  Horizon")
+            self.scroll.verticalScrollBar().setValue(0)
+            self._update_paging()
+
+        _qt_run_bg(work, done, lambda e: self.status.setText(_qt_t("QT_SEARCH_FAILED", "Search failed: {error}").format(error=e)))
+
+    def _make_horizon_row(self, proj):
+        row = QtWidgets.QFrame()
+        row.setObjectName("resultRow")
+        h = QtWidgets.QHBoxLayout(row)
+        h.setContentsMargins(10, 8, 10, 8)
+        icon = QtWidgets.QLabel()
+        icon.setFixedSize(56, 56)
+        icon.setScaledContents(True)
+        h.addWidget(icon)
+        url = proj.get("icon")
+        if url:
+            def done(data, lbl=icon):
+                pix = _qt_pixmap_from_bytes(data, (56, 56))
+                if pix is not None:
+                    try:
+                        lbl.setPixmap(pix)
+                    except RuntimeError:
+                        pass
+            _qt_run_bg(lambda u=url: _cached_image_get(u), done, lambda e: None)
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(2)
+        title_row = QtWidgets.QHBoxLayout()
+        title_str = str(proj.get("name") or proj.get("id") or "?")
+        kind = str(proj.get("kind") or "mod")
+        kind_badge = {"mod": "Content", "native-mod": "Native", "shader": "Horizon Shader", "shaderpack": "Shader Pack", "resourcepack": "Resource Pack", "datapack": "Data Pack", "modpack": "Modpack"}.get(kind, kind)
+        title_row.addWidget(_qt_label(title_str, "h3"))
+        badge = _qt_label(f"[{kind_badge}]", "accent")
+        title_row.addWidget(badge)
+        authors = ", ".join(proj.get("authors") or [])
+        if authors:
+            title_row.addWidget(_qt_label(_qt_t("QT_BY", "by {author}").format(author=authors), "muted"))
+        title_row.addStretch(1)
+        col.addLayout(title_row)
+        desc = str(proj.get("summary") or "").replace("\n", " ")
+        if len(desc) > 220:
+            desc = desc[:217] + "..."
+        col.addWidget(_qt_label(desc, "muted", wrap=True))
+        meta_parts = [_qt_t("QT_DOWNLOADS_COUNT", "{count} downloads").format(count=f"{int(proj.get('downloads') or 0):,}")]
+        if proj.get("stars"):
+            meta_parts.append(f"★ {int(proj['stars']):,}")
+        cats = ", ".join((proj.get("categories") or [])[:5])
+        if cats:
+            meta_parts.append(cats)
+        col.addWidget(_qt_label("  ·  ".join(meta_parts), "hint"))
+        h.addLayout(col, 1)
+        pid = str(proj.get("id") or "")
+        btn_col = QtWidgets.QVBoxLayout()
+        install = _qt_button(_tr(self.launcher, "CONTENT_INSTALL_BTN", "Install"), None, kind="accent")
+        install.clicked.connect(lambda *_: self._install_horizon_project(proj, install, choose=False))
+        btn_col.addWidget(install)
+        btn_col.addWidget(_qt_button(_qt_t("QT_CHOOSE_VERSION", "Choose version..."), lambda: self._install_horizon_project(proj, install, choose=True), kind="flat"))
+        page_url = f"https://playhorizon.dev/mods/{pid}" if pid else str(proj.get("source") or "https://playhorizon.dev/mods")
+        btn_col.addWidget(_qt_button(_qt_t("QT_PAGE_BTN", "Page"), lambda u=page_url: open_with_browser(u), kind="flat"))
+        h.addLayout(btn_col)
+        return row
+
+    def _install_horizon_project(self, proj, button, choose=False):
+        kind = str(proj.get("kind") or "mod")
+        is_modpack = kind == "modpack"
+        instance = None if is_modpack else self.target_instance()
+        if not is_modpack:
+            if instance is None or not instance.is_horizon():
+                hz_insts = [i for i in self.instances if i.is_horizon()]
+                if hz_insts:
+                    instance = hz_insts[0]
+                else:
+                    messagebox.showwarning(_tr(self.launcher, "CONTENT_TAB", "Content"), _qt_t("QT_HORIZON_NEED_INSTANCE", "Create or select a Horizon instance first."))
+                    return
+        versions = list(proj.get("versions") or [])
+        if not versions:
+            messagebox.showwarning(_tr(self.launcher, "CONTENT_TAB", "Content"), _qt_t("QT_VERSION_PICKER_EMPTY", "No versions match the current filters."))
+            return
+        chosen = versions[0]
+        if choose:
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(_qt_t("QT_VERSION_PICKER_TITLE", "{title} - versions").format(title=proj.get("name") or proj.get("id") or "?"))
+            dlg.resize(620, 400)
+            vlay = QtWidgets.QVBoxLayout(dlg)
+            vlay.addWidget(_qt_label(str(proj.get("name") or proj.get("id") or "?"), "h2"))
+            lst = QtWidgets.QListWidget()
+            for v in versions:
+                finfo = v.get("file") or {}
+                sz = _human_size(finfo.get("size")) if finfo.get("size") else ""
+                detail = "  ·  ".join(x for x in (f"MC {v.get('game') or '?'}", f"API {v.get('api') or '?'}", str(v.get("published") or ""), sz) if x)
+                it = QtWidgets.QListWidgetItem(f"{v.get('version') or '?'}\n{detail}")
+                it.setData(Qt.UserRole, v)
+                lst.addItem(it)
+            lst.setCurrentRow(0)
+            vlay.addWidget(lst, 1)
+            hb = QtWidgets.QHBoxLayout()
+            hb.addStretch(1)
+            hb.addWidget(_qt_button(_tr(self.launcher, "CONTENT_INSTALL_BTN", "Install"), dlg.accept, kind="accent"))
+            hb.addWidget(_qt_button(_tr(self.launcher, "CANCEL", "Cancel"), dlg.reject))
+            vlay.addLayout(hb)
+            if dlg.exec() != QtWidgets.QDialog.Accepted or lst.currentItem() is None:
+                return
+            chosen = lst.currentItem().data(Qt.UserRole)
+        button.setEnabled(False)
+        button.setText(_tr(self.launcher, "CONTENT_INSTALLING_BTN", "Installing..."))
+
+        def work():
+            hm = get_horizon_manager()
+            idx = self._horizon_index or hm.fetch_registry_index(force=False)
+            if is_modpack:
+                finfo = chosen.get("file") or {}
+                url = str(finfo.get("url") or "")
+                if not _horizon_allowed_download_url(url, proj):
+                    raise RuntimeError("Refused untrusted Horizon modpack URL")
+                tmp_pack = Path(tempfile.gettempdir()) / os.path.basename(str(finfo.get("name") or "pack.hpack"))
+                with _http_session.get(url, stream=True, timeout=120) as dl:
+                    dl.raise_for_status()
+                    with open(tmp_pack, "wb") as out:
+                        for chunk in dl.iter_content(1024 * 128):
+                            if chunk:
+                                out.write(chunk)
+                try:
+                    return hm.install_hpack(str(tmp_pack), self.launcher, log_fn=self.launcher._safe_append_log)
+                finally:
+                    tmp_pack.unlink(missing_ok=True)
+            dest = hm.download_and_verify_content(proj, chosen, instance, index_data=idx, log_fn=self.launcher._safe_append_log)
+            return dest
+
+        def done(res):
+            if is_modpack:
+                ok, msg, pname = res
+                if ok:
+                    button.setText(_tr(self.launcher, "CONTENT_INSTALLED_BTN", _qt_t("QT_INSTALLED", "Installed")))
+                    self.status.setText(_tr(self.launcher, "CONTENT_INSTALLED_STATUS", "Installed {name}").format(name=pname))
+                    self.launcher.refresh_instance_display()
+                    self.launcher.instances_page.refresh(force=True)
+                    messagebox.showinfo(_tr(self.launcher, "CONTENT_TAB", "Content"), _tr(self.launcher, "CONTENT_MODPACK_DONE", "Imported as '{profile}'.\n{message}").format(profile=pname, message=msg))
+                else:
+                    button.setEnabled(True)
+                    button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+                    messagebox.showerror(_tr(self.launcher, "CONTENT_TAB", "Content"), msg)
+                return
+            button.setText(_tr(self.launcher, "CONTENT_INSTALLED_BTN", _qt_t("QT_INSTALLED", "Installed")))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALLED_STATUS", "Installed {name}").format(name=res.name))
+
+        def fail(err):
+            button.setEnabled(True)
+            button.setText(_tr(self.launcher, "CONTENT_FAILED_BTN", "Failed"))
+            self.status.setText(_tr(self.launcher, "CONTENT_INSTALL_FAILED", "Install failed: {error}").format(error=err))
+
+        _qt_run_bg(work, done, fail)
 
     def _make_row(self, hit):
         row = QtWidgets.QFrame()
@@ -11124,8 +13393,7 @@ class QtSettingsPage(QtWidgets.QWidget):
             b = QtWidgets.QPushButton(_tr(launcher, key, default))
             b.setObjectName("nav")
             b.setCheckable(True)
-            b.setIcon(_qt_icon(icon, 18, launcher.theme.c("fg_secondary")))
-            b.setIconSize(QSize(18, 18))
+            _set_themed_button_icon(b, icon, 18, "secondary", launcher.theme)
             b.setCursor(Qt.PointingHandCursor)
             page = builder()
             idx = self.stack.addWidget(page)
@@ -11375,9 +13643,33 @@ class QtSettingsPage(QtWidgets.QWidget):
 
         # intresting section of the settings page
     def _build_advanced(self):
-        
+        # the toggle for rust (aka the new era of minecraft on pcs)
         page, lay = self._page()
         L = self.launcher
+        hcard = _Card(_qt_t("QT_HORIZON_CARD", "Horizon (Rust)"))
+        self.horizon_toggle_row = _RustToggleRow(
+            _qt_t("QT_HORIZON_TOGGLE_TITLE", "Add Minecraft rust support (Horizon)"),
+            _qt_t("QT_HORIZON_TOGGLE_DESC", "Enables Horizon (Minecraft rewritten in Rust): create Horizon instances, browse the Horizon content store, and manage Horizon mods. Turning this off hides Horizon instances and Horizon-specific options without deleting files."),
+            L.horizon_rust_support,
+            lambda: L.set_horizon_support(bool(L.horizon_rust_support.get())),
+        )
+        hcard.add(self.horizon_toggle_row)
+        self.horizon_details_box = QtWidgets.QWidget()
+        hdl = QtWidgets.QVBoxLayout(self.horizon_details_box)
+        hdl.setContentsMargins(0, 6, 0, 0)
+        hdl.setSpacing(6)
+        self.horizon_builds_lbl = _qt_label("", "muted", wrap=True)
+        hdl.addWidget(self.horizon_builds_lbl)
+        hrow = QtWidgets.QHBoxLayout()
+        hrow.addWidget(_qt_button(_qt_t("QT_HORIZON_INSTALL_LATEST", "Install / Update Latest"), lambda: self._adv_install_horizon_build("latest"), kind="accent", icon="update", launcher=L))
+        hrow.addWidget(_qt_button(_qt_t("QT_HORIZON_INSTALL_NIGHTLY", "Install / Update Nightly"), lambda: self._adv_install_horizon_build("nightly"), icon="update", launcher=L))
+        hrow.addWidget(_qt_button(_qt_t("QT_HORIZON_OPEN_DIR", "Open Horizon folder"), lambda: (get_horizon_manager().root_dir.mkdir(parents=True, exist_ok=True), open_path_native(get_horizon_manager().root_dir)), icon="folder", launcher=L))
+        hrow.addStretch(1)
+        hdl.addLayout(hrow)
+        self.horizon_details_box.setVisible(bool(L.horizon_rust_support.get()))
+        hcard.add(self.horizon_details_box)
+        self._refresh_horizon_adv_status()
+        lay.addWidget(hcard)
         card = _Card(_tr(L, "SETTINGS_CARD_DISCORD", "Discord"))
         card.add(_ToggleRow(_tr(L, "SETTINGS_DISCORD_ENABLE", "Discord Rich Presence"), _tr(L, "SETTINGS_DISCORD_DESC", "Show what you play on Discord."), L.discord_rpc_enabled, lambda: _save_and_apply(L, lambda: _toggle_discord_rpc(L))))
         lay.addWidget(card)
@@ -11485,6 +13777,37 @@ class QtSettingsPage(QtWidgets.QWidget):
         lay.addWidget(card)
         lay.addStretch(1)
         return _qt_scroll(page)
+
+    # refresher
+    def _refresh_horizon_adv_status(self):
+        if not hasattr(self, "horizon_builds_lbl"):
+            return
+        builds = get_horizon_manager().list_installed_builds()
+        if builds:
+            self.horizon_builds_lbl.setText(_qt_t("QT_HORIZON_INSTALLED_BUILDS", "Installed Horizon builds: {builds}").format(builds=", ".join(builds)))
+        else:
+            self.horizon_builds_lbl.setText(_qt_t("QT_HORIZON_NO_BUILDS", "No Horizon builds installed yet. Install Latest or Nightly here, or create a Horizon instance."))
+    # install
+    def _adv_install_horizon_build(self, requested_tag="latest"):
+        self.horizon_builds_lbl.setText(_qt_t("QT_HORIZON_DOWNLOADING", "Downloading Horizon {tag}...").format(tag=requested_tag))
+
+        def work():
+            hm = get_horizon_manager()
+            tag = hm.default_build_tag(force=True) if requested_tag == "latest" else requested_tag
+            hm.install_build(tag, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+            return tag
+
+        def done(tag):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self._refresh_horizon_adv_status()
+            messagebox.showinfo(_qt_t("QT_HORIZON_CARD", "Horizon (Rust)"), _qt_t("QT_HORIZON_INSTALL_DONE", "Installed Horizon build: {tag}").format(tag=tag))
+
+        def fail(err):
+            self.launcher._submit_progress_update(0, _qt_t("QT_READY", "Ready"))
+            self._refresh_horizon_adv_status()
+            messagebox.showerror(_qt_t("QT_HORIZON_CARD", "Horizon (Rust)"), str(err))
+
+        _qt_run_bg(work, done, fail)
 
     def _refresh_plugins(self):
         self.plugin_list.clear()
@@ -11929,6 +14252,7 @@ class LauncherCore:
             self.locale_names[code] = {
                 'en-US': 'English',
                 'lt-LT': 'Lietuvių',
+                'lv-LV': 'Latviešu',
                 'ru-RU': 'Русский',
                 'pl-PL': 'Polski',
                 'de-DE': 'Deutsch',
@@ -11943,7 +14267,207 @@ class LauncherCore:
             except Exception:
                 return text
         return text
+    # threader
+    def _run_horizon_thread(self, current_instance, launch_name, selected_profile, username, uuid, quick_play_server=None):
+        session_tmp_file = None
+        try:
+            hm = get_horizon_manager()
+            build_tag = (getattr(current_instance, "loader_version", "") or hm.default_build_tag()).strip()
+            custom_client = str(current_instance.opt("horizon_client_path", "") or "")
+            custom_prepare = str(current_instance.opt("horizon_prepare_path", "") or "")
+            if selected_profile.get("type") == "microsoft":
+                try:
+                    updated = ensure_mc_profile_valid(selected_profile)
+                    if updated:
+                        selected_profile = updated
+                except Exception as e:
+                    err_msg = str(e)
+                    try:
+                        self.after(0, lambda m=err_msg: (
+                            messagebox.showerror(self._t("MS_AUTH_ERROR"), self._t("MS_AUTH_FAIL") + f"\n{m}"),
+                            self._restore_ui()
+                        ))
+                    except RuntimeError:
+                        pass
+                    return
+            client_exe = hm.client_executable(build_tag, custom_client)
+            if client_exe is None:
+                self._safe_append_log(f"[Horizon] Build '{build_tag}' not installed, downloading...")
+                dest_dir = hm.install_build(build_tag, log_fn=self._safe_append_log, progress_fn=lambda p, m: self._submit_progress_update(int(p * 0.4), m))
+                build_tag = dest_dir.name
+                if current_instance.loader_version != build_tag:
+                    current_instance.loader_version = build_tag
+                    self.instance_manager.save_instances()
+                client_exe = hm.client_executable(build_tag, custom_client)
+                if client_exe is None:
+                    raise RuntimeError(f"Could not find horizon-client after installing '{build_tag}'")
+            if self.cancel_requested:
+                return
+            client_api = hm.probe_launch_api(client_exe)
+            supported_opts = {o.get("name") for o in (client_api.get("options") or []) if isinstance(o, dict)}
+            prepared_dir, prep_api = hm.ensure_prepared(
+                build_tag,
+                custom_prepare=custom_prepare,
+                log_fn=self._safe_append_log,
+                progress_fn=lambda p, m: self._submit_progress_update(40 + int(p * 0.6), m),
+            )
+            if prep_api.get("minecraft") and current_instance.version != str(prep_api["minecraft"]):
+                current_instance.version = str(prep_api["minecraft"])
+                self.instance_manager.save_instances()
+            if self.cancel_requested:
+                return
+            self._submit_progress_update(100, _qt_t("QT_INSTALL_COMPLETE", "Installation complete!"))
+            game_dir = current_instance.minecraft_dir
+            game_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                apply_video_options(current_instance)
+            except Exception as e:
+                self._safe_append_log(f"[Horizon] options.txt update skipped: {e}")
+            cmd = [str(client_exe)]
+            if not supported_opts or "--resources" in supported_opts:
+                cmd.extend(["--resources", str(prepared_dir)])
+            if "--game-dir" in supported_opts:
+                cmd.extend(["--game-dir", str(game_dir)])
+            if "--home" in supported_opts:
+                cmd.extend(["--home", str(game_dir)])
+            res_w = current_instance.opt("res_width")
+            res_h = current_instance.opt("res_height")
+            if res_w and res_h:
+                if not supported_opts or "--width" in supported_opts:
+                    cmd.extend(["--width", str(int(res_w))])
+                if not supported_opts or "--height" in supported_opts:
+                    cmd.extend(["--height", str(int(res_h))])
+            if current_instance.opt("fullscreen", False) and "--fullscreen" in supported_opts:
+                cmd.append("--fullscreen")
+            quick_world = str(current_instance.opt("horizon_quick_world", "") or "").strip()
+            if quick_play_server and (not supported_opts or "--quickPlayMultiplayer" in supported_opts):
+                cmd.extend(["--quickPlayMultiplayer", quick_play_server])
+            elif quick_world and (not supported_opts or "--quickPlaySingleplayer" in supported_opts):
+                cmd.extend(["--quickPlaySingleplayer", quick_world])
+            session_payload = None
+            if selected_profile.get("type") == "microsoft":
+                access_token = selected_profile.get("minecraft_token", "")
+                if access_token:
+                    session_obj = {
+                        "name": username,
+                        "uuid": uuid,
+                        "access_token": access_token,
+                        "user_type": "msa",
+                    }
+                    if selected_profile.get("xuid"):
+                        session_obj["xuid"] = selected_profile["xuid"]
+                    if "--session-stdin" in supported_opts:
+                        cmd.append("--session-stdin")
+                        session_payload = json.dumps(session_obj)
+                    elif "--session-file" in supported_opts:
+                        fd, tmp_s = tempfile.mkstemp(prefix="horizon_session_", suffix=".json")
+                        session_tmp_file = Path(tmp_s)
+                        try:
+                            os.chmod(tmp_s, 0o600)
+                        except Exception:
+                            pass
+                        with os.fdopen(fd, "w", encoding="utf-8") as sf:
+                            sf.write(json.dumps(session_obj))
+                        cmd.extend(["--session-file", tmp_s])
+            elif current_instance.opt("horizon_dev_sp", False) and "--developer-single-player" in supported_opts:
+                cmd.append("--developer-single-player")
+            else:
+                if "--name" in supported_opts and username:
+                    cmd.extend(["--name", username])
+                self._safe_append_log("[Horizon] Note: offline account selected; online-mode servers require a Microsoft account that owns Minecraft: Java Edition.")
+            launch_env = build_launch_env(current_instance, self)
+            if "--home" not in supported_opts:
+                launch_env["HORIZON_HOME"] = str(game_dir)
+            hook_env = dict(launch_env)
+            hook_env.update(instance_command_vars(current_instance, str(client_exe), current_instance.version))
+            if current_instance.opt("pre_launch_cmd"):
+                self._safe_append_log("[Hook] Running pre-launch command...")
+                rc = run_hook_command(current_instance.opt("pre_launch_cmd"), str(game_dir), hook_env, log_fn=self._safe_append_log)
+                if rc != 0:
+                    self._safe_append_log(f"[Hook] Pre-launch command exited with {rc}, aborting launch")
+                    return
+            cmd = apply_wrapper_command(cmd, current_instance.opt("wrapper_cmd"))
+            self._safe_append_log(f"[Horizon] Starting {client_exe.name}...")
+            self.after(0, self._on_mc_started)
+            launch_start = time.time()
+            self.mc_process = subprocess.Popen(
+                cmd,
+                cwd=str(game_dir),
+                stdin=subprocess.PIPE if session_payload is not None else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=launch_env,
+            )
+            if session_payload is not None and self.mc_process.stdin is not None:
+                try:
+                    self.mc_process.stdin.write(session_payload)
+                    self.mc_process.stdin.close()
+                except Exception as e:
+                    self._safe_append_log(f"[Horizon] Failed writing session to stdin: {e}")
+            game_log = None
+            try:
+                game_log_path = _launcher_log_dir() / f"game_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+                game_log = open(game_log_path, "w", encoding="utf-8", errors="replace")
+                game_log.write(f"# Horizon {current_instance.version} ({build_tag}) in {game_dir}\n")
+                self._safe_append_log(f"[Horizon] Game output is saved to {game_log_path}")
+            except Exception:
+                game_log = None
+            for line in self.mc_process.stdout:
+                if self.cancel_requested:
+                    self.mc_process.terminate()
+                    break
+                self._safe_append_log(line.rstrip())
+                if game_log is not None:
+                    try:
+                        game_log.write(line)
+                    except Exception:
+                        pass
+            self.mc_process.wait()
+            exit_code = self.mc_process.returncode
+            if game_log is not None:
+                try:
+                    game_log.write(f"# exit code {exit_code}\n")
+                    game_log.close()
+                except Exception:
+                    pass
+            if current_instance.opt("post_exit_cmd"):
+                hook_env["INST_EXIT_CODE"] = str(exit_code)
+                self._safe_append_log("[Hook] Running post-exit command...")
+                run_hook_command(current_instance.opt("post_exit_cmd"), str(game_dir), hook_env, log_fn=self._safe_append_log)
+            elapsed = int(time.time() - launch_start)
+            if elapsed > 5:
+                current_instance.play_time = (current_instance.play_time or 0) + elapsed
+                current_instance.last_played = datetime.now().isoformat()
+                try:
+                    self.instance_manager.save_instances()
+                except Exception:
+                    pass
+            self._safe_append_log(f"[Horizon] Exited with code {exit_code}")
+            self._apply_sharing_for_instance(current_instance)
+            if exit_code != 0:
+                self.after(0, lambda: self._check_crash_report(str(game_dir), exit_code))
+        except Exception as e:
+            self._safe_append_log(f"[ERROR] Horizon launch failed: {e}")
+            self._safe_append_log(traceback.format_exc())
+            err_text = str(e)
+            try:
+                self.after(0, lambda m=err_text: messagebox.showerror(_qt_t("QT_HORIZON_CARD", "Horizon (Rust)"), m))
+            except RuntimeError:
+                pass
+        finally:
+            if session_tmp_file is not None:
+                try:
+                    session_tmp_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            self.after(0, self._restore_ui)
+
     def _run_launcher_thread(self, current_instance, launch_name, version, mod_loader, ram, selected_profile, username, uuid, quick_play_server=None):
+        if current_instance is not None and current_instance.is_horizon():
+            self._run_horizon_thread(current_instance, launch_name, selected_profile, username, uuid, quick_play_server=quick_play_server)
+            return
         try:
             if selected_profile.get("type") == "microsoft":
                 try:
@@ -12527,10 +15051,8 @@ class LauncherCore:
             pass
     def _music_player(self):
         if self._music is None:
-            try:
-                from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
-            except Exception as e:
-                print(f"[Music] QtMultimedia unavailable: {e}")
+            if QMediaPlayer is None or QAudioOutput is None:
+                print("[Music] QtMultimedia unavailable")
                 return None
             player = QMediaPlayer()
             output = QAudioOutput()
@@ -12542,8 +15064,7 @@ class LauncherCore:
 
     def _on_music_status(self, status):
         try:
-            from PySide6.QtMultimedia import QMediaPlayer
-            if status == QMediaPlayer.MediaStatus.EndOfMedia and self.music_playing:
+            if QMediaPlayer is not None and status == QMediaPlayer.MediaStatus.EndOfMedia and self.music_playing:
                 self._play_next_song()
         except Exception as e:
             print(f"[Music] status error: {e}")
@@ -12674,10 +15195,48 @@ class LauncherCore:
             traceback.print_exc()
     def _open_file_from_cli(self, path: str):
         p = path.lower()
-        if p.endswith('.mrpack') or p.endswith(ORANGPACK_EXT):
+        if p.endswith('.hpack') and _horizon_enabled(self):
+            self._do_import_hpack_path(path)
+        elif p.endswith('.mrpack') or p.endswith(ORANGPACK_EXT):
             self._do_import_mrpack_path(path)
         elif p.endswith('.zip'):
             self._do_import_curseforge_path(path)
+
+    # path import
+    def _do_import_hpack_path(self, hpack_path: str):
+        if hasattr(self, 'status_label'):
+            self.status_label.config(text=_qt_t("QT_HORIZON_IMPORTING_HPACK", "Importing Horizon modpack..."))
+        if hasattr(self, 'status_bar_progress'):
+            self.status_bar_progress.config(mode='indeterminate')
+            self.status_bar_progress.start(15)
+        def _restore():
+            if hasattr(self, 'status_bar_progress'):
+                self.status_bar_progress.stop()
+                self.status_bar_progress.config(mode='determinate')
+                if hasattr(self, 'progress'):
+                    self.progress.set(0)
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text=_qt_t("QT_READY", "Ready"))
+        def _do():
+            try:
+                success, message, profile_name = get_horizon_manager().install_hpack(
+                    hpack_path,
+                    self,
+                    log_fn=self._safe_append_log,
+                    progress_fn=lambda p, m: self._submit_progress_update(p, m),
+                )
+                def done():
+                    _restore()
+                    if success:
+                        messagebox.showinfo(_qt_t("QT_PACK_IMPORTED", "Pack imported"), _qt_t("QT_IMPORTED_AS", "Imported: {name}").format(name=profile_name) + f"\n{message}")
+                        if hasattr(self, '_refresh_game_profiles'):
+                            self._refresh_game_profiles()
+                    else:
+                        messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), message)
+                self.after(0, done)
+            except Exception as e:
+                self.after(0, lambda m=str(e): (_restore(), messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), m)))
+        threading.Thread(target=_do, daemon=True).start()
     def _do_import_mrpack_path(self, mrpack_path: str):
         if hasattr(self, 'status_label'):
             self.status_label.config(text=_qt_t("QT_IMPORTING_MODPACK", "Importing modpack..."))
@@ -12780,6 +15339,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         self.debug_mode_enabled = _Var(False)
         self.show_progress_bar = _Var(True)
         self.use_dri_prime = _Var(False)
+        self.horizon_rust_support = _Var(False)
         for attr in ("share_options", "share_resourcepacks", "share_shaderpacks", "share_servers", "share_screenshots"):
             setattr(self, attr, _Var(False))
         self.selected_profile = _Var("")
@@ -12861,12 +15421,15 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
     def apply_theme(self, name):
         self.theme.load(name)
         self.theme.apply(QtWidgets.QApplication.instance())
+        _refresh_themed_icons(self, self.theme)
         save_theme_preference(name)
         _adv_set("qt_theme_set", True)
         self.theme_manager.current_theme = name
         if self.page_widgets.get("settings") is not None:
             for b in self.settings_page.theme_group.buttons():
                 b.setChecked(b.property("theme") == name)
+            if hasattr(self.settings_page, "horizon_toggle_row"):
+                self.settings_page.horizon_toggle_row.toggle.update()
         self.set_status(_qt_t("QT_THEME_APPLIED", "Theme: {name}").format(name=name))
 
     def after(self, ms, fn, *args):
@@ -12901,6 +15464,8 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         return False
 
     def fetch_loader_versions(self, loader, mc_version):
+        if loader == "horizon":
+            return get_horizon_manager().available_build_tags()
         if not mc_version:
             return []
         if loader == "forge":
@@ -12944,8 +15509,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
             b = QtWidgets.QPushButton(_tr(self, tkey, default))
             b.setObjectName("topnav")
             b.setCheckable(True)
-            b.setIcon(_qt_icon(icon, 18, self.theme.c("fg_secondary")))
-            b.setIconSize(QSize(18, 18))
+            _set_themed_button_icon(b, icon, 18, "secondary", self.theme)
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(lambda _=False, k=key: self.show_page(k))
             self.nav_group.addButton(b)
@@ -12961,7 +15525,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         root.addWidget(topbar)
         root.addWidget(self.stack, 1)
         self._build_bottom(root)
-        self.show_page("instances" if self.instance_manager.instances else "news")
+        self.show_page("instances" if _visible_instances(self.instance_manager, self) else "news")
 
     def _build_bottom(self, root):
         bar = QtWidgets.QFrame()
@@ -13167,13 +15731,43 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         self.refresh_accounts()
         self.set_status(_qt_t("QT_ACCOUNT_ADDED", "Added account {name}").format(name=profile.get('username', '')))
 
+    # the toggle
+    def set_horizon_support(self, enabled: bool):
+        enabled = bool(enabled)
+        self.horizon_rust_support.set(enabled)
+        _adv_set("horizon_rust_support", enabled)
+        _save_settings(self)
+        if self.page_widgets.get("settings") is not None:
+            sp = self.settings_page
+            if hasattr(sp, "horizon_details_box"):
+                sp.horizon_details_box.setVisible(enabled)
+            if hasattr(sp, "horizon_toggle_row"):
+                sp.horizon_toggle_row.refresh()
+        if not enabled:
+            if self.page_widgets.get("instances") is not None:
+                ip = self.instances_page
+                if ip.editor is not None and ip.editor.instance is not None and ip.editor.instance.is_horizon():
+                    ip.show_list()
+        self.refresh_instance_display()
+        if self.page_widgets.get("instances") is not None:
+            self.instances_page.refresh(force=True)
+        if self.page_widgets.get("content") is not None:
+            cp = self.content_page
+            cp.refresh_instances()
+            if not enabled and cp.source == "horizon":
+                cp.set_source("modrinth")
+            elif cp._searched:
+                cp.on_search()
+
     def refresh_instance_display(self):
-        instances = list(self.instance_manager.instances.values())
+        instances = _visible_instances(self.instance_manager, self)
         self.instance_combo.blockSignals(True)
         self.instance_combo.clear()
         for inst in instances:
             self.instance_combo.addItem(f"{inst.name}  ·  {inst.version} ({inst.mod_loader})", inst.instance_id)
         sel = self.instance_manager.get_selected_instance()
+        if sel is not None and sel.is_horizon() and not _horizon_enabled(self):
+            sel = None
         if sel is None and instances:
             self.instance_manager.selected_instance_id = instances[0].instance_id
             self.instance_manager.save_instances()
@@ -13253,6 +15847,8 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
             messagebox.showerror(_tr(self, "PROFILE_ERROR", _qt_t("QT_ACCOUNT", "Account")), _tr(self, "SELECTED_PROFILE_NOT_FOUND", "Selected account not found."))
             return
         current_instance = self.instance_manager.get_selected_instance()
+        if current_instance is not None and current_instance.is_horizon() and not _horizon_enabled(self):
+            current_instance = None
         if current_instance is None:
             messagebox.showinfo(_tr(self, "NO_PROFILE_SELECTED", "No instance selected"), _qt_t("QT_NO_INSTANCE_MSG", "There is no instance to play yet.\n\nOpen the Instances tab and press New to create one, or use Import to add a modpack (.mrpack / .orangpack / .zip)."))
             self.show_page("instances")
@@ -13506,8 +16102,11 @@ def main():
         if not QT_AVAILABLE:
             print("[ui] PySide6 is not installed (pip install PySide6)")
             sys.exit(1)
-        if importlib.util.find_spec("minecraft_launcher_lib") is None:
+        if minecraft_launcher_lib is None:
             print("[startup] minecraft_launcher_lib is not installed (pip install -r requirements.txt)")
+            sys.exit(1)
+        if requests is None:
+            print("[startup] requests is not installed (pip install -r requirements.txt)")
             sys.exit(1)
         _reexec_as_module()
         print("Welcome to the Orange launcher! You can use --terminal to save ram!")
@@ -13519,7 +16118,7 @@ def main():
             print("[testing] reset setup.mark → setup_done=false")
         open_file_arg = None
         for arg in sys.argv[1:]:
-            if not arg.startswith('-') and (arg.endswith('.mrpack') or arg.endswith('.zip') or arg.endswith('.orangpack')):
+            if not arg.startswith('-') and (arg.endswith('.mrpack') or arg.endswith('.zip') or arg.endswith('.orangpack') or arg.endswith('.hpack')):
                 open_file_arg = arg
                 break
         if platform.system() == "Linux":

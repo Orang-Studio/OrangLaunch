@@ -17,7 +17,7 @@ Installation via AUR:
 yay -Syu oranglauncher-bin
 ```
 there is also without -bin version where it compiles itself<br>
-Portable installation zip: [launcher_x64_linux_8.5.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
+Portable installation zip: [launcher_x64_linux_9.0.0.tar.gz](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
 
 ## Windows 10-11 x86-x64; arm32-arm64
 Download installer: [OrangLauncher_Windows_x.x.x.msi](https://github.com/Orang-Studio/OrangLaunch/releases)<br>
@@ -86,6 +86,5 @@ The entire application supports changeable languages, including community‑driv
 Go to GitHub Wiki up in the GitHub website of this repo, and open Wiki. You will find all tutorials and examples about this launcher, and even build your own version!
 
 # Info
-- Launcher Version: 8.5
 - Platforms: Linux/GNU; Winslop; MacOS
 - Made by human with 🧡, fixed by AI ✨
