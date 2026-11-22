@@ -85,6 +85,10 @@ The entire application supports changeable languages, including community‑driv
 
 Go to GitHub Wiki up in the GitHub website of this repo, and open Wiki. You will find all tutorials and examples about this launcher, and even build your own version!
 
+## Horizon
+
+We added support for Minecraft Rust (Made by horizon devs, really thanks! https://github.com/horizon-rust/horizon).
+
 # Info
 - Platforms: Linux/GNU; Winslop; MacOS
 - Made by human with 🧡, fixed by AI ✨
