@@ -16,7 +16,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -77,18 +77,53 @@ jobs:
       - name: Set up AUR SSH key
         if: steps.check.outputs.should_publish == 'true'
         env:
-          AUR_SSH_KEY: ${{ secrets.AUR_SRC_SSH_KEY }}
+          AUR_SRC_SSH_KEY: ${{ secrets.AUR_SRC_SSH_KEY }}
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$AUR_SSH_KEY" | base64 -d > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
+          chmod 700 ~/.ssh
+          ssh-keyscan -t ed25519,ecdsa,rsa aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          try_key() {
+            local label="$1"
+            local raw="$2"
+            if [ -z "$raw" ]; then
+              echo "Skipping ${label}: secret is empty"
+              return 1
+            fi
+            if printf '%s' "$raw" | grep -q "BEGIN .*PRIVATE KEY"; then
+              printf '%s\n' "$raw" > ~/.ssh/aur
+            else
+              if ! printf '%s' "$raw" | tr -d '[:space:]' | base64 -d > ~/.ssh/aur 2>/dev/null; then
+                echo "Skipping ${label}: failed to base64-decode secret"
+                return 1
+              fi
+              printf '\n' >> ~/.ssh/aur
+            fi
+            chmod 600 ~/.ssh/aur
+            if ! ssh-keygen -y -f ~/.ssh/aur >/dev/null 2>&1; then
+              echo "Skipping ${label}: not a valid SSH private key"
+              return 1
+            fi
+            if ssh -i ~/.ssh/aur -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new aur@aur.archlinux.org help >/dev/null 2>&1; then
+              echo "Authenticated to AUR using ${label}"
+              return 0
+            fi
+            echo "Key ${label} was rejected by aur.archlinux.org (Permission denied)"
+            return 1
+          }
+
+          if ! try_key "AUR_SRC_SSH_KEY" "$AUR_SRC_SSH_KEY" && ! try_key "AUR_SSH_KEY" "$AUR_SSH_KEY"; then
+            echo "::error::Neither AUR_SRC_SSH_KEY nor AUR_SSH_KEY could authenticate to aur.archlinux.org. Update the secret with a private key whose public key is registered on the AUR maintainer account."
+            exit 1
+          fi
+
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n  User aur\n' >> ~/.ssh/config
 
       - name: Clone AUR repo
         if: steps.check.outputs.should_publish == 'true'
         env:
-          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
         run: git clone ssh://aur@aur.archlinux.org/oranglauncher.git /tmp/aur-src
 
       - name: Update PKGBUILD
@@ -114,7 +149,7 @@ jobs:
       - name: Push to AUR
         if: steps.check.outputs.should_publish == 'true'
         env:
-          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd /tmp/aur-src

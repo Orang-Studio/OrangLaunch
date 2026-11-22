@@ -5,6 +5,7 @@
 # imports
 import atexit
 import base64
+import contextlib
 import copy
 import ctypes
 import errno
@@ -303,10 +304,8 @@ def _merge_move(src, dst, quiet=False):
     if src.is_dir() and not src.is_symlink() and dst.is_dir():
         for child in list(src.iterdir()):
             _merge_move(child, dst / child.name, quiet)
-        try:
+        with contextlib.suppress(OSError):
             src.rmdir()
-        except OSError:
-            pass
     elif not quiet:
         _MIGRATION_ERRORS.append(f"{src} (kept, {dst} already exists)")
 
@@ -595,7 +594,6 @@ def check_for_updates():
 def perform_update(download_url, launcher_root):
     if download_url == "AUR":
         terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal", "xterm", "kitty", "alacritty"]
-        cmd = ["yay", "-S", "oranglauncher-bin"]
         opened = False
         for t in terminals:
             if shutil.which(t):
@@ -669,13 +667,11 @@ def perform_update(download_url, launcher_root):
         sys.exit(0)
     except Exception as e:
         messagebox.showerror(_qt_t("QT_UPDATE_FAILED", "Update failed"), _qt_t("QT_UPDATE_FAILED_MSG", "Failed to perform update:\n{error}").format(error=e))
-        try:
+        with contextlib.suppress(Exception):
             if 'update_file' in locals() and update_file.exists():
                 update_file.unlink()
             if 'extract_path' in locals() and extract_path.exists():
                 shutil.rmtree(extract_path)
-        except:
-            pass
 
 # ui components
 
@@ -731,6 +727,7 @@ def _mc_request(method, url, acc, **kw):
             return None
         acc.update(refresh_mc_token(acc["microsoft_refresh_token"], acc.get("ms_client_id")))
         _store_profile(acc)
+    return None
 
 
 def _set_active_cape(acc, cape_id):
@@ -1141,11 +1138,9 @@ class StreamCapture:
         self.buffer.append(message)
         self.original_stream.write(message)
         if self.log_file:
-            try:
+            with contextlib.suppress(Exception):
                 self.log_file.write(message)
                 self.log_file.flush()
-            except Exception:
-                pass
     
     def flush(self):
         self.original_stream.flush()
@@ -1167,10 +1162,8 @@ _DEBUG_CAPTURE = {"active": False, "log_file": None, "stdout": None, "stderr": N
 # logging directory for debug logs
 def _launcher_log_dir():
     log_dir = DATA_DIR / "logs"
-    try:
+    with contextlib.suppress(Exception):
         log_dir.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
     return log_dir
 
  # capture stdout and stderr to a log file when debug mode enabled
@@ -1204,12 +1197,10 @@ def _stop_debug_capture():
 
 
 def _debug_mode_saved():
-    try:
+    with contextlib.suppress(Exception):
         config_path = DATA_DIR / "launcher_config.json"
         if config_path.exists():
             return bool(json.loads(config_path.read_text(encoding="utf-8")).get("debug_mode_enabled", False))
-    except Exception:
-        pass
     return False
 
  # crash report writing, submit to the  if you can
@@ -1239,16 +1230,12 @@ def _write_crash_report(kind, text):
         path.write_text("\n".join(lines), encoding="utf-8")
         old = sorted(log_dir.glob("crash_*.log"), key=lambda q: q.stat().st_mtime)
         for stale in old[:-25]:
-            try:
+            with contextlib.suppress(Exception):
                 stale.unlink()
-            except Exception:
-                pass
         return path
     except Exception as e:
-        try:
+        with contextlib.suppress(Exception):
             sys.__stderr__.write(f"[crash] could not write crash report: {e}\n")
-        except Exception:
-            pass
     return None
 
 
@@ -1270,22 +1257,16 @@ def install_crash_handlers():
     def excepthook(exc_type, exc, exc_tb):
         text = "".join(traceback.format_exception(exc_type, exc, exc_tb))
         path = _write_crash_report("unhandled exception", text)
-        try:
+        with contextlib.suppress(Exception):
             sys.__stderr__.write(text)
             if path:
                 sys.__stderr__.write(f"[crash] report written to {path}\n")
-        except Exception:
-            pass
         if isinstance(sys.stderr, StreamCapture):
-            try:
+            with contextlib.suppress(Exception):
                 sys.stderr.write(text)
-            except Exception:
-                pass
         if previous_hook not in (None, sys.__excepthook__):
-            try:
+            with contextlib.suppress(Exception):
                 previous_hook(exc_type, exc, exc_tb)
-            except Exception:
-                pass
     sys.excepthook = excepthook
 
     def thread_hook(args):
@@ -1293,14 +1274,10 @@ def install_crash_handlers():
             return
         text = f"Thread: {getattr(args.thread, 'name', '?')}\n" + "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
         _write_crash_report("thread exception", text)
-        try:
+        with contextlib.suppress(Exception):
             sys.stderr.write(text)
-        except Exception:
-            pass
-    try:
+    with contextlib.suppress(Exception):
         threading.excepthook = thread_hook
-    except Exception:
-        pass
 
  # toggle debug mode and start/stop capturing stdout/stderr to a log file
 def _toggle_debug_mode(launcher):
@@ -1532,22 +1509,18 @@ class ModrinthPackImporter:
         lock = threading.Lock()
         def _status(n):
             if self.launcher and hasattr(self.launcher, 'status_label'):
-                try:
+                with contextlib.suppress(Exception):
                     self.launcher.after(0, lambda n=n: self.launcher.status_label.config(text=f"Importing modpack: {n}/{total} files"))  # type: ignore
-                except Exception:
-                    pass
         _status(0)
         def _fetch(item):
-            file_path, urls, hashes, size = item
+            file_path, urls, hashes, _size = item
             dest = game_dir / file_path
             dest.parent.mkdir(parents=True, exist_ok=True)
             want_sha1 = hashes.get("sha1")
             if dest.exists():
-                try:
+                with contextlib.suppress(Exception):
                     if not want_sha1 or _sha1_file(dest) == want_sha1:
                         return True
-                except Exception:
-                    pass
             last_err = None
             for attempt in range(3):
                 for url in urls:
@@ -1571,7 +1544,7 @@ class ModrinthPackImporter:
                 self._failed_files.append(file_path)
             return False
         with ThreadPoolExecutor(max_workers=6) as pool:
-            for ok in pool.map(_fetch, wanted):
+            for _ in pool.map(_fetch, wanted):
                 with lock:
                     done_count[0] += 1
                     n = done_count[0]
@@ -1902,10 +1875,8 @@ class CurseForgePackImporter:
             self._log(f"[CurseForge] Import error: {e}\n{traceback.format_exc()}")
             return False, _qt_t("QT_IMPORT_FAILED", "Import failed") + f": {e}", None
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception:
-                pass
 
 
 def import_curseforge_pack(zip_path, launcher=None):
@@ -1949,10 +1920,8 @@ class ModrinthUpdater:
         self.logger = logger or (lambda m: None)
 
     def _log(self, msg: str):
-        try:
+        with contextlib.suppress(Exception):
             self.logger(msg)
-        except Exception:
-            pass
 
     def search_projects(self, query: str, limit: int = 5) -> List[Dict]:
         url = f"{MODRINTH_API_BASE}/search"
@@ -2000,7 +1969,7 @@ class ModrinthUpdater:
 
     def _extract_info_from_jar(self, jar_path: Path) -> Dict[str, Optional[str]]:
         info = {'id': None, 'name': None, 'version': None}
-        try:
+        with contextlib.suppress(Exception):
             if not jar_path.exists():
                 return info
             with zipfile.ZipFile(jar_path, 'r') as z:
@@ -2008,7 +1977,7 @@ class ModrinthUpdater:
                 for candidate in ('fabric.mod.json', 'quilt.mod.json'):
                     for n in namelist:
                         if n.endswith(candidate):
-                            try:
+                            with contextlib.suppress(Exception):
                                 raw = z.read(n).decode('utf-8')
                                 data = json.loads(raw)
                                 if isinstance(data, dict):
@@ -2021,15 +1990,11 @@ class ModrinthUpdater:
                                         elif isinstance(nm, dict):
                                             info['name'] = next(iter(nm.values()), None)
                                     if 'version' in data and not info.get('version'):
-                                        try:
+                                        with contextlib.suppress(Exception):
                                             info['version'] = str(data.get('version'))
-                                        except Exception:
-                                            pass
-                            except Exception:
-                                pass
                 for n in namelist:
                     if n.endswith('mcmod.info'):
-                        try:
+                        with contextlib.suppress(Exception):
                             raw = z.read(n).decode('utf-8')
                             data = json.loads(raw)
                             if isinstance(data, list) and data:
@@ -2039,14 +2004,10 @@ class ModrinthUpdater:
                                 if not info['name'] and 'name' in entry:
                                     info['name'] = entry.get('name')
                                 if not info.get('version') and 'version' in entry:
-                                    try:
+                                    with contextlib.suppress(Exception):
                                         info['version'] = str(entry.get('version'))
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
                     if n.endswith('mods.toml'):
-                        try:
+                        with contextlib.suppress(Exception):
                             raw = z.read(n).decode('utf-8')
                             for line in raw.splitlines():
                                 line = line.strip()
@@ -2063,10 +2024,6 @@ class ModrinthUpdater:
                                         val = parts[1].strip().strip('"')
                                         if len(val) < 64:
                                             info['version'] = val
-                        except Exception:
-                            pass
-        except Exception:
-            pass
         return info
 
     def _version_is_compatible(self, v: Dict, requested_game_version: Optional[str]) -> bool:
@@ -2198,8 +2155,6 @@ class ModrinthUpdater:
             if not hits:
                 return False, _qt_t("QT_UPD_NO_PROJECT", "No project found")
 
-        slug = None
-        versions = None
         best = None
         for h in hits:
             try:
@@ -2212,8 +2167,6 @@ class ModrinthUpdater:
                     continue
                 b = self.choose_best_version(v, loader, game_version, aggressive=aggressive)
                 if b:
-                    slug = hslug
-                    versions = v
                     best = b
                     break
             except Exception as e:
@@ -2236,8 +2189,6 @@ class ModrinthUpdater:
                         v = self.get_project_versions(hslug)
                         b = self.choose_best_version(v, loader, game_version, aggressive=aggressive)
                         if b:
-                            slug = hslug
-                            versions = v
                             best = b
                             break
                     except Exception as e:
@@ -2246,12 +2197,10 @@ class ModrinthUpdater:
                     break
         if not best:
             return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
-        try:
+        with contextlib.suppress(Exception):
             if not self._version_is_compatible(best, game_version):
                 self._log(f"[Modrinth] Selected version {best.get('version_number')} is not compatible with requested game version {game_version}; skipping")
                 return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
-        except Exception:
-            pass
         if not best:
             self._log(f"[Modrinth] No compatible version found for {name} (requested {game_version})")
             return False, _qt_t("QT_UPD_NO_COMPAT", "No compatible version found")
@@ -2266,11 +2215,9 @@ class ModrinthUpdater:
                 break
         if not chosen:
             chosen = files[0]
-        try:
+        with contextlib.suppress(Exception):
             self._log(f"[Modrinth] Chosen version: {best.get('version_number')} | game_versions={best.get('game_versions')} | loaders={best.get('loaders')}")
             self._log(f"[Modrinth] Chosen file: filename={chosen.get('filename')} | url={chosen.get('url')}")
-        except Exception:
-            pass
         download_url = chosen.get('url')
         if not download_url:
             return False, _qt_t("QT_UPD_NO_URL", "No file url")
@@ -2310,24 +2257,18 @@ class ModrinthUpdater:
                 self._log(f"[Modrinth] Skipping update for {local_jar.name}: already identical to remote file")
                 return False, _qt_t("QT_UPD_UP_TO_DATE", "Already up to date")
             bak = local_jar.with_suffix(local_jar.suffix + '.bak')
-            try:
+            with contextlib.suppress(Exception):
                 shutil.move(str(local_jar), str(bak))
-            except Exception:
-                pass
             try:
                 shutil.move(str(tmpfile), str(local_jar))
             except Exception as e:
-                try:
+                with contextlib.suppress(Exception):
                     if bak.exists():
                         shutil.move(str(bak), str(local_jar))
-                except Exception:
-                    pass
                 return False, _qt_t("QT_UPD_REPLACE_FAILED", "Failed to replace file: {error}").format(error=e)
-            try:
+            with contextlib.suppress(Exception):
                 if bak.exists():
                     bak.unlink()
-            except Exception:
-                pass
             return True, f"Updated to {best.get('version_number', '')}"
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -2464,15 +2405,13 @@ class ModrinthUpdater:
                 'game_versions': latest.get('game_versions', []),
                 'loaders': latest.get('loaders', []),
             }
-            try:
+            with contextlib.suppress(Exception):
                 cur_date = current.get('date_published') or ''
                 new_date = latest.get('date_published') or ''
                 if cur_date and new_date and new_date < cur_date:
                     downgrades[f.name] = info
                     results[f.name] = _qt_t("QT_UPD_OLDER", "Remote version older than local (skipped)")
                     continue
-            except Exception:
-                pass
             candidates[f.name] = info
         return {'candidates': candidates, 'downgrades': downgrades, 'results': results}
 
@@ -2499,21 +2438,17 @@ class ModrinthUpdater:
             if disabled:
                 target = target.with_name(target.name + '.disabled')
             bak = local.with_suffix(local.suffix + '.bak')
-            try:
+            with contextlib.suppress(Exception):
                 shutil.move(str(local), str(bak))
-            except Exception:
-                pass
             try:
                 shutil.move(str(tmpfile), str(target))
             except Exception as e:
                 if bak.exists():
                     shutil.move(str(bak), str(local))
                 return False, _qt_t("QT_UPD_REPLACE_FAILED", "Failed to replace file: {error}").format(error=e)
-            try:
+            with contextlib.suppress(Exception):
                 if bak.exists():
                     bak.unlink()
-            except Exception:
-                pass
             return True, f"Updated to {info.get('version_number', '')}"
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -2528,12 +2463,10 @@ class ModrinthUpdater:
         total = len(jars)
         for idx, jar in enumerate(sorted(jars), start=1):
             if stop_event is not None:
-                try:
+                with contextlib.suppress(Exception):
                     if getattr(stop_event, 'is_set', lambda: False)():
                         results['__aborted__'] = 'Aborted'
                         break
-                except Exception:
-                    pass
             try:
                 if progress:
                     progress(idx - 1, total, f"Checking {jar.name}...")
@@ -2601,12 +2534,10 @@ class InstanceManager:
                         latest_release = version.get("id")
                         break
             if not latest_release:
-                try:
+                with contextlib.suppress(Exception):
                     resp = _http_session.get("https://launchermeta.mojang.com/mc/game/version_manifest.json", timeout=5)
                     if resp.status_code == 200:
                         latest_release = resp.json().get("latest", {}).get("release")
-                except Exception:
-                    pass
             if not latest_release:
                 latest_release = "26.1.2"
             default_instance = MinecraftInstance(
@@ -3259,7 +3190,7 @@ def find_java_executable(java_major: int) -> Optional[str]:
     if java_home:
         java_bin = os.path.join(java_home, "bin", "java")
         if os.path.isfile(java_bin) and os.access(java_bin, os.X_OK):
-            try:
+            with contextlib.suppress(Exception):
                 result = subprocess.run([java_bin, "-version"], capture_output=True, text=True, timeout=5)
                 out = result.stderr or result.stdout
                 m = re.search(r'version "(\d+)', out)
@@ -3270,8 +3201,6 @@ def find_java_executable(java_major: int) -> Optional[str]:
                         detected = int(m2.group(1)) if m2 else 8
                     if detected == java_major:
                         return java_bin
-            except Exception:
-                pass
     return None
 
 def download_java_runtime(java_major: int, progress_callback=None) -> Optional[str]:
@@ -3362,7 +3291,7 @@ def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
             log_fn(f"[Java] Using Java {required} at: {found}")
         return found
     system_java = shutil.which("java") or "java"
-    try:
+    with contextlib.suppress(Exception):
         result = subprocess.run([system_java, "-version"], capture_output=True, text=True, timeout=5)
         out = result.stderr or result.stdout
         m = re.search(r'version "(\d+)', out)
@@ -3375,8 +3304,6 @@ def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
                 if log_fn:
                     log_fn(f"[Java] System Java {detected} satisfies requirement >= {required}")
                 return system_java
-    except Exception:
-        pass
     if log_fn:
         log_fn(f"[Java] Java {required} not found, downloading from Adoptium...")
     downloaded = download_java_runtime(required, progress_callback=log_fn and (lambda p, m: log_fn(m)))
@@ -3468,10 +3395,8 @@ def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
         log(f"[OptiFine] {proc.stdout.strip()[:400]}")
     if proc.returncode != 0:
         raise RuntimeError(f"OptiFine installer failed: {(proc.stderr or proc.stdout or '').strip()[:300]}")
-    try:
+    with contextlib.suppress(Exception):
         tmp_jar.unlink()
-    except Exception:
-        pass
     version_id = optifine_version_id(filename)
     vjson = Path(minecraft_directory) / "versions" / version_id / f"{version_id}.json"
     if not vjson.exists():
@@ -3517,13 +3442,11 @@ def get_ram_options():
 
 # I WANT TO ROB your ram
 def _get_system_ram_mb() -> int:
-    try:
+    with contextlib.suppress(Exception):
         with open('/proc/meminfo') as f:
             for line in f:
                 if line.startswith('MemTotal:'):
                     return int(line.split()[1]) // 1024
-    except Exception:
-        pass
     return 8192
 
 # prism I love you, but modrinth is a shit in 2026 on linux.
@@ -3575,7 +3498,6 @@ class LwjglManager:
             if self._index_cache and not force:
                 return list(self._index_cache)
         index_file = self.store_dir / "index.json"
-        versions = []
         try:
             r = _http_session.get(LWJGL_META_INDEX_URL, timeout=10)
             r.raise_for_status()
@@ -3678,7 +3600,7 @@ class LwjglManager:
         dest_dir.mkdir(parents=True, exist_ok=True)
         jars, natives_jars = [], []
         total = len(libs)
-        for idx, (name, url, sha1, is_native) in enumerate(libs, 1):
+        for idx, (_name, url, sha1, is_native) in enumerate(libs, 1):
             filename = url.rsplit("/", 1)[-1]
             target = dest_dir / filename
             ok = target.exists() and (not sha1 or self._sha1(target) == sha1)
@@ -3703,10 +3625,8 @@ class LwjglManager:
                 if not ok:
                     raise RuntimeError(f"Could not download LWJGL library {filename}")
             if progress_fn:
-                try:
+                with contextlib.suppress(Exception):
                     progress_fn(idx, total, filename)
-                except Exception:
-                    pass
             (natives_jars if is_native else jars).append(str(target))
         return {"version": version, "jars": jars, "natives_jars": natives_jars}
 
@@ -3805,14 +3725,12 @@ def _find_shared_library(names):
         for d in dirs:
             for n in names:
                 candidates.append(os.path.join(d, n))
-        try:
+        with contextlib.suppress(Exception):
             out = subprocess.run(["/sbin/ldconfig", "-p"], capture_output=True, text=True, timeout=5).stdout
             for line in out.splitlines():
                 for n in names:
                     if n in line and "=>" in line:
                         candidates.append(line.split("=>", 1)[1].strip())
-        except Exception:
-            pass
     elif system == "Darwin":
         for d in ["/opt/homebrew/lib", "/usr/local/lib", "/opt/local/lib"]:
             for n in names:
@@ -3859,10 +3777,8 @@ def resolve_lwjgl_override(instance, minecraft_directory, version_id, log_fn=Non
         LwjglManager.extract_natives(natives_jars, natives_dir)
         for lib in Path(custom_dir).iterdir():
             if lib.suffix.lower() in (".so", ".dll", ".dylib", ".jnilib"):
-                try:
+                with contextlib.suppress(Exception):
                     shutil.copy2(lib, natives_dir / lib.name)
-                except Exception:
-                    pass
         log(f"[LWJGL] Using custom LWJGL folder: {custom_dir}")
         return {"jars": jars, "natives_dir": str(natives_dir), "version": "custom"}
     mode = _instance_or_global(instance, "lwjgl_mode", LWJGL_MODE_AUTO)
@@ -3902,7 +3818,7 @@ def native_library_jvm_args(instance):
 
 def _detect_cursor_env():
     theme, size = "", ""
-    try:
+    with contextlib.suppress(Exception):
         kcm = Path.home() / ".config" / "kcminputrc"
         if kcm.exists():
             section = ""
@@ -3916,10 +3832,8 @@ def _detect_cursor_env():
                         theme = v.strip()
                     elif k.strip() == "cursorSize":
                         size = v.strip()
-    except Exception:
-        pass
     if not theme and shutil.which("gsettings"):
-        try:
+        with contextlib.suppress(Exception):
             out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "cursor-theme"],
                                  capture_output=True, text=True, timeout=3).stdout.strip().strip("'")
             if out:
@@ -3928,10 +3842,8 @@ def _detect_cursor_env():
                                  capture_output=True, text=True, timeout=3).stdout.strip()
             if out.isdigit():
                 size = out
-        except Exception:
-            pass
     if not theme:
-        try:
+        with contextlib.suppress(Exception):
             idx = Path.home() / ".icons" / "default" / "index.theme"
             if not idx.exists():
                 idx = Path.home() / ".local" / "share" / "icons" / "default" / "index.theme"
@@ -3940,8 +3852,6 @@ def _detect_cursor_env():
                     if line.strip().startswith("Inherits="):
                         theme = line.split("=", 1)[1].strip()
                         break
-        except Exception:
-            pass
     return theme, size
 
 # cmon use wayland already, it's 2026/27 not 2000
@@ -4105,12 +4015,10 @@ def _options_txt_set(path, updates):
 def _options_txt_get(path, key, default=None):
     if not path.exists():
         return default
-    try:
+    with contextlib.suppress(Exception):
         for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
             if line.startswith(key + ":"):
                 return line.split(":", 1)[1]
-    except Exception:
-        pass
     return default
 
 # sodium pls
@@ -4491,7 +4399,8 @@ def _pick_directory(**kwargs):
 
 def _levelname_from_level_dat(level_dat):
     try:
-        raw = gzip.open(level_dat, "rb").read()
+        with gzip.open(level_dat, "rb") as f:
+            raw = f.read()
         marker = b"\x08\x00\x09LevelName"
         idx = raw.find(marker)
         if idx < 0:
@@ -4505,7 +4414,8 @@ def _levelname_from_level_dat(level_dat):
 
 def _set_levelname_in_level_dat(level_dat, new_name):
     try:
-        raw = gzip.open(level_dat, "rb").read()
+        with gzip.open(level_dat, "rb") as f:
+            raw = f.read()
         marker = b"\x08\x00\x09LevelName"
         idx = raw.find(marker)
         if idx < 0:
@@ -4515,10 +4425,8 @@ def _set_levelname_in_level_dat(level_dat, new_name):
         encoded = new_name.encode("utf-8")
         patched = raw[:pos] + struct.pack(">H", len(encoded)) + encoded + raw[pos + 2 + length:]
         backup = Path(str(level_dat) + "_old")
-        try:
+        with contextlib.suppress(Exception):
             shutil.copy2(level_dat, backup)
-        except Exception:
-            pass
         with gzip.open(level_dat, "wb") as f:
             f.write(patched)
         return True
@@ -4541,12 +4449,10 @@ def list_instance_worlds(instance):
         if not level.exists():
             continue
         size = 0
-        try:
+        with contextlib.suppress(Exception):
             for f in d.rglob("*"):
                 if f.is_file():
                     size += f.stat().st_size
-        except Exception:
-            pass
         worlds.append({
             "folder": d.name,
             "path": d,
@@ -4655,10 +4561,8 @@ def export_instance_pack(instance, out_path, fmt, selected_relpaths, log_fn=None
                        any(rel[len(mc_root):].startswith(d + "/") for d in ("mods", "resourcepacks", "shaderpacks", "datapacks"))]
     sha1_map = {}
     for rel, p in hash_candidates:
-        try:
+        with contextlib.suppress(Exception):
             sha1_map[_sha1_file(p)] = (rel, p)
-        except Exception:
-            pass
     log(f"[Export] Looking up {len(sha1_map)} files on Modrinth")
     found = _modrinth_lookup_hashes(list(sha1_map.keys()))
     remote_files = []
@@ -4707,12 +4611,10 @@ def export_instance_pack(instance, out_path, fmt, selected_relpaths, log_fn=None
         zf.writestr("modrinth.index.json", json.dumps(index, indent=2, ensure_ascii=False))
         icon_file = instance.base_path / "icon.txt"
         if icon_file.exists():
-            try:
+            with contextlib.suppress(Exception):
                 icon_path = Path(icon_file.read_text(encoding="utf-8").strip())
                 if icon_path.exists():
                     zf.write(icon_path, "icon" + icon_path.suffix.lower())
-            except Exception:
-                pass
         total = len(files)
         for i, (rel, p) in enumerate(files, 1):
             if rel in remote_rels:
@@ -4917,7 +4819,7 @@ class ResourceShaderManager:
                 else:
                     failed_count += 1
             except Exception as e:
-                print("Error adding resource pack")
+                print(f"Error adding resource pack: {e}")
                 failed_count += 1
         if added_count > 0:
             self._notify_change()
@@ -5069,16 +4971,12 @@ HORIZON_CULL_MODES = ("off", "sync", "async")
 # when enabled
 def _horizon_enabled(launcher=None) -> bool:
     if launcher is not None and hasattr(launcher, "horizon_rust_support"):
-        try:
+        with contextlib.suppress(Exception):
             return bool(launcher.horizon_rust_support.get())
-        except Exception:
-            pass
     app = _QT_APP_REF[0] if "_QT_APP_REF" in globals() and _QT_APP_REF else None
     if app is not None and hasattr(app, "horizon_rust_support"):
-        try:
+        with contextlib.suppress(Exception):
             return bool(app.horizon_rust_support.get())
-        except Exception:
-            pass
     return bool(_adv_get("horizon_rust_support", False))
 
 
@@ -5091,15 +4989,13 @@ def _horizon_kv_read(path: Path) -> Dict[str, str]:
     out = {}
     if not path.exists():
         return out
-    try:
+    with contextlib.suppress(Exception):
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             s = line.strip()
             if not s or s.startswith("#") or ":" not in s:
                 continue
             k, v = s.split(":", 1)
             out[k.strip()] = v.strip()
-    except Exception:
-        pass
     return out
 
 
@@ -5364,12 +5260,10 @@ class HorizonManager:
         for base in (exe_path.parent, exe_path.parent.parent):
             cand = base / "research-lock.json"
             if cand.is_file():
-                try:
+                with contextlib.suppress(Exception):
                     data = json.loads(cand.read_text(encoding="utf-8"))
                     if isinstance(data, dict):
                         return data
-                except Exception:
-                    pass
         return {}
 
     # launcher api
@@ -5383,7 +5277,7 @@ class HorizonManager:
         
         if key in self._launch_api_cache:
             return dict(self._launch_api_cache[key])
-        try:
+        with contextlib.suppress(Exception):
             res = subprocess.run([str(exe_path), "--launch-api"], capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip().startswith("{"):
                 data = json.loads(res.stdout.strip())
@@ -5391,13 +5285,10 @@ class HorizonManager:
                     data["has_launch_api"] = True
                     self._launch_api_cache[key] = data
                     return dict(data)
-        except Exception:
-            pass
         lock = self._read_research_lock(exe_path)
         mc_info = lock.get("minecraft") if isinstance(lock.get("minecraft"), dict) else {}
         mc_ver = str(mc_info.get("version") or HORIZON_DEFAULT_MC)
         java_major = int(mc_info.get("java_major") or get_required_java_version(mc_ver))
-        opts = []
         try:
             hres = subprocess.run([str(exe_path), "--help"], capture_output=True, text=True, timeout=15)
             htext = (hres.stdout or "") + "\n" + (hres.stderr or "")
@@ -5474,15 +5365,13 @@ class HorizonManager:
 
     # tags
     def default_build_tag(self, force: bool = False) -> str:
-        try:
+        with contextlib.suppress(Exception):
             rels = self.fetch_releases(force=force)
             for rel in rels:
                 if not rel["prerelease"] and not rel["tag"].startswith("nightly"):
                     return rel["tag"]
             if rels:
                 return rels[0]["tag"]
-        except Exception:
-            pass
         installed = self.list_installed_builds()
         for b in installed:
             if not b.startswith("nightly"):
@@ -5492,12 +5381,10 @@ class HorizonManager:
     # tagss that may be or not available
     def available_build_tags(self, force: bool = False) -> List[str]:
         tags = []
-        try:
+        with contextlib.suppress(Exception):
             for rel in self.fetch_releases(force=force):
                 if rel["tag"] not in tags:
                     tags.append(rel["tag"])
-        except Exception:
-            pass
         for inst_tag in self.list_installed_builds():
             if inst_tag not in tags:
                 tags.append(inst_tag)
@@ -5616,10 +5503,8 @@ class HorizonManager:
                 for bname in ("horizon-client", "horizon-prepare", "horizon-server", "horizon-ctl"):
                     bpath = self._find_binary_in_dir(dest_dir, bname)
                     if bpath:
-                        try:
+                        with contextlib.suppress(Exception):
                             bpath.chmod(bpath.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                        except Exception:
-                            pass
 
             if progress_fn:
                 progress_fn(100, f"Installed Horizon {rel['tag']}")
@@ -5656,12 +5541,10 @@ class HorizonManager:
     def find_local_minecraft_dir(self, mc_version: str, accepted_manifest_sha1s=None) -> Optional[Path]:
         candidates = [self.mojang_dir, Path.home() / ".minecraft"]
 
-        try:
+        with contextlib.suppress(Exception):
             for inst in get_instance_manager().instances.values():
                 if not inst.is_horizon():
                     candidates.append(inst.minecraft_dir)
-        except Exception:
-            pass
         fallback = None
         for root in candidates:
             vdir = root / "versions" / mc_version
@@ -5669,11 +5552,9 @@ class HorizonManager:
             vjar = vdir / f"{mc_version}.jar"
             if vjson.is_file() and vjar.is_file() and (root / "libraries").is_dir() and (root / "assets").is_dir():
                 if accepted_manifest_sha1s:
-                    try:
+                    with contextlib.suppress(Exception):
                         if _sha1_file(vjson).lower() in accepted_manifest_sha1s:
                             return root
-                    except Exception:
-                        pass
                 if fallback is None:
                     fallback = root
         return fallback
@@ -5697,11 +5578,9 @@ class HorizonManager:
 
     def _ensure_symlink_or_copy(self, src: Path, dst: Path):
         if dst.is_symlink():
-            try:
+            with contextlib.suppress(Exception):
                 if dst.resolve() == src.resolve():
                     return
-            except Exception:
-                pass
             dst.unlink()
         elif dst.exists():
             return
@@ -5882,7 +5761,7 @@ class HorizonManager:
                     if not line:
                         continue
                     if line.startswith("{") and line.endswith("}"):
-                        try:
+                        with contextlib.suppress(Exception):
                             obj = json.loads(line)
                             if "message" in obj and log_fn:
                                 log_fn(f"[Horizon/Prepare] {obj['message']}")
@@ -5895,8 +5774,6 @@ class HorizonManager:
                                 if log_fn:
                                     log_fn(f"[Horizon/Prepare] ERROR: {last_error}")
                             continue
-                        except Exception:
-                            pass
                     if log_fn:
                         log_fn(f"[Horizon/Prepare] {line}")
                 proc.wait()
@@ -6099,10 +5976,8 @@ class HorizonManager:
                 launcher.instance_manager.set_selected_instance(inst.instance_id)
                 return True, f"Installed {installed_mods} Horizon mod(s).", inst.name
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     launcher.instance_manager.delete_instance(inst.instance_id)
-                except Exception:
-                    pass
                 raise
 
 
@@ -6457,10 +6332,8 @@ class DiscordRPCManager:
                     raise ConnectionError(reply.get("data", {}).get("message", "handshake rejected"))
                 self.connected = True
                 if self.on_connected:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.on_connected()
-                    except Exception:
-                        pass
                 if hasattr(self.sock, "settimeout"):
                     self.sock.settimeout(0.5)
                 while not self.stop_event.is_set():
@@ -6476,10 +6349,8 @@ class DiscordRPCManager:
                 print(f"[Discord] RPC connection failed: {e}")
             finally:
                 self.connected = False
-                try:
+                with contextlib.suppress(Exception):
                     self.sock.close()
-                except Exception:
-                    pass
                 self.sock = None
         self.thread = threading.Thread(target=_thread_main, name="DiscordRPC", daemon=True)
         self.thread.start()
@@ -6488,10 +6359,8 @@ class DiscordRPCManager:
         if not self.connected or self.sock is None:
             return
         payload = {"cmd": "SET_ACTIVITY", "args": {"pid": os.getpid(), "activity": activity}, "nonce": str(uuid_module.uuid4())}
-        try:
+        with contextlib.suppress(Exception):
             self._send(self.OP_FRAME, payload)
-        except Exception:
-            pass
 
     def update(self, state=None, details=None, start=None, end=None, large_image=None, large_text=None,
                small_image=None, small_text=None, buttons=None, **_):
@@ -6514,22 +6383,18 @@ class DiscordRPCManager:
         self._set_activity(None)
 
     def stop(self):
-        try:
+        with contextlib.suppress(Exception):
             self.clear()
             self.stop_event.set()
             if self.thread:
                 self.thread.join(timeout=3)
-        except Exception:
-            pass
 _APP_REF = None
 def _atexit_cleanup():
-    try:
+    with contextlib.suppress(Exception):
         if _APP_REF is not None:
             app = _APP_REF()
             if app:
                 app._stop_discord_rpc()
-    except Exception:
-        pass
 atexit.register(_atexit_cleanup)
 PROFILE_FILENAME = "profiles.json"
 CLIENT_ID = "00000000402B5328"
@@ -6540,10 +6405,10 @@ _TOKEN_ENCRYPTION_VERSION = "v2"
 def _get_machine_key():
     try:
         machine_id = Path('/etc/machine-id').read_text().strip()
-    except:
+    except Exception:
         try:
             machine_id = platform.node() + os.getlogin()
-        except:
+        except Exception:
             machine_id = str(Path.home())
     salt = f"oranglauncher-{_TOKEN_ENCRYPTION_VERSION}-{platform.system()}-{machine_id}".encode()
 
@@ -6842,10 +6707,8 @@ def terminal_launch_game(instance, profile, ram="4G"):
         print(f"[Launcher] Installing Minecraft {version}...")
         minecraft_launcher_lib.install.install_minecraft_version(version, minecraft_directory)
         print(f"[Launcher] Starting Minecraft...")
-        try:
+        with contextlib.suppress(Exception):
             apply_video_options(instance)
-        except Exception:
-            pass
         command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
         command = strip_server_blocklist(command, instance, instance.version, log_fn=print)
         command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
@@ -6972,11 +6835,9 @@ def _register_mrpack_association():
         system_desktop = _system_desktop_file()
         if system_desktop is not None:
             if desktop_file.exists():
-                try:
+                with contextlib.suppress(Exception):
                     desktop_file.unlink()
                     subprocess.run(["update-desktop-database", str(apps_dir)], check=False, capture_output=True)
-                except Exception:
-                    pass
         else:
             icon_path = find_resource("oranglauncher/images/orange.png")
             desktop = (
@@ -7045,12 +6906,10 @@ def _qt_is_main_thread():
 
 
 def _trim_memory():
-    try:
+    with contextlib.suppress(Exception):
         gc.collect()
         if platform.system() == "Linux":
             ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:
-        pass
 
 
 class _QtInvoker(QObject):
@@ -7402,10 +7261,8 @@ def _ms_device_code_start():
 
 
 def _ms_log(msg):
-    try:
+    with contextlib.suppress(Exception):
         print(f"[Accounts] {msg}", flush=True)
-    except Exception:
-        pass
 
 
 def _ms_device_code_poll(device_code):
@@ -7439,10 +7296,8 @@ def _ms_xbox_authenticate(microsoft_token):
     for ticket in (microsoft_token, f"t={microsoft_token}", f"d={microsoft_token}"):
         r = requests.post("https://user.auth.xboxlive.com/user/authenticate", json={"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ticket}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}, timeout=30)
         if r.ok:
-            try:
+            with contextlib.suppress(Exception):
                 return r.json()["Token"]
-            except Exception:
-                pass
         last = r
     raise Exception("Failed to get Xbox Live token: " + (last.text if last is not None else "?"))
 
@@ -7570,10 +7425,8 @@ class QtMicrosoftLoginDialog(QtWidgets.QDialog):
             self._device_started = time.time()
             _ms_log(f"device code {data.get('user_code')} issued, polling every {data.get('interval', 5)}s")
             self.code_label.setText(data.get("user_code", "?"))
-            try:
+            with contextlib.suppress(Exception):
                 QtWidgets.QApplication.clipboard().setText(data.get("user_code", ""))
-            except Exception:
-                pass
             self.device_status.setText(_qt_t("QT_MS_DEVICE_WAITING", "Waiting for you to sign in..."))
             self._open_device_browser()
             self._schedule_poll(token, int(data.get("interval", 5)))
@@ -7656,13 +7509,11 @@ class QtMicrosoftLoginDialog(QtWidgets.QDialog):
 
     def _drop_view(self):
         if self.view is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.view.stop()
                 self.view.setPage(None)
                 self.web_host.removeWidget(self.view)
                 self.view.deleteLater()
-            except Exception:
-                pass
             self.view = None
 
     def _handle_nav(self, text):
@@ -7780,12 +7631,10 @@ def _read_kdeglobals():
 
 
 def _kde_rgb(value, fallback):
-    try:
+    with contextlib.suppress(Exception):
         parts = [int(x) for x in value.split(",")[:3]]
         if len(parts) == 3:
             return "#%02x%02x%02x" % tuple(max(0, min(255, p)) for p in parts)
-    except Exception:
-        pass
     return fallback
 
 
@@ -8134,14 +7983,12 @@ class QtTheme:
         return self._widget_stylesheet() + self._object_stylesheet()
 
     def _plasma_font(self):
-        try:
+        with contextlib.suppress(Exception):
             raw = _read_kdeglobals().get("General", {}).get("font", "")
             if raw:
                 font = QtGui.QFont()
                 if font.fromString(raw):
                     return font
-        except Exception:
-            pass
         return None
 
     def apply(self, app):
@@ -8654,15 +8501,13 @@ class QtNewsBrowser(QtWidgets.QTextBrowser):
         if key in self._resources:
             return self._resources[key]
         absolute = urllib.parse.urljoin(self.base_url, key)
-        try:
+        with contextlib.suppress(Exception):
             data = _cached_image_get(absolute)
             img = QtGui.QImage()
             img.loadFromData(data)
             if not img.isNull():
                 self._resources[key] = img
                 return img
-        except Exception:
-            pass
         return super().loadResource(rtype, url)
 
     def paintEvent(self, event):
@@ -9187,11 +9032,9 @@ class QtInstanceCard(QtWidgets.QFrame):
         top.addLayout(col, 1)
         lay.addLayout(top)
         meta = []
-        try:
+        with contextlib.suppress(Exception):
             meta.append(_qt_t("QT_MODS_COUNT", "{n} mods").format(n=instance.get_mod_count()))
             meta.append(_qt_t("QT_WORLDS_COUNT", "{n} worlds").format(n=instance.get_saves_count()))
-        except Exception:
-            pass
         if instance.play_time:
             h, rem = divmod(int(instance.play_time), 3600)
             meta.append(_qt_t("QT_PLAYED", "{h}h {m}m played").format(h=h, m=rem // 60))
@@ -9618,10 +9461,8 @@ class QtInstancesPage(QtWidgets.QWidget):
             for extra in ("icon.png", "icon.txt", "modpack.json"):
                 src = source.base_path / extra
                 if src.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         shutil.copy2(src, dup.base_path / extra)
-                    except Exception:
-                        pass
             icon_txt = dup.base_path / "icon.txt"
             if icon_txt.exists() and (dup.base_path / "icon.png").exists():
                 icon_txt.write_text(str(dup.base_path / "icon.png"), encoding="utf-8")
@@ -9687,7 +9528,7 @@ class QtInstancesPage(QtWidgets.QWidget):
         if low.endswith((ORANGPACK_EXT, ".mrpack")):
             self.launcher._do_import_mrpack_path(path)
             return
-        try:
+        with contextlib.suppress(Exception):
             with zipfile.ZipFile(path, "r") as zf:
                 names = set(zf.namelist())
             if _horizon_enabled(self.launcher) and "horizon-modpack.toml" in names:
@@ -9699,8 +9540,6 @@ class QtInstancesPage(QtWidgets.QWidget):
             if "instance.json" not in names and "manifest.json" in names:
                 self.launcher._do_import_curseforge_path(path)
                 return
-        except Exception:
-            pass
         self._import_instance_zip(path)
 
     def _import_instance_zip(self, path):
@@ -9754,7 +9593,7 @@ class QtInstancesPage(QtWidgets.QWidget):
         lay.setSpacing(10)
         lay.addWidget(_qt_label(_qt_t("QT_IMPORT_KIND_QUESTION", "What do you want to import?"), "h3"))
         chosen = {}
-        for key, icon, title, desc, pattern, handler in kinds:
+        for key, icon, title, desc, _pattern, _handler in kinds:
             row = QtWidgets.QHBoxLayout()
             btn = _qt_button(title, lambda k=key: (chosen.update(kind=k), dlg.accept()), icon=icon, launcher=L)
             btn.setMinimumWidth(210)
@@ -9767,17 +9606,15 @@ class QtInstancesPage(QtWidgets.QWidget):
         lay.addLayout(cancel)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
-        key, icon, title, desc, pattern, handler = next(k for k in kinds if k[0] == chosen.get("kind"))
+        _key, _icon, title, _desc, pattern, handler = next(k for k in kinds if k[0] == chosen.get("kind"))
         path = _pick_open_file(title=title, filetypes=[(title, pattern), (_qt_t("QT_FT_ALL", "All files"), "*.*")])
         if path:
             handler(path)
 _MOD_META_CACHE = {}
 
 def _toml_loads_lenient(text):
-    try:
+    with contextlib.suppress(Exception):
         return tomllib.loads(text)
-    except Exception:
-        pass
     mods = []
     current = None
     for line in text.splitlines():
@@ -9806,12 +9643,10 @@ def _toml_loads_lenient(text):
 
 
 def _manifest_value(zf, key):
-    try:
+    with contextlib.suppress(Exception):
         for line in zf.read("META-INF/MANIFEST.MF").decode("utf-8", "replace").splitlines():
             if line.lower().startswith(key.lower() + ":"):
                 return line.split(":", 1)[1].strip()
-    except Exception:
-        pass
     return ""
 
 def read_mod_metadata(path):
@@ -10094,11 +9929,9 @@ class QtModsPanel(QtWidgets.QWidget):
             elif meta.get("loader"):
                 parts.append(meta["loader"])
             parts.append(p.name)
-            try:
+            with contextlib.suppress(Exception):
                 if p.is_file():
                     parts.append(_human_size(p.stat().st_size))
-            except Exception:
-                pass
             text = "  ·  ".join(parts)
             if meta.get("description"):
                 text += "\n" + meta["description"][:300]
@@ -10271,10 +10104,8 @@ class QtModsPanel(QtWidgets.QWidget):
                         skipped += 1
                         continue
                     bak = p.with_name(p.name + ".bak")
-                    try:
+                    with contextlib.suppress(Exception):
                         shutil.copy2(p, bak)
-                    except Exception:
-                        pass
                     hm.download_and_verify_content(proj, latest, inst, index_data=idx)
                     updated += 1
                 return updated, skipped
@@ -10307,7 +10138,7 @@ class QtPackUpdateDialog(QtWidgets.QDialog):
         self.setWindowTitle(title)
         self.resize(640, 460)
         self.cancel_event = threading.Event()
-        self.updater = ModrinthUpdater(logger=lambda m: launcher._safe_append_log(m))
+        self.updater = ModrinthUpdater(logger=launcher._safe_append_log)
         lay = QtWidgets.QVBoxLayout(self)
         self.head = _qt_label(_qt_t("QT_CHECKING_ON_MODRINTH", "Checking {name} on Modrinth...").format(name=self.directory.name), "h2")
         lay.addWidget(self.head)
@@ -10590,12 +10421,10 @@ class QtServersWorldsPanel(QtWidgets.QWidget):
                         self.table.item(r, 2).setToolTip(_strip_mc_formatting(result["motd"]))
                     fav = result.get("favicon")
                     if fav:
-                        try:
+                        with contextlib.suppress(Exception):
                             pix = _qt_pixmap_from_bytes(base64.b64decode(fav.split(",")[-1]), (32, 32))
                             if pix:
                                 self.table.item(r, 0).setIcon(QtGui.QIcon(pix))
-                        except Exception:
-                            pass
                 else:
                     status.setText(_qt_t("QT_OFFLINE", "Offline"))
                     status.setForeground(QtGui.QColor("#f25c5c"))
@@ -11607,11 +11436,9 @@ class QtInstanceEditor(QtWidgets.QWidget):
                 for rel in meta.get("managed_files", []) or []:
                     if rel.startswith("mods/"):
                         target = inst.minecraft_dir / rel
-                        try:
+                        with contextlib.suppress(Exception):
                             if target.exists():
                                 target.unlink()
-                        except Exception:
-                            pass
             importer = ModrinthPackImporter(self.launcher)
             return importer.apply_pack_to_instance(pack_path, inst)
 
@@ -12083,9 +11910,9 @@ class QtInstanceEditor(QtWidgets.QWidget):
         self.vr_status = _qt_label("", "hint", wrap=True)
         card.add(self.vr_status)
         self.vr_adv_toggle = QtWidgets.QCheckBox(_qt_t("QT_LWJGL_ADVANCED", "Show advanced native library options"))
-        self.vr_adv_toggle.toggled.connect(lambda on: self.vr_adv_box.setVisible(on))
         card.add(self.vr_adv_toggle)
         self.vr_adv_box = QtWidgets.QWidget()
+        self.vr_adv_toggle.toggled.connect(self.vr_adv_box.setVisible)
         adv = QtWidgets.QVBoxLayout(self.vr_adv_box)
         adv.setContentsMargins(0, 0, 0, 0)
         adv.setSpacing(6)
@@ -12378,7 +12205,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
 
         def work():
             hm = get_horizon_manager()
-            dest_dir = hm.install_build(build, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+            dest_dir = hm.install_build(build, log_fn=self.launcher._safe_append_log, progress_fn=self.launcher._submit_progress_update)
             resolved_tag = dest_dir.name
             if resolved_tag != inst.loader_version:
                 inst.loader_version = resolved_tag
@@ -12416,12 +12243,12 @@ class QtInstanceEditor(QtWidgets.QWidget):
             custom_prep = str(inst.opt("horizon_prepare_path", "") or "")
             resolved_build = build
             if hm.prepare_executable(resolved_build, custom_prep) is None:
-                dest_dir = hm.install_build(resolved_build, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+                dest_dir = hm.install_build(resolved_build, log_fn=self.launcher._safe_append_log, progress_fn=self.launcher._submit_progress_update)
                 resolved_build = dest_dir.name
                 if resolved_build != inst.loader_version:
                     inst.loader_version = resolved_build
                     self.instance_manager.save_instances()
-            out_dir, api = hm.ensure_prepared(resolved_build, custom_prepare=custom_prep, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m), force=False)
+            out_dir, api = hm.ensure_prepared(resolved_build, custom_prepare=custom_prep, log_fn=self.launcher._safe_append_log, progress_fn=self.launcher._submit_progress_update, force=False)
             if api.get("minecraft"):
                 inst.version = str(api["minecraft"])
                 self.instance_manager.save_instances()
@@ -12916,10 +12743,8 @@ class QtContentPage(QtWidgets.QWidget):
             def done(data, lbl=icon):
                 pix = _qt_pixmap_from_bytes(data, (56, 56))
                 if pix is not None:
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         lbl.setPixmap(pix)
-                    except RuntimeError:
-                        pass
             _qt_run_bg(lambda u=url: _cached_image_get(u), done, lambda e: None)
         col = QtWidgets.QVBoxLayout()
         col.setSpacing(2)
@@ -13062,10 +12887,8 @@ class QtContentPage(QtWidgets.QWidget):
             def done(data, lbl=icon):
                 pix = _qt_pixmap_from_bytes(data, (56, 56))
                 if pix is not None:
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         lbl.setPixmap(pix)
-                    except RuntimeError:
-                        pass
             _qt_run_bg(lambda: _cached_image_get(url), done, lambda e: None)
         col = QtWidgets.QVBoxLayout()
         col.setSpacing(2)
@@ -13181,10 +13004,8 @@ class QtContentPage(QtWidgets.QWidget):
                         if chunk:
                             out.write(chunk)
             if self.content_type in ("resourcepack", "shader"):
-                try:
+                with contextlib.suppress(Exception):
                     self.launcher._apply_sharing_for_instance(instance)
-                except Exception:
-                    pass
             return dest_path
 
         def done(dest_path):
@@ -13218,10 +13039,8 @@ class QtContentPage(QtWidgets.QWidget):
                             out.write(chunk)
             _qt_later(lambda: self.status.setText(_tr(self.launcher, "CONTENT_INSTALLING_STATUS", "Installing {title}...").format(title=title)))
             result = import_modpack(str(dest_path), self.launcher)
-            try:
+            with contextlib.suppress(Exception):
                 dest_path.unlink()
-            except Exception:
-                pass
             return result
 
         def done(result):
@@ -13551,10 +13370,8 @@ class QtSettingsPage(QtWidgets.QWidget):
         def work():
             skin, slim, cape, capes = _fetch_skin_texture(acc)
             for c in capes:
-                try:
+                with contextlib.suppress(Exception):
                     c["img"] = _qimage_rgba(_cached_image_get(c["url"]))
-                except Exception:
-                    pass
             return skin, slim, cape, capes
 
         def done(result):
@@ -13794,7 +13611,7 @@ class QtSettingsPage(QtWidgets.QWidget):
         def work():
             hm = get_horizon_manager()
             tag = hm.default_build_tag(force=True) if requested_tag == "latest" else requested_tag
-            hm.install_build(tag, log_fn=self.launcher._safe_append_log, progress_fn=lambda p, m: self.launcher._submit_progress_update(p, m))
+            hm.install_build(tag, log_fn=self.launcher._safe_append_log, progress_fn=self.launcher._submit_progress_update)
             return tag
 
         def done(tag):
@@ -14111,17 +13928,13 @@ class QtWelcomeWizard(QtWidgets.QDialog):
         mc = self.p_version.currentText().strip()
 
         def done(versions):
-            try:
+            with contextlib.suppress(RuntimeError):
                 self.p_loader_version.clear()
                 self.p_loader_version.addItems(versions or ["Latest"])
-            except RuntimeError:
-                pass
         def fail(e):
-            try:
+            with contextlib.suppress(RuntimeError):
                 self.p_loader_version.clear()
                 messagebox.showerror(_qt_t("QT_LOADER_VERSION", "Loader version"), _qt_t("QT_LOADER_FETCH_FAIL", "Could not load {loader} versions: {error}").format(loader=loader, error=e), parent=self)
-            except RuntimeError:
-                pass
         _qt_run_bg(lambda: self.launcher.fetch_loader_versions(loader, mc), done, fail)
 
     def _skip_profile(self):
@@ -14282,13 +14095,11 @@ class LauncherCore:
                         selected_profile = updated
                 except Exception as e:
                     err_msg = str(e)
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         self.after(0, lambda m=err_msg: (
                             messagebox.showerror(self._t("MS_AUTH_ERROR"), self._t("MS_AUTH_FAIL") + f"\n{m}"),
                             self._restore_ui()
                         ))
-                    except RuntimeError:
-                        pass
                     return
             client_exe = hm.client_executable(build_tag, custom_client)
             if client_exe is None:
@@ -14362,10 +14173,8 @@ class LauncherCore:
                     elif "--session-file" in supported_opts:
                         fd, tmp_s = tempfile.mkstemp(prefix="horizon_session_", suffix=".json")
                         session_tmp_file = Path(tmp_s)
-                        try:
+                        with contextlib.suppress(Exception):
                             os.chmod(tmp_s, 0o600)
-                        except Exception:
-                            pass
                         with os.fdopen(fd, "w", encoding="utf-8") as sf:
                             sf.write(json.dumps(session_obj))
                         cmd.extend(["--session-file", tmp_s])
@@ -14406,32 +14215,33 @@ class LauncherCore:
                     self.mc_process.stdin.close()
                 except Exception as e:
                     self._safe_append_log(f"[Horizon] Failed writing session to stdin: {e}")
-            game_log = None
             try:
                 game_log_path = _launcher_log_dir() / f"game_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
                 game_log = open(game_log_path, "w", encoding="utf-8", errors="replace")
-                game_log.write(f"# Horizon {current_instance.version} ({build_tag}) in {game_dir}\n")
-                self._safe_append_log(f"[Horizon] Game output is saved to {game_log_path}")
             except Exception:
                 game_log = None
-            for line in self.mc_process.stdout:
-                if self.cancel_requested:
-                    self.mc_process.terminate()
-                    break
-                self._safe_append_log(line.rstrip())
+            try:
                 if game_log is not None:
-                    try:
-                        game_log.write(line)
-                    except Exception:
-                        pass
-            self.mc_process.wait()
-            exit_code = self.mc_process.returncode
-            if game_log is not None:
-                try:
-                    game_log.write(f"# exit code {exit_code}\n")
-                    game_log.close()
-                except Exception:
-                    pass
+                    with contextlib.suppress(Exception):
+                        game_log.write(f"# Horizon {current_instance.version} ({build_tag}) in {game_dir}\n")
+                    self._safe_append_log(f"[Horizon] Game output is saved to {game_log_path}")
+                for line in self.mc_process.stdout:
+                    if self.cancel_requested:
+                        self.mc_process.terminate()
+                        break
+                    self._safe_append_log(line.rstrip())
+                    if game_log is not None:
+                        with contextlib.suppress(Exception):
+                            game_log.write(line)
+                self.mc_process.wait()
+                exit_code = self.mc_process.returncode
+                if game_log is not None:
+                    with contextlib.suppress(Exception):
+                        game_log.write(f"# exit code {exit_code}\n")
+            finally:
+                if game_log is not None:
+                    with contextlib.suppress(Exception):
+                        game_log.close()
             if current_instance.opt("post_exit_cmd"):
                 hook_env["INST_EXIT_CODE"] = str(exit_code)
                 self._safe_append_log("[Hook] Running post-exit command...")
@@ -14440,10 +14250,8 @@ class LauncherCore:
             if elapsed > 5:
                 current_instance.play_time = (current_instance.play_time or 0) + elapsed
                 current_instance.last_played = datetime.now().isoformat()
-                try:
+                with contextlib.suppress(Exception):
                     self.instance_manager.save_instances()
-                except Exception:
-                    pass
             self._safe_append_log(f"[Horizon] Exited with code {exit_code}")
             self._apply_sharing_for_instance(current_instance)
             if exit_code != 0:
@@ -14452,16 +14260,12 @@ class LauncherCore:
             self._safe_append_log(f"[ERROR] Horizon launch failed: {e}")
             self._safe_append_log(traceback.format_exc())
             err_text = str(e)
-            try:
+            with contextlib.suppress(RuntimeError):
                 self.after(0, lambda m=err_text: messagebox.showerror(_qt_t("QT_HORIZON_CARD", "Horizon (Rust)"), m))
-            except RuntimeError:
-                pass
         finally:
             if session_tmp_file is not None:
-                try:
+                with contextlib.suppress(Exception):
                     session_tmp_file.unlink(missing_ok=True)
-                except Exception:
-                    pass
             self.after(0, self._restore_ui)
 
     def _run_launcher_thread(self, current_instance, launch_name, version, mod_loader, ram, selected_profile, username, uuid, quick_play_server=None):
@@ -14476,13 +14280,11 @@ class LauncherCore:
                         selected_profile = updated
                 except Exception as e:
                     err_msg = str(e)
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         self.after(0, lambda m=err_msg: (
                             messagebox.showerror(self._t("MS_AUTH_ERROR"), self._t("MS_AUTH_FAIL") + f"\n{m}"),
                             self._restore_ui()
                         ))
-                    except RuntimeError:
-                        pass
                     return
             access_token = selected_profile.get("minecraft_token", "0")
             if current_instance:
@@ -14642,11 +14444,9 @@ class LauncherCore:
                 def install_set_max(maximum):
                     _install_max[0] = max(maximum, 1)
                 def install_progress(current):
-                    try:
+                    with contextlib.suppress(Exception):
                         percent = min(int((current / _install_max[0]) * 100), 100)
                         self._submit_progress_update(percent, _qt_t("QT_INSTALLING_PCT", "Installing {name}... {percent}%").format(name=version, percent=percent))
-                    except:
-                        pass
                 minecraft_launcher_lib.install.install_minecraft_version(
                     version,
                     minecraft_directory,
@@ -14658,10 +14458,8 @@ class LauncherCore:
             except Exception as e:
                 self._safe_append_log(f"[Launcher] options.txt update skipped: {e}")
             java_major = 0
-            try:
+            with contextlib.suppress(Exception):
                 java_major = get_required_java_version(current_instance.version if current_instance else version)
-            except Exception:
-                pass
             options['jvmArguments'] = options['jvmArguments'] + legacy_jvm_args(current_instance, current_instance.version if current_instance else version, java_major)
             self._safe_append_log(f"[Launcher] Starting Minecraft...")
             command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
@@ -14712,32 +14510,33 @@ class LauncherCore:
                 bufsize=1,
                 env=launch_env
             )
-            game_log = None
             try:
                 game_log_path = _launcher_log_dir() / f"game_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
                 game_log = open(game_log_path, "w", encoding="utf-8", errors="replace")
-                game_log.write(f"# {version} ({mod_loader}) in {minecraft_directory}\n")
-                self._safe_append_log(f"[Launcher] Game output is saved to {game_log_path}")
             except Exception:
                 game_log = None
-            for line in self.mc_process.stdout:
-                if self.cancel_requested:
-                    self.mc_process.terminate()
-                    break
-                self._safe_append_log(line.rstrip())
+            try:
                 if game_log is not None:
-                    try:
-                        game_log.write(line)
-                    except Exception:
-                        pass
-            self.mc_process.wait()
-            exit_code = self.mc_process.returncode
-            if game_log is not None:
-                try:
-                    game_log.write(f"# exit code {exit_code}\n")
-                    game_log.close()
-                except Exception:
-                    pass
+                    with contextlib.suppress(Exception):
+                        game_log.write(f"# {version} ({mod_loader}) in {minecraft_directory}\n")
+                    self._safe_append_log(f"[Launcher] Game output is saved to {game_log_path}")
+                for line in self.mc_process.stdout:
+                    if self.cancel_requested:
+                        self.mc_process.terminate()
+                        break
+                    self._safe_append_log(line.rstrip())
+                    if game_log is not None:
+                        with contextlib.suppress(Exception):
+                            game_log.write(line)
+                self.mc_process.wait()
+                exit_code = self.mc_process.returncode
+                if game_log is not None:
+                    with contextlib.suppress(Exception):
+                        game_log.write(f"# exit code {exit_code}\n")
+            finally:
+                if game_log is not None:
+                    with contextlib.suppress(Exception):
+                        game_log.close()
             if current_instance is not None and current_instance.opt("post_exit_cmd"):
                 hook_env["INST_EXIT_CODE"] = str(exit_code)
                 self._safe_append_log("[Hook] Running post-exit command...")
@@ -14746,10 +14545,8 @@ class LauncherCore:
             if current_instance and elapsed > 5:
                 current_instance.play_time = (current_instance.play_time or 0) + elapsed
                 current_instance.last_played = datetime.now().isoformat()
-                try:
+                with contextlib.suppress(Exception):
                     self.instance_manager.save_instances()
-                except Exception:
-                    pass
             self._safe_append_log(f"[Launcher] Minecraft exited with code {exit_code}")
             if current_instance is not None:
                 self._apply_sharing_for_instance(current_instance)
@@ -14852,11 +14649,9 @@ class LauncherCore:
             finally:
                 self._submit_progress_update(100, _qt_t("QT_INSTALL_COMPLETE", "Installation complete!"))
                 if hasattr(self, '_progress_queue') and self._progress_queue is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         while True:
                             self._progress_queue.get_nowait()
-                    except Exception:
-                        pass
                 self.after(0, lambda: self._apply_progress_update(0, ""))
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -14887,11 +14682,9 @@ class LauncherCore:
                             else:
                                 shared_target.mkdir(parents=True, exist_ok=True)
                     if inst_path.is_symlink():
-                        try:
+                        with contextlib.suppress(Exception):
                             if inst_path.resolve() == shared_target.resolve():
                                 continue
-                        except Exception:
-                            pass
                         inst_path.unlink()
                     elif inst_path.exists():
                         if is_file:
@@ -14941,19 +14734,16 @@ class LauncherCore:
     def _progress_callback(self, current, total, message=None):
         if self.cancel_requested:
             raise Exception("Operation cancelled by user.")
-        try:
+        with contextlib.suppress(Exception):
             if isinstance(current, dict):
                 status = current
                 current = status.get("task", 0)
                 total = status.get("total", 100)
                 message = status.get("status", message)
-        except Exception:
-            pass
         total = max(total or 1, 1)
         percent = max(0.0, min(100.0, (current / total) * 100.0))
         files_done = None
         files_total = None
-        base_msg = message
         if isinstance(message, dict):
             base_msg = message.get("text") or "Preparing..."
             files_done = message.get("files_done")
@@ -14986,30 +14776,22 @@ class LauncherCore:
         try:
             self._progress_queue.put_nowait((percent, status_text))
         except queue.Full:
-            try:
+            with contextlib.suppress(queue.Empty):
                 self._progress_queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
+            with contextlib.suppress(queue.Full):
                 self._progress_queue.put_nowait((percent, status_text))
-            except queue.Full:
-                pass
         if was_empty and not getattr(self, '_progress_polling_active', False):
-            try:
+            with contextlib.suppress(Exception):
                 self.after(0, self._process_progress_events)
-            except Exception:
-                pass
     def _process_progress_events(self):
         if not hasattr(self, "_progress_queue") or self._progress_queue is None:
             self._progress_polling_active = False
             return
         self._progress_polling_active = True
-        try:
+        with contextlib.suppress(queue.Empty):
             while True:
                 percent, status_text = self._progress_queue.get_nowait()
                 self._apply_progress_update(percent, status_text)
-        except queue.Empty:
-            pass
         try:
             if not self._progress_queue.empty() and self.winfo_exists():
                 self.after(100, self._process_progress_events)
@@ -15030,16 +14812,14 @@ class LauncherCore:
         except Exception:
             self.discord_rpc_mgr = None
     def _stop_discord_rpc(self):
-        try:
+        with contextlib.suppress(Exception):
             if self.discord_rpc_mgr:
                 self.discord_rpc_mgr.stop()
                 self.discord_rpc_mgr = None
-        except Exception:
-            pass
     def _update_discord_rpc(self, state, details=None):
         if not self.discord_rpc_enabled.get() or not getattr(self, 'discord_rpc_mgr', None):
             return
-        try:
+        with contextlib.suppress(Exception):
             presence_data = {
                 "state": state,
                 "start": self.discord_start_time,
@@ -15047,8 +14827,6 @@ class LauncherCore:
             if details:
                 presence_data["details"] = details
             self.discord_rpc_mgr.update(**presence_data)
-        except Exception:
-            pass
     def _music_player(self):
         if self._music is None:
             if QMediaPlayer is None or QAudioOutput is None:
@@ -15223,7 +15001,7 @@ class LauncherCore:
                     hpack_path,
                     self,
                     log_fn=self._safe_append_log,
-                    progress_fn=lambda p, m: self._submit_progress_update(p, m),
+                    progress_fn=self._submit_progress_update,
                 )
                 def done():
                     _restore()
@@ -15261,11 +15039,9 @@ class LauncherCore:
                         if hasattr(self, '_refresh_game_profiles'):
                             self._refresh_game_profiles()
                         if hasattr(self, 'game_profiles_tab'):
-                            try:
+                            with contextlib.suppress(Exception):
                                 self.game_profiles_tab._profile_fingerprints = {}
                                 self.game_profiles_tab._refresh_profiles_list()
-                            except Exception:
-                                pass
                     else:
                         messagebox.showerror(_qt_t("QT_IMPORT_FAILED", "Import failed"), message)
                 self.after(0, done)
@@ -15322,10 +15098,8 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         super().__init__()
         _QT_APP_REF[0] = self
         global _APP_REF
-        try:
+        with contextlib.suppress(Exception):
             _APP_REF = weakref.ref(self)
-        except Exception:
-            pass
         self._main_thread_id = threading.get_ident()
         self._progress_queue = queue.Queue(maxsize=32)
         self._progress_polling_active = False
@@ -15407,15 +15181,13 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         default = QT_THEME_SYSTEM if _on_plasma() else QT_THEME_OLED
         if not _adv_get("qt_theme_set", False):
             return default
-        try:
+        with contextlib.suppress(Exception):
             config_path = DATA_DIR / "launcher_config.json"
             if config_path.exists():
                 data = json.loads(config_path.read_text(encoding="utf-8"))
                 name = data.get("theme")
                 if name in self.theme.available():
                     return name
-        except Exception:
-            pass
         return default
 
     def apply_theme(self, name):
@@ -15544,7 +15316,7 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         self.account_combo.setFixedWidth(230)
         self.account_combo.currentIndexChanged.connect(lambda *_: self._on_account_selected())
         left.addWidget(self.account_combo)
-        left.addWidget(_qt_button(_tr(self, "NEW_PROFILE", "New Profile"), lambda: self.add_account(), icon="plus", launcher=self), 0, Qt.AlignLeft)
+        left.addWidget(_qt_button(_tr(self, "NEW_PROFILE", "New Profile"), self.add_account, icon="plus", launcher=self), 0, Qt.AlignLeft)
         left.addStretch(1)
         left_box = QtWidgets.QWidget()
         left_box.setLayout(left)
@@ -15643,14 +15415,12 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         self.status_label_widget.setText(str(text))
 
     def _apply_progress_update(self, percent, status_text):
-        try:
+        with contextlib.suppress(Exception):
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(int(min(max(percent, 0), 100)))
             self.progress.set(percent)
             if status_text:
                 self.status_label_widget.setText(str(status_text))
-        except Exception:
-            pass
 
     def refresh_accounts(self):
         self._profiles_cache = None
@@ -15888,13 +15658,12 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         if self.mc_process is not None:
             try:
                 self.mc_process.terminate()
-                try:
-                    self.mc_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.mc_process.kill()
-                    self.mc_process.wait(timeout=5)
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    try:
+                        self.mc_process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.mc_process.kill()
+                        self.mc_process.wait(timeout=5)
             except Exception as e:
                 print(f"Error stopping Minecraft: {e}")
             self.mc_process = None
@@ -15918,11 +15687,9 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
         self._set_play_mode("play")
         self.account_combo.setEnabled(True)
         self.instance_combo.setEnabled(True)
-        try:
+        with contextlib.suppress(Exception):
             while True:
                 self._progress_queue.get_nowait()
-        except Exception:
-            pass
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.launch_thread = None
@@ -15932,10 +15699,8 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
             self.set_status(_tr(self, "WELCOME_USER", "Welcome, {username}").format(username=name.split(" (")[0]))
         if getattr(self, "discord_rpc_mgr", None) and self.discord_rpc_enabled.get():
             self._update_discord_rpc("Idling in Launcher")
-        try:
+        with contextlib.suppress(Exception):
             self.instances_page.refresh(force=True)
-        except Exception:
-            pass
 
     def _append_log(self, message):
         self.log_page.append(message)
@@ -15985,17 +15750,15 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
                 for sub in ("logs/telemetry", "telemetry"):
                     d = inst.minecraft_dir / sub
                     if d.exists() and not d.is_symlink():
-                        try:
+                        with contextlib.suppress(Exception):
                             shutil.rmtree(d)
                             n += 1
-                        except Exception:
-                            pass
             return n
         _qt_run_bg(work, lambda n: n and self._safe_append_log(f"[Privacy] Removed telemetry from {n} folder(s)"), lambda e: None)
 
     def _auto_check_updates(self):
         def done(result):
-            available, version, url, notes = result
+            available, version, _url, _notes = result
             if available:
                 self.set_status(_qt_t("QT_UPDATE_AVAILABLE", "Update available: {version} (Settings > About)").format(version=version))
         _qt_run_bg(check_for_updates, done, lambda e: None)
@@ -16031,29 +15794,21 @@ class QtLauncher(LauncherCore, QtWidgets.QMainWindow):
 
     def _refresh_game_profiles(self):
         self.refresh_instance_display()
-        try:
+        with contextlib.suppress(Exception):
             self.instances_page.refresh(force=True)
-        except Exception:
-            pass
 
     def _refresh_profiles(self):
         self.refresh_accounts()
 
     def closeEvent(self, event):
-        try:
+        with contextlib.suppress(Exception):
             self._stop_discord_rpc()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             if self._music is not None:
                 self.music_playing = False
                 self._music[0].stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             _save_settings(self)
-        except Exception:
-            pass
         event.accept()
 
 

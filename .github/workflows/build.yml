@@ -17,7 +17,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract version
         id: version
@@ -43,7 +43,7 @@ jobs:
           fi
 
       - name: Set up Python 3.15
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.15'
 
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload build artifact
         if: steps.check.outputs.should_publish == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: oranglauncher-${{ steps.version.outputs.version }}
           path: ${{ env.TARBALL }}
@@ -119,13 +119,13 @@ jobs:
       image: archlinux:latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install AUR tools
         run: pacman -Sy --noconfirm git openssh sudo base-devel
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: oranglauncher-${{ needs.build.outputs.version }}
 
