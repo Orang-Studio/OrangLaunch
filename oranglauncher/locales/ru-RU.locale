@@ -244,7 +244,6 @@ ENABLE=Включить
 DISABLE=Отключить
 REMOVE=Удалить
 PLUGIN_SELECT_FILE=Выберите Python файл плагина
-PLUGIN_EXISTS_TITLE=Плагин существует
 PLUGIN_EXISTS_MSG=Этот плагин уже добавлен.
 PLUGIN_REMOVE_TITLE=Удалить плагин
 PLUGIN_REMOVE_CONFIRM=Удалить плагин '{name}'?\n\nЭто действие нельзя отменить.
