@@ -674,29 +674,45 @@ def perform_update(download_url, launcher_root):
                 shutil.rmtree(extract_path)
 
 # ui components
-
-
 def _install_java_pm_or_download(major: int, status_fn, done_fn):
     def work():
+        latest_remote = _fetch_latest_adoptium_version(major)
+        def _is_installed_up_to_date():
+            _JAVA_PROBE_CACHE.clear()
+            p = find_java_executable(major)
+            if not p:
+                return False, None
+            ver, raw = _probe_java_info(p)
+            if _is_java_vulnerable_java2shell(ver, raw):
+                return False, p
+            if latest_remote is not None and ver is not None and ver < latest_remote:
+                return False, p
+            return True, p
         # check pacman
         if shutil.which("pacman"):
-            pkg = f"jre{major}-openjdk" if major >= 11 else f"jre8-openjdk"
+            pkg = f"jre{major}-openjdk" if major >= 11 else "jre8-openjdk"
             status_fn(_qt_t("QT_JAVA_TRY_PM", "Trying {command}…").format(command=f"pacman -S {pkg}"))
             r = subprocess.run(["pkexec", "pacman", "-S", "--noconfirm", "--needed", pkg],
                                capture_output=True, text=True)
             if r.returncode == 0:
-                done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="pacman", pkg=pkg))
-                return
+                ok_latest, _ = _is_installed_up_to_date()
+                if ok_latest:
+                    done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="pacman", pkg=pkg))
+                    return
         # check apt, ubuntu ui is not good but i may release the linux version for ubuntu.
         if shutil.which("apt-get"):
             pkg = "default-jre" if major == 8 else f"openjdk-{major}-jre"
             status_fn(_qt_t("QT_JAVA_TRY_PM", "Trying {command}…").format(command=f"apt-get install {pkg}"))
-            r = subprocess.run(["pkexec", "apt-get", "install", "-y", pkg],
-                               capture_output=True, text=True)
+            r = subprocess.run(
+                ["pkexec", "env", "DEBIAN_FRONTEND=noninteractive", "sh", "-c", 'apt-get update && apt-get install -y "$1"', "_", pkg],
+                capture_output=True, text=True,
+            )
             if r.returncode == 0:
-                done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="apt", pkg=pkg))
-                return
-        # Adoptium download, i didn't find better provider
+                ok_latest, _ = _is_installed_up_to_date()
+                if ok_latest:
+                    done_fn(True, _qt_t("QT_JAVA_INSTALLED_VIA", "Installed via {manager} ({pkg})").format(manager="apt", pkg=pkg))
+                    return
+        # Adoptium download (patched the java2shell somehow maybe, my friend said about it)
         status_fn(_qt_t("QT_JAVA_DOWNLOADING_FROM", "Downloading Java {major} from Adoptium…").format(major=major))
         path = download_java_runtime(major, progress_callback=lambda p, m: status_fn(m))
         if path:
@@ -3151,6 +3167,18 @@ def register_mod_change_callback(callback):
 def unregister_mod_change_callback(callback):
     get_game_profile_manager().unregister_mod_change_callback(callback)
 JAVA_RUNTIMES_DIR = DATA_DIR / "java_runtimes"
+_JAVA2SHELL_MIN_PATCHED: Dict[int, Tuple[int, ...]] = {
+    17: (17, 0, 21, 1),
+    21: (21, 0, 13, 1),
+    25: (25, 0, 5, 1),
+    26: (26, 0, 2, 1),
+    27: (27, 0, 1, 1),
+}
+_JAVA2SHELL_EOL_VULNERABLE_MAJORS = frozenset({18, 19, 20, 22, 23, 24})
+_JAVA_PROBE_CACHE: Dict[Tuple[str, int, int], Tuple[Optional[Tuple[int, ...]], str]] = {}
+_ADOPTIUM_LATEST_CACHE: Dict[int, Tuple[float, Optional[Tuple[int, ...]]]] = {}
+_ADOPTIUM_LATEST_TTL_SECS = 1800.0
+
 def _mc_version_tuple(version_str: str):
     try:
         clean = version_str.strip().lstrip("v").split("-")[0]
@@ -3158,6 +3186,119 @@ def _mc_version_tuple(version_str: str):
         return tuple(int(p) for p in parts[:3])
     except Exception:
         return (0,)
+
+# claudius handled this
+def _parse_java_version_tuple(version_str: str) -> Optional[Tuple[int, ...]]:
+    if not version_str:
+        return None
+    s = version_str.strip()
+    m = re.match(r'^1\.(\d+)\.(\d+)(?:_(\d+))?', s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0), 0)
+    m = re.match(r'^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?', s)
+    if m:
+        return (
+            int(m.group(1)),
+            int(m.group(2) or 0),
+            int(m.group(3) or 0),
+            int(m.group(4) or 0),
+        )
+    return None
+
+def _format_java_version(ver: Optional[Tuple[int, ...]]) -> str:
+    if not ver:
+        return "unknown"
+    if ver[0] == 8 and len(ver) >= 3 and ver[2]:
+        return f"8u{ver[2]}"
+    parts = list(ver)
+    while len(parts) > 3 and parts[-1] == 0:
+        parts.pop()
+    return ".".join(str(p) for p in parts)
+
+def _probe_java_info(java_bin: str) -> Tuple[Optional[Tuple[int, ...]], str]:
+    if not java_bin:
+        return None, ""
+    try:
+        real = os.path.realpath(java_bin)
+        st = os.stat(real)
+        cache_key = (real, int(st.st_mtime_ns), st.st_size)
+    except OSError:
+        cache_key = None
+    if cache_key and cache_key in _JAVA_PROBE_CACHE:
+        return _JAVA_PROBE_CACHE[cache_key]
+    ver = None
+    out = ""
+
+    with contextlib.suppress(Exception):
+        result = subprocess.run([java_bin, "-version"], capture_output=True, text=True, timeout=5)
+        out = (result.stderr or "") + "\n" + (result.stdout or "")
+        m = re.search(r'version "([^"]+)"', out)
+        if m:
+            ver = _parse_java_version_tuple(m.group(1))
+    if cache_key:
+        _JAVA_PROBE_CACHE[cache_key] = (ver, out)
+    return ver, out
+
+def _is_java_vulnerable_java2shell(ver: Optional[Tuple[int, ...]], raw_output: str = "") -> bool:
+    if not ver:
+        return False
+    major = ver[0]
+
+    if major == 8:
+        return "perf" in raw_output.lower() and ver < (8, 0, 513, 0)
+    if major in _JAVA2SHELL_EOL_VULNERABLE_MAJORS:
+        return True
+    min_patched = _JAVA2SHELL_MIN_PATCHED.get(major)
+    if min_patched is not None:
+        return ver < min_patched
+    return False
+
+def java2shell_mitigation_args(java_exe: str, log_fn=None) -> List[str]:
+    ver, raw = _probe_java_info(java_exe)
+
+    if ver and ver[0] >= 17 and _is_java_vulnerable_java2shell(ver, raw):
+        if log_fn:
+            log_fn(
+                f"[Java] Warning: Java {_format_java_version(ver)} is vulnerable to CVE-2026-114938 (Java2Shell); "
+                f"applying -XX:-UseBASE64Intrinsics mitigation"
+            )
+        return ["-XX:-UseBASE64Intrinsics"]
+    return []
+
+def _adoptium_platform() -> Tuple[str, str]:
+    os_name = {"linux": "linux", "darwin": "mac", "win32": "windows"}.get(sys.platform, "linux")
+    machine = platform.machine().lower()
+    arch = "aarch64" if machine in ("aarch64", "arm64") else "x64"
+    return os_name, arch
+def _fetch_latest_adoptium_version(java_major: int) -> Optional[Tuple[int, ...]]:
+    now = time.monotonic()
+    cached = _ADOPTIUM_LATEST_CACHE.get(java_major)
+    if cached and (now - cached[0]) < _ADOPTIUM_LATEST_TTL_SECS:
+        return cached[1]
+    os_name, arch = _adoptium_platform()
+    parsed = None
+    for image_type in ("jre", "jdk"):
+        api_url = (
+            f"https://api.adoptium.net/v3/assets/latest/{java_major}/hotspot"
+            f"?os={os_name}&architecture={arch}&image_type={image_type}"
+        )
+        try:
+            resp = _http_session.get(api_url, timeout=6)
+            if resp.status_code != 200:
+                continue
+            releases = resp.json()
+            if not releases:
+                continue
+            vinfo = releases[0].get("version", {}) if isinstance(releases[0], dict) else {}
+            ver_str = vinfo.get("openjdk_version") or vinfo.get("semver") or ""
+            parsed = _parse_java_version_tuple(ver_str)
+            if parsed:
+                break
+        except Exception:
+            break
+    if parsed is not None:
+        _ADOPTIUM_LATEST_CACHE[java_major] = (now, parsed)
+    return parsed
 
 def get_required_java_version(mc_version: str) -> int:
     v = _mc_version_tuple(mc_version)
@@ -3169,55 +3310,91 @@ def get_required_java_version(mc_version: str) -> int:
         return 17
     return 8
 
+def _managed_java_binaries(java_major: int) -> List[str]:
+    exe_name = "java.exe" if sys.platform == "win32" else "java"
+    base = JAVA_RUNTIMES_DIR / f"java-{java_major}"
+    return [
+        str(base / "bin" / exe_name),
+        str(base / "Contents" / "Home" / "bin" / exe_name),
+    ]
+
 def find_java_executable(java_major: int) -> Optional[str]:
-    candidates = [
+    exe_name = "java.exe" if sys.platform == "win32" else "java"
+    managed_paths = _managed_java_binaries(java_major)
+    explicit_candidates = list(managed_paths) + [
         f"/usr/lib/jvm/java-{java_major}-openjdk/bin/java",
         f"/usr/lib/jvm/java-{java_major}-openjdk-amd64/bin/java",
         f"/usr/lib/jvm/java-{java_major}-openjdk-arm64/bin/java",
+        f"/usr/lib/jvm/temurin-{java_major}-jre/bin/java",
+        f"/usr/lib/jvm/temurin-{java_major}-jdk/bin/java",
         f"/usr/lib/jvm/temurin-{java_major}/bin/java",
         f"/usr/lib/jvm/java-{java_major}/bin/java",
         f"/usr/local/lib/jvm/java-{java_major}/bin/java",
-        str(JAVA_RUNTIMES_DIR / f"java-{java_major}" / "bin" / "java"),
-    ]
-    candidates += [
         f"/Library/Java/JavaVirtualMachines/temurin-{java_major}.jdk/Contents/Home/bin/java",
         f"/Library/Java/JavaVirtualMachines/jdk-{java_major}.jdk/Contents/Home/bin/java",
     ]
-    for p in candidates:
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
+    explicit_set = set(explicit_candidates)
+    managed_reals = {os.path.realpath(p) for p in managed_paths}
+    discovered = list(explicit_candidates)
+    for pattern in (
+        "/usr/lib/jvm/*/bin/java",
+        "/usr/local/lib/jvm/*/bin/java",
+        "/Library/Java/JavaVirtualMachines/*/Contents/Home/bin/java",
+    ):
+        with contextlib.suppress(Exception):
+            discovered.extend(glob.glob(pattern))
     java_home = os.environ.get("JAVA_HOME")
     if java_home:
-        java_bin = os.path.join(java_home, "bin", "java")
-        if os.path.isfile(java_bin) and os.access(java_bin, os.X_OK):
-            with contextlib.suppress(Exception):
-                result = subprocess.run([java_bin, "-version"], capture_output=True, text=True, timeout=5)
-                out = result.stderr or result.stdout
-                m = re.search(r'version "(\d+)', out)
-                if m:
-                    detected = int(m.group(1))
-                    if detected == 1:
-                        m2 = re.search(r'version "1\.(\d+)', out)
-                        detected = int(m2.group(1)) if m2 else 8
-                    if detected == java_major:
-                        return java_bin
-    return None
+        discovered.append(os.path.join(java_home, "bin", exe_name))
+    which_java = shutil.which("java")
+    if which_java:
+        discovered.append(which_java)
+
+    best_path = None
+    best_rank = None
+    seen_reals = set()
+    for p in discovered:
+        if not (os.path.isfile(p) and os.access(p, os.X_OK)):
+            continue
+        real = os.path.realpath(p)
+        if real in seen_reals:
+            continue
+        seen_reals.add(real)
+        ver, raw = _probe_java_info(p)
+        if ver is not None:
+            if ver[0] != java_major:
+                continue
+            safe = not _is_java_vulnerable_java2shell(ver, raw)
+            rank = (1 if safe else 0, ver, 1 if real in managed_reals else 0)
+        elif p in explicit_set:
+            rank = (0, (java_major, 0, 0, 0), 1 if real in managed_reals else 0)
+        else:
+            continue
+        if best_rank is None or rank > best_rank:
+            best_rank = rank
+            best_path = p
+    return best_path
 
 def download_java_runtime(java_major: int, progress_callback=None) -> Optional[str]:
-    
-    os_name = {"linux": "linux", "darwin": "mac", "win32": "windows"}.get(sys.platform, "linux")
-    machine = platform.machine().lower()
-    arch = "aarch64" if machine in ("aarch64", "arm64") else "x64"
-    api_url = (
-        f"https://api.adoptium.net/v3/assets/latest/{java_major}/hotspot"
-        f"?os={os_name}&architecture={arch}&image_type=jre"
-    )
+    os_name, arch = _adoptium_platform()
+    exe_name = "java.exe" if sys.platform == "win32" else "java"
     try:
         if progress_callback:
             progress_callback(0, _qt_t("QT_JAVA_FETCH_INFO", "Fetching Java {major} download info...").format(major=java_major))
-        resp = _http_session.get(api_url, timeout=15)
-        resp.raise_for_status()
-        releases = resp.json()
+        releases = None
+        for image_type in ("jre", "jdk"):
+            api_url = (
+                f"https://api.adoptium.net/v3/assets/latest/{java_major}/hotspot"
+                f"?os={os_name}&architecture={arch}&image_type={image_type}"
+            )
+            resp = _http_session.get(api_url, timeout=15)
+            if resp.status_code == 404:
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data:
+                releases = data
+                break
         if not releases:
             return None
         binary = releases[0].get("binary", {})
@@ -3264,59 +3441,87 @@ def download_java_runtime(java_major: int, progress_callback=None) -> Optional[s
         shutil.move(str(jre_root), str(final_dir))
         shutil.rmtree(extract_dir, ignore_errors=True)
         dest_archive.unlink(missing_ok=True)
-        java_bin = final_dir / "bin" / "java"
-        if java_bin.exists():
-            java_bin.chmod(java_bin.stat().st_mode | 0o111)
-            if progress_callback:
-                progress_callback(100, _qt_t("QT_JAVA_INSTALLED", "Java {major} installed.").format(major=java_major))
-            return str(java_bin)
+        _JAVA_PROBE_CACHE.clear()
+        for java_bin in (final_dir / "bin" / exe_name, final_dir / "Contents" / "Home" / "bin" / exe_name):
+            if java_bin.exists():
+                with contextlib.suppress(OSError):
+                    java_bin.chmod(java_bin.stat().st_mode | 0o111)
+                if progress_callback:
+                    progress_callback(100, _qt_t("QT_JAVA_INSTALLED", "Java {major} installed.").format(major=java_major))
+                return str(java_bin)
     except Exception as e:
         print(f"[Java] Failed to download Java {java_major}: {e}")
     return None
 
 def resolve_java_for_instance(instance, mc_version: str, log_fn=None) -> str:
+    exe_name = "java.exe" if sys.platform == "win32" else "java"
     if instance and getattr(instance, 'java_path', ''):
         p = instance.java_path.strip()
         if p and p != "Auto":
+            resolved_custom = None
             if os.path.isdir(p):
-                candidate = os.path.join(p, "bin", "java")
+                candidate = os.path.join(p, "bin", exe_name)
                 if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                    return candidate
+                    resolved_custom = candidate
             elif os.path.isfile(p) and os.access(p, os.X_OK):
-                return p
+                resolved_custom = p
+            if resolved_custom:
+                ver, raw = _probe_java_info(resolved_custom)
+                if _is_java_vulnerable_java2shell(ver, raw) and log_fn:
+                    log_fn(
+                        f"[Java] Warning: Custom Java ({_format_java_version(ver)}) is vulnerable to "
+                        f"CVE-2026-114938 (Java2Shell). Consider updating or switching Java runtime to Automatic."
+                    )
+                return resolved_custom
     required = get_required_java_version(mc_version)
     found = find_java_executable(required)
+    latest_remote = _fetch_latest_adoptium_version(required)
     if found:
+        ver, raw = _probe_java_info(found)
+        vuln = _is_java_vulnerable_java2shell(ver, raw)
+        outdated = (ver is not None and latest_remote is not None and ver < latest_remote)
+        if not vuln and not outdated:
+            if log_fn:
+                ver_label = f" ({_format_java_version(ver)})" if ver else ""
+                log_fn(f"[Java] Using Java {required}{ver_label} at: {found}")
+            return found
         if log_fn:
-            log_fn(f"[Java] Using Java {required} at: {found}")
+            if vuln:
+                log_fn(
+                    f"[Java] Found Java {_format_java_version(ver)} at {found} is vulnerable to "
+                    f"CVE-2026-114938 (Java2Shell); downloading newest patched Java {required} from Adoptium..."
+                )
+            else:
+                log_fn(
+                    f"[Java] Newer Java {required} ({_format_java_version(latest_remote)}) is available "
+                    f"(installed: {_format_java_version(ver)}); updating from Adoptium..."
+                )
+        downloaded = download_java_runtime(required, progress_callback=log_fn and (lambda p, m: log_fn(m)))
+        if downloaded:
+            return downloaded
+        if log_fn:
+            log_fn(f"[Java] Update download failed, continuing with existing Java at: {found}")
         return found
     system_java = shutil.which("java") or "java"
-    with contextlib.suppress(Exception):
-        result = subprocess.run([system_java, "-version"], capture_output=True, text=True, timeout=5)
-        out = result.stderr or result.stdout
-        m = re.search(r'version "(\d+)', out)
-        if m:
-            detected = int(m.group(1))
-            if detected == 1:
-                m2 = re.search(r'version "1\.(\d+)', out)
-                detected = int(m2.group(1)) if m2 else 8
-            if required > 8 and detected >= required:
-                if log_fn:
-                    log_fn(f"[Java] System Java {detected} satisfies requirement >= {required}")
-                return system_java
+    ver, raw = _probe_java_info(system_java)
+    if ver and required > 8 and ver[0] >= required and not _is_java_vulnerable_java2shell(ver, raw):
+        sys_latest = _fetch_latest_adoptium_version(ver[0])
+        if sys_latest is None or ver >= sys_latest:
+            if log_fn:
+                log_fn(f"[Java] System Java {_format_java_version(ver)} satisfies requirement >= {required}")
+            return system_java
     if log_fn:
-        log_fn(f"[Java] Java {required} not found, downloading from Adoptium...")
+        log_fn(f"[Java] Java {required} not found, downloading latest from Adoptium...")
     downloaded = download_java_runtime(required, progress_callback=log_fn and (lambda p, m: log_fn(m)))
     if downloaded:
         return downloaded
     if log_fn:
-        log_fn(f"[Java] Download failed, falling back to system java")
+        log_fn("[Java] Download failed, falling back to system java")
     return system_java
 
 # OptiFine (standalone) support
 OPTIFINE_SITE = "https://optifine.net"
 _OPTIFINE_UA = {"User-Agent": "Mozilla/5.0"}
-
 
 def get_optifine_files_for(mc_version):
     # Returns OptiFine jar filenames available for mc_version
@@ -3336,7 +3541,6 @@ def get_optifine_files_for(mc_version):
         print(f"[OptiFine] version list failed: {e}")
         return []
 
-
 def download_optifine(filename, dest_path, log_fn=None):
     # Resolves the per-session download token and saves the OptiFine jar
     r = _http_session.get(f"{OPTIFINE_SITE}/adloadx?f={filename}", timeout=20, headers=_OPTIFINE_UA)
@@ -3354,7 +3558,6 @@ def download_optifine(filename, dest_path, log_fn=None):
     if log_fn:
         log_fn(f"[OptiFine] Downloaded {filename}")
 
-
 def optifine_version_id(filename):
     base = filename[:-4] if filename.lower().endswith(".jar") else filename
     if base.startswith("preview_"):
@@ -3362,7 +3565,6 @@ def optifine_version_id(filename):
     rest = base.split("_", 1)[1] if "_" in base else base   # drop leading 'OptiFine'
     mc, _, edition = rest.partition("_")
     return f"{mc}-OptiFine_{edition}"
-
 
 def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
                      log_fn=None, progress_fn=None):
@@ -3405,7 +3607,6 @@ def install_optifine(mc_version, minecraft_directory, java_exe, filename=None,
         progress_fn(100, _qt_t("QT_OPTIFINE_INSTALLED", "OptiFine installed"))
     log(f"[OptiFine] Installed {version_id}")
     return version_id
-
 
 def get_available_versions(force_refresh=False):
     manager = get_game_profile_manager()
@@ -5734,10 +5935,18 @@ class HorizonManager:
                 progress_fn=progress_fn,
             )
             java_exe = find_java_executable(java_major)
-            if not java_exe:
+            needs_dl = not java_exe
+            if java_exe:
+                ver, raw = _probe_java_info(java_exe)
+                latest_remote = _fetch_latest_adoptium_version(java_major)
+                if _is_java_vulnerable_java2shell(ver, raw) or (ver is not None and latest_remote is not None and ver < latest_remote):
+                    needs_dl = True
+            if needs_dl:
                 if log_fn:
-                    log_fn(f"[Horizon] Downloading Java {java_major} for resource preparation...")
-                java_exe = download_java_runtime(java_major, progress_callback=lambda p, m: progress_fn and progress_fn(40 + int(p * 0.1), m))
+                    log_fn(f"[Horizon] Downloading newest Java {java_major} for resource preparation...")
+                downloaded = download_java_runtime(java_major, progress_callback=lambda p, m: progress_fn and progress_fn(40 + int(p * 0.1), m))
+                if downloaded:
+                    java_exe = downloaded
             java_home = str(Path(java_exe).resolve().parent.parent) if java_exe else ""
             prep_env = os.environ.copy()
             if java_home:
@@ -6186,8 +6395,6 @@ class ServersNBT:
 
         def write_byte(val):
             out.append(val & 0xFF)
-        def write_short(val):
-            out.extend(struct.pack('>h', val))
         def write_ushort(val):
             out.extend(struct.pack('>H', val))
         def write_int(val):
@@ -6657,14 +6864,13 @@ def mark_setup_done(done=True):
 
 def _wizard_detect_javas():
     found = []
-    for major in (25, 21, 17, 11, 8):
+    for major in (27, 25, 21, 17, 11, 8):
         p = find_java_executable(major)
         if p:
             found.append((major, p))
     return found
 
 # main app
-
 def terminal_launch_game(instance, profile, ram="4G"):
     try:
         if getattr(instance, "is_horizon", None) and instance.is_horizon():
@@ -6683,6 +6889,9 @@ def terminal_launch_game(instance, profile, ram="4G"):
         if not ram.endswith('G') and not ram.endswith('M'):
             ram = f"{ram}G"
         jvm_args = memory_jvm_args(instance, ram) + extra_jvm_args(instance) + native_library_jvm_args(instance)
+        for flag in java2shell_mitigation_args(java_exe, log_fn=print):
+            if flag not in jvm_args:
+                jvm_args.append(flag)
         options = {
             'username': username,
             'uuid': uuid,
@@ -8944,11 +9153,13 @@ def _qt_fill_java_combo(combo, current=""):
     combo.clear()
     combo.addItem(_qt_t("QT_JAVA_AUTO", "Automatic (recommended)"), QtInstanceEditor.JAVA_AUTO)
     seen = set()
-    for major in (8, 11, 17, 21, 25):
+    for major in (8, 11, 17, 21, 25, 27):
         jp = find_java_executable(major)
         if jp and jp not in seen:
             seen.add(jp)
-            combo.addItem(f"Java {major}  -  {jp}", jp)
+            ver, _ = _probe_java_info(jp)
+            ver_txt = f" ({_format_java_version(ver)})" if ver else ""
+            combo.addItem(f"Java {major}{ver_txt}  -  {jp}", jp)
     combo.addItem(_qt_t("QT_JAVA_BROWSE", "Choose a java executable..."), QtInstanceEditor.JAVA_BROWSE)
     if current:
         _qt_select_java(combo, current)
@@ -11892,7 +12103,7 @@ class QtInstanceEditor(QtWidgets.QWidget):
         jl.addStretch(1)
         form.addRow(_qt_t("QT_JAVA_RUNTIME", "Java runtime"), jl)
         card.add_layout(form)
-        card.add(_qt_label(_qt_t("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17 or 21) and downloads it when missing."), "hint", wrap=True))
+        card.add(_qt_label(_qt_t("QT_JAVA_RUNTIME_HINT", "Automatic picks the Java version this Minecraft release needs (8, 17, 21 or 25) and downloads the newest patched build when missing or outdated."), "hint", wrap=True))
         lay.addWidget(card)
         self.vr_lwjgl_card = card = _Card(_qt_t("QT_NATIVE_LIBS", "Native libraries (LWJGL)"))
         card.add(_qt_label(_qt_t("QT_LWJGL_EXPLAIN", "LWJGL is the library Minecraft uses to open its window, talk to the GPU and play sound. Minecraft ships its own copy; the old one bundled with 1.20.1 and earlier crashes on modern Linux desktops, so Automatic swaps in a newer one when needed."), "muted", wrap=True))
@@ -13523,10 +13734,19 @@ class QtSettingsPage(QtWidgets.QWidget):
         card.add(_qt_label(_qt_t("QT_JAVA_RUNTIMES_DESC", "Install or update Java runtimes. The launcher checks pacman / apt first, then downloads directly from Adoptium if needed."), "muted", wrap=True))
         not_found = _qt_t("QT_NOT_FOUND", "not found")
         
+        def _java_row_text(m, p, fallback=""):
+            if not p:
+                return f"Java {m}  -  {fallback or not_found}"
+            ver, raw = _probe_java_info(p)
+            ver_txt = f"{_format_java_version(ver)}  " if ver else ""
+            if _is_java_vulnerable_java2shell(ver, raw):
+                return f"Java {m}  ⚠  {ver_txt}(CVE-2026-114938)  {p}"
+            return f"Java {m}  ✓  {ver_txt}{p}"
+
         for major in (8, 17, 21, 25):
             row = QtWidgets.QHBoxLayout()
             path = find_java_executable(major)
-            lbl = _qt_label(f"Java {major}  ✓  {path}" if path else f"Java {major}  -  {not_found}", "accent" if path else "muted")
+            lbl = _qt_label(_java_row_text(major, path), "accent" if path else "muted")
             row.addWidget(lbl, 1)
 
             def make_install(m, label):
@@ -13538,7 +13758,7 @@ class QtSettingsPage(QtWidgets.QWidget):
 
                     def on_done(ok, msg):
                         p = find_java_executable(m)
-                        _qt_later(lambda: label.setText(f"Java {m}  {'✓' if ok else '✗'}  {p or msg}"))
+                        _qt_later(lambda: label.setText(_java_row_text(m, p) if (ok and p) else f"Java {m}  {'✓' if ok else '✗'}  {p or msg}"))
                     _install_java_pm_or_download(m, set_status, on_done)
                 return on_install
             row.addWidget(_qt_button(_qt_t("QT_INSTALL_UPDATE", "Install / Update"), make_install(major, lbl)))
@@ -14333,7 +14553,6 @@ class LauncherCore:
                             self._safe_append_log(f"[Launcher] Recovered installed version id: {recovered}")
                             current_instance.installed_version_id = recovered
                             self.instance_manager.save_instances()
-                            local_versions_dir = Path(minecraft_directory) / "versions" / recovered
                             version_exists = True
                     if version_exists:
                         version = current_instance.installed_version_id
@@ -14461,6 +14680,9 @@ class LauncherCore:
             with contextlib.suppress(Exception):
                 java_major = get_required_java_version(current_instance.version if current_instance else version)
             options['jvmArguments'] = options['jvmArguments'] + legacy_jvm_args(current_instance, current_instance.version if current_instance else version, java_major)
+            for flag in java2shell_mitigation_args(java_exe, log_fn=self._safe_append_log):
+                if flag not in options['jvmArguments']:
+                    options['jvmArguments'].append(flag)
             self._safe_append_log(f"[Launcher] Starting Minecraft...")
             command = minecraft_launcher_lib.command.get_minecraft_command(version, minecraft_directory, options)
             command = [arg for arg in command if arg != "--sun-misc-unsafe-memory-access=allow"]
