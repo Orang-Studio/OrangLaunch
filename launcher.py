@@ -521,7 +521,7 @@ class MinecraftInstance:
         return len([d for d in self.saves_dir.iterdir() if d.is_dir()])
     
 # Change this to the current version
-CURRENT_VERSION = "9.0.1"
+CURRENT_VERSION = "9.0.2"
 # If you fork, at least leave some credit in the code, thanks.
 # I'm not getting paid for this. Please don't sell this or use it for profit. 
 # I worked hard on this and I want to keep it free for everyone.
